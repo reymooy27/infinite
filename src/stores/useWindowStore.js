@@ -6,9 +6,17 @@ const useWindowStore = create((set) => ({
   windows: [],
   topZ: 1,
   draggingId: null,
+  focusTargetId: null,
 
   setDragging: (id) => set({ draggingId: id }),
   clearDragging: () => set({ draggingId: null }),
+
+  updateWindowPosition: (id, x, y, width, height) =>
+    set((state) => ({
+      windows: state.windows.map((w) =>
+        w.id === id ? { ...w, x, y, width, height } : w
+      ),
+    })),
 
   openApp: (appId) =>
     set((state) => {
@@ -21,6 +29,8 @@ const useWindowStore = create((set) => ({
         z: newZ,
         x: 4000 + offset,
         y: 4000 + offset,
+        width: 0,
+        height: 0,
       }
       return {
         windows: [...state.windows, win],
@@ -43,6 +53,17 @@ const useWindowStore = create((set) => ({
         topZ: newZ,
       }
     }),
+
+  focusLastWindow: () =>
+    set((state) => {
+      const last = state.windows[state.windows.length - 1]
+      if (!last) return state
+      return { focusTargetId: last.id }
+    }),
+
+  focusWindow: (id) =>
+    set({ focusTargetId: id }),
 }))
 
 export default useWindowStore
+export { useWindowStore }
