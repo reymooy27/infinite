@@ -18,7 +18,7 @@ const useWindowStore = create((set) => ({
       ),
     })),
 
-  openApp: (appId) =>
+  openApp: (appId, x, y) =>
     set((state) => {
       const newZ = state.topZ + 1
       const id = `win-${nextWindowId++}`
@@ -27,14 +27,15 @@ const useWindowStore = create((set) => ({
         id,
         appId,
         z: newZ,
-        x: 4000 + offset,
-        y: 4000 + offset,
+        x: x ?? 4000 + offset,
+        y: y ?? 4000 + offset,
         width: 0,
         height: 0,
       }
       return {
         windows: [...state.windows, win],
         topZ: newZ,
+        focusTargetId: null,
       }
     }),
 

@@ -1,5 +1,6 @@
 import registry from '../apps/registry'
 import useWindowStore from '../stores/useWindowStore'
+import { canvasTransform } from '../lib/canvasTransform'
 
 export default function Dock() {
   const windows = useWindowStore((s) => s.windows)
@@ -17,7 +18,24 @@ export default function Dock() {
         return (
           <button
             key={appId}
-            onClick={() => openApp(appId)}
+            onClick={() => {
+              const app = registry[appId]
+              const inst = canvasTransform.current
+              let x = 4000
+              let y = 4000
+              if (inst) {
+                const wrapper = inst.wrapperComponent
+                const state = inst.state
+                const vw = wrapper?.offsetWidth ?? 0
+                const vh = wrapper?.offsetHeight ?? 0
+                const scale = state?.scale ?? 1
+                const posX = state?.positionX ?? 0
+                const posY = state?.positionY ?? 0
+                x = (vw / 2 - posX) / scale - app.defaultWidth / 2
+                y = (vh / 2 - posY) / scale - app.defaultHeight / 2
+              }
+              openApp(appId, x, y)
+            }}
             className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer group"
             title={app.title}
           >
