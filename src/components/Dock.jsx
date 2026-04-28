@@ -1,10 +1,11 @@
 import registry from '../apps/registry'
 import useWindowStore from '../stores/useWindowStore'
-import { canvasTransform } from '../lib/canvasTransform'
 
 export default function Dock() {
   const windows = useWindowStore((s) => s.windows)
-  const openApp = useWindowStore((s) => s.openApp)
+  const placingAppId = useWindowStore((s) => s.placingAppId)
+  const setPlacingApp = useWindowStore((s) => s.setPlacingApp)
+  const clearPlacing = useWindowStore((s) => s.clearPlacing)
   const focusLastWindow = useWindowStore((s) => s.focusLastWindow)
 
   const appIds = Object.keys(registry)
@@ -15,33 +16,29 @@ export default function Dock() {
       {appIds.map((appId) => {
         const app = registry[appId]
         const isOpen = windows.some((w) => w.appId === appId)
+        const isPlacing = placingAppId === appId
         return (
           <button
             key={appId}
             onClick={() => {
-              const app = registry[appId]
-              const inst = canvasTransform.current
-              let x = 4000
-              let y = 4000
-              if (inst) {
-                const wrapper = inst.wrapperComponent
-                const state = inst.state
-                const vw = wrapper?.offsetWidth ?? 0
-                const vh = wrapper?.offsetHeight ?? 0
-                const scale = state?.scale ?? 1
-                const posX = state?.positionX ?? 0
-                const posY = state?.positionY ?? 0
-                x = (vw / 2 - posX) / scale - app.defaultWidth / 2
-                y = (vh / 2 - posY) / scale - app.defaultHeight / 2
+              if (isPlacing) {
+                clearPlacing()
+              } else {
+                setPlacingApp(appId)
               }
-              openApp(appId, x, y)
             }}
-            className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer group"
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors cursor-pointer group ${
+              isPlacing
+                ? 'bg-blue-600 text-white'
+                : 'hover:bg-neutral-800'
+            }`}
             title={app.title}
           >
             <span className="text-2xl leading-none">{app.icon}</span>
-            <span className="text-[10px] text-neutral-500 group-hover:text-neutral-300 transition-colors">{app.title}</span>
-            {isOpen && <span className="w-1 h-1 rounded-full bg-blue-400" />}
+            <span className={`text-[10px] transition-colors ${
+              isPlacing ? 'text-blue-200' : 'text-neutral-500 group-hover:text-neutral-300'
+            }`}>{app.title}</span>
+            {isOpen && <span className={`w-1 h-1 rounded-full ${isPlacing ? 'bg-white' : 'bg-blue-400'}`} />}
           </button>
         )
       })}
