@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
 import { useWindowStore as useStore } from "../stores/useWindowStore";
+import { canvasTransform } from "../lib/canvasTransform";
 
 const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
@@ -47,6 +48,7 @@ export default function WindowFrame({
 
   const win = windows.find((w) => w.id === id);
   const z = win?.z ?? 1;
+  const scale = canvasTransform.current?.state?.scale ?? 1;
 
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
@@ -105,6 +107,7 @@ export default function WindowFrame({
       minWidth={MIN_WIDTH}
       minHeight={MIN_HEIGHT}
       style={{ zIndex: z }}
+      scale={scale}
       dragHandleClassName="window-drag-handle"
       enableResizing={{
         bottomRight: true,

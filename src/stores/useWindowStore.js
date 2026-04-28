@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import registry from "../apps/registry";
 
 let nextWindowId = 1;
 
@@ -27,14 +28,15 @@ const useWindowStore = create((set) => ({
       const newZ = state.topZ + 1;
       const id = `win-${nextWindowId++}`;
       const offset = (state.windows.length % 8) * 30;
+      const app = registry[appId];
       const win = {
         id,
         appId,
         z: newZ,
         x: x ?? 5000 + offset,
         y: y ?? 5000 + offset,
-        width: 0,
-        height: 0,
+        width: app?.defaultWidth || 400,
+        height: app?.defaultHeight || 300,
       };
       return {
         windows: [...state.windows, win],
