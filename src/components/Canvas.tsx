@@ -16,6 +16,8 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     zoomIn: () => void;
     zoomOut: () => void;
   } | null>(null);
+  const isMiddlePanning = useRef(false);
+  const middlePanStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
   const [pendingSSH, setPendingSSH] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -190,6 +192,62 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     return () => el.removeEventListener("wheel", handleWheel);
   }, []);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 1) return;
+      if (placingAppId || draggingId) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const tw = wrapperRef.current;
+      if (!tw) return;
+      const state = (tw as unknown as { state?: { positionX: number; positionY: number } }).state;
+      isMiddlePanning.current = true;
+      middlePanStart.current = {
+        x: e.clientX,
+        y: e.clientY,
+        tx: state?.positionX ?? 0,
+        ty: state?.positionY ?? 0,
+      };
+      document.body.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isMiddlePanning.current) return;
+      const tw = wrapperRef.current;
+      if (!tw) return;
+      const dx = e.clientX - middlePanStart.current.x;
+      const dy = e.clientY - middlePanStart.current.y;
+      const state = (tw as unknown as { state?: { scale: number } }).state;
+      const scale = state?.scale ?? 1;
+      const tx = middlePanStart.current.tx + dx;
+      const ty = middlePanStart.current.ty + dy;
+      ((tw as any).instance ?? tw)?.setState?.(scale, tx, ty);
+    };
+
+    const onMouseUp = () => {
+      if (!isMiddlePanning.current) return;
+      isMiddlePanning.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    el.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [placingAppId, draggingId]);
+
   const handleBackgroundClick = useCallback(
     (e: React.MouseEvent) => {
       if (!contentRef.current?.contains(e.target as Node)) return;
@@ -262,7 +320,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         panning={{
           disabled: false,
           velocityDisabled: false,
-          activationKeys: [],
+          activationKeys: ["Space"],
           excluded: ["window-drag-handle"],
         }}
       >
