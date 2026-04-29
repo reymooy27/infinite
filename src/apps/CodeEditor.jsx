@@ -12,8 +12,8 @@ export default function CodeEditor() {
   const lineCount = code.split('\n').length
 
   return (
-    <div className="flex h-full font-mono text-sm">
-      <div className="flex flex-col items-end pr-3 pt-3 text-neutral-600 select-none border-r border-neutral-700 shrink-0 overflow-hidden">
+    <div className="flex h-full font-mono text-sm p-3">
+      <div className="flex flex-col items-end pr-3 text-neutral-600 select-none border-r border-neutral-700 shrink-0 overflow-hidden">
         {Array.from({ length: lineCount }, (_, i) => (
           <div key={i} className="leading-6">{i + 1}</div>
         ))}
@@ -22,7 +22,7 @@ export default function CodeEditor() {
         value={code}
         onChange={(e) => setCode(e.target.value)}
         spellCheck={false}
-        className="flex-1 bg-transparent text-green-400 resize-none outline-none p-3 leading-6"
+        className="flex-1 bg-transparent text-green-400 resize-none outline-none pl-3 leading-6"
       />
     </div>
   )

@@ -7,7 +7,7 @@ export default function Notes() {
     <textarea
       value={text}
       onChange={(e) => setText(e.target.value)}
-      className="w-full h-full bg-transparent resize-none outline-none text-neutral-200 text-sm p-1"
+      className="w-full h-full bg-transparent resize-none outline-none text-neutral-200 text-sm p-3"
     />
   )
 }

@@ -1,6 +1,7 @@
 import CodeEditor from './CodeEditor'
 import Terminal from './Terminal'
 import Notes from './Notes'
+import SSHTerminal from './SSHTerminal'
 
 const registry = {
   'code-editor': {
@@ -23,6 +24,13 @@ const registry = {
     component: Notes,
     defaultWidth: 380,
     defaultHeight: 350,
+  },
+  ssh: {
+    title: 'SSH',
+    icon: '🔗',
+    component: SSHTerminal,
+    defaultWidth: 600,
+    defaultHeight: 400,
   },
 }
 
