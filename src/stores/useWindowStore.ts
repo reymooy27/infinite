@@ -34,6 +34,7 @@ const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
   terminal: { width: 500, height: 320 },
   notes: { width: 380, height: 350 },
   ssh: { width: 600, height: 400 },
+  browser: { width: 1024, height: 768 },
 };
 
 let windowCounter = 0;
