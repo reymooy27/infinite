@@ -3,7 +3,7 @@ import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 
-export function encrypt(text, secret) {
+export function encrypt(text: string, secret: string): string {
   if (!secret) throw new Error("ENCRYPTION_SECRET not set");
   const key = Buffer.from(secret, "hex");
   const iv = randomBytes(IV_LENGTH);
@@ -14,7 +14,7 @@ export function encrypt(text, secret) {
   return iv.toString("hex") + ":" + tag.toString("hex") + ":" + encrypted;
 }
 
-export function decrypt(data, secret) {
+export function decrypt(data: string, secret: string): string {
   if (!secret) throw new Error("ENCRYPTION_SECRET not set");
   const key = Buffer.from(secret, "hex");
   const parts = data.split(":");

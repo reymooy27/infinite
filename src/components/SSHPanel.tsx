@@ -1,6 +1,9 @@
+"use client";
+
 import { useState, useEffect } from "react";
-import useSSHStore from "../stores/useSSHStore";
-import useWindowStore from "../stores/useWindowStore";
+import { useSSHStore } from "@/stores/useSSHStore";
+import { useWindowStore } from "@/stores/useWindowStore";
+import type { AuthType } from "@/types";
 
 export default function SSHPanel() {
   const connections = useSSHStore((s) => s.connections);
@@ -14,7 +17,7 @@ export default function SSHPanel() {
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("");
-  const [authType, setAuthType] = useState("password");
+  const [authType, setAuthType] = useState<AuthType>("password");
   const [password, setPassword] = useState("");
   const [privateKey, setPrivateKey] = useState("");
   const [formError, setFormError] = useState("");
@@ -24,7 +27,7 @@ export default function SSHPanel() {
     fetchConnections();
   }, [fetchConnections]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
 
@@ -62,15 +65,15 @@ export default function SSHPanel() {
       setPrivateKey("");
       setShowForm(false);
     } catch (err) {
-      setFormError(err.message);
+      setFormError((err as Error).message);
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: number) => {
     await deleteConnection(id);
   };
 
-  const handleConnect = (conn) => {
+  const handleConnect = (conn: { id: number; name: string }) => {
     useWindowStore.getState().openApp("ssh", undefined, undefined, {
       connectionId: conn.id,
       title: conn.name,
@@ -81,7 +84,7 @@ export default function SSHPanel() {
     <div className="flex flex-col max-h-[70vh] overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
         {connections.length === 0 && !showForm ? (
-          <div className="text-center py-6">
+          <div className="text-center py-8 px-4">
             <p className="text-neutral-500 text-sm mb-3">No SSH connections yet</p>
             <button
               onClick={() => setShowForm(true)}
@@ -92,9 +95,14 @@ export default function SSHPanel() {
           </div>
         ) : (
           connections.map((conn) => (
-            <div key={conn.id} className="flex items-center gap-2 px-3 py-2.5 bg-neutral-800 rounded-lg border border-neutral-700">
+            <div
+              key={conn.id}
+              className="flex items-center gap-2 px-4 py-3 bg-neutral-800 rounded-lg border border-neutral-700"
+            >
               <div className="flex-1 min-w-0">
-                <div className="text-neutral-200 text-sm font-medium truncate">{conn.name}</div>
+                <div className="text-neutral-200 text-sm font-medium truncate">
+                  {conn.name}
+                </div>
                 <div className="text-xs text-neutral-500 truncate">
                   {conn.username}@{conn.host}:{conn.port}
                 </div>
@@ -111,7 +119,16 @@ export default function SSHPanel() {
                 className="shrink-0 px-1.5 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded cursor-pointer transition-colors"
                 title="Delete"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
                 </svg>
               </button>
@@ -121,15 +138,30 @@ export default function SSHPanel() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="border-t border-neutral-700 p-4 flex flex-col gap-2.5">
+          <form
+          onSubmit={handleSubmit}
+          className="border-t border-neutral-700 p-5 flex flex-col gap-3"
+        >
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-xs font-semibold text-neutral-300">New Connection</h3>
             <button
               type="button"
-              onClick={() => { setShowForm(false); setFormError(""); }}
+              onClick={() => {
+                setShowForm(false);
+                setFormError("");
+              }}
               className="text-neutral-400 hover:text-neutral-200 cursor-pointer"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>
@@ -225,7 +257,7 @@ export default function SSHPanel() {
       )}
 
       {!showForm && connections.length > 0 && (
-        <div className="border-t border-neutral-700 p-3">
+        <div className="border-t border-neutral-700 p-4">
           <button
             onClick={() => setShowForm(true)}
             className="w-full h-8 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 text-sm rounded-md cursor-pointer transition-colors"

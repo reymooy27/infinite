@@ -1,7 +1,10 @@
+"use client";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useRef, useState, cloneElement } from "react";
 import { Rnd } from "react-rnd";
-import { useWindowStore as useStore } from "../stores/useWindowStore";
-import { canvasTransform } from "../lib/canvasTransform";
+import { useWindowStore } from "@/stores/useWindowStore";
+import { canvasTransform } from "@/lib/canvasTransform";
 
 const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
@@ -17,6 +20,16 @@ const RESIZE_CONFIG = {
   top: true,
 };
 
+interface WindowFrameProps {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+  defaultX?: number;
+  defaultY?: number;
+  defaultWidth?: number;
+  defaultHeight?: number;
+}
+
 export default function WindowFrame({
   id,
   title,
@@ -25,30 +38,28 @@ export default function WindowFrame({
   defaultY = 50,
   defaultWidth = 400,
   defaultHeight = 300,
-}) {
-  const win = useStore((s) => s.windows.find((w) => w.id === id));
-  const closeWindow = useStore((s) => s.closeWindow);
-  const updateWindowPosition = useStore((s) => s.updateWindowPosition);
-  const focusTargetId = useStore((s) => s.focusTargetId);
-  const minimizeWindow = useStore((s) => s.minimizeWindow);
-  const maximizeWindow = useStore((s) => s.maximizeWindow);
-  const bringToFront = useStore((s) => s.bringToFront);
-  const focusWindow = useStore((s) => s.focusWindow);
-  const setDragging = useStore((s) => s.setDragging);
-  const clearDragging = useStore((s) => s.clearDragging);
+}: WindowFrameProps) {
+  const win = useWindowStore((s) => s.windows.find((w) => w.id === id));
+  const closeWindow = useWindowStore((s) => s.closeWindow);
+  const focusTargetId = useWindowStore((s) => s.focusTargetId);
+  const minimizeWindow = useWindowStore((s) => s.minimizeWindow);
+  const maximizeWindow = useWindowStore((s) => s.maximizeWindow);
+  const bringToFront = useWindowStore((s) => s.bringToFront);
+  const setDragging = useWindowStore((s) => s.setDragging);
+  const clearDragging = useWindowStore((s) => s.clearDragging);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const frameRef = useRef(null);
+  const frameRef = useRef<any>(null);
 
   const z = win?.z ?? 1;
-  const scale = canvasTransform.current?.state?.scale ?? 1;
+  const scale = (canvasTransform.current as any)?.state?.scale ?? 1;
   const isActive = focusTargetId === id;
   const isMaximized = win?.maximized;
   const isMinimized = win?.minimized;
 
   const getViewBounds = useCallback(() => {
-    const inst = canvasTransform.current;
+    const inst = canvasTransform.current as any;
     if (!inst) return { x: 0, y: 0, width: 1000, height: 800 };
     const wrapper = inst.wrapperComponent;
     if (!wrapper) return { x: 0, y: 0, width: 1000, height: 800 };
@@ -69,42 +80,50 @@ export default function WindowFrame({
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
     setDragging(id);
-    focusWindow(id);
     bringToFront(id);
-  }, [id, bringToFront, setDragging, focusWindow]);
+    // Disable canvas panning while dragging window
+    const inst = canvasTransform.current as any;
+    if (inst?.setup?.panning) inst.setup.panning.disabled = true;
+  }, [id, bringToFront, setDragging]);
 
   const handleDragStop = useCallback(
-    (e, d) => {
+    (_e: any, _d: any) => {
       setIsDragging(false);
-      focusWindow(id);
       if (isMaximized) return;
-      updateWindowPosition(id, d.x, d.y, d.width, d.height);
       setTimeout(() => clearDragging(), 50);
+      // Re-enable canvas panning after window drag
+      const inst = canvasTransform.current as any;
+      if (inst?.setup?.panning) inst.setup.panning.disabled = false;
     },
-    [id, updateWindowPosition, clearDragging, focusWindow, isMaximized],
+    [clearDragging, isMaximized],
   );
 
   const handleResizeStop = useCallback(
-    (e, dir, ref, d) => {
+    (_e: any, _dir: any, _ref: any, _d: any) => {
       setIsResizing(false);
-      updateWindowPosition(id, d.x, d.y, d.width, d.height);
       setTimeout(() => clearDragging(), 50);
+      // Re-enable canvas panning after resize
+      const inst = canvasTransform.current as any;
+      if (inst?.setup?.panning) inst.setup.panning.disabled = false;
     },
-    [id, updateWindowPosition, clearDragging],
+    [clearDragging],
   );
 
   const handleResizeStart = useCallback(() => {
     setIsResizing(true);
     setDragging(id);
     bringToFront(id);
+    // Disable canvas panning while resizing window
+    const inst = canvasTransform.current as any;
+    if (inst?.setup?.panning) inst.setup.panning.disabled = true;
   }, [id, bringToFront, setDragging]);
 
-  const handleHeaderPointerDown = useCallback((e) => {
+  const handleHeaderPointerDown = useCallback((e: any) => {
     e.stopPropagation();
   }, []);
 
   const handleDoubleClick = useCallback(
-    (e) => {
+    (e: any) => {
       e.stopPropagation();
       maximizeWindow(id);
     },
@@ -112,11 +131,10 @@ export default function WindowFrame({
   );
 
   const handleWindowPointerDown = useCallback(() => {
-    focusWindow(id);
     bringToFront(id);
-  }, [id, focusWindow, bringToFront]);
+  }, [id, bringToFront]);
 
-  const handleContentDoubleClick = useCallback((e) => {
+  const handleContentDoubleClick = useCallback((e: any) => {
     e.stopPropagation();
   }, []);
 
@@ -134,7 +152,7 @@ export default function WindowFrame({
   const headerButtons = (
     <div className="flex items-center ml-auto gap-0">
       <button
-        onClick={(e) => {
+        onClick={(e: any) => {
           e.stopPropagation();
           minimizeWindow(id);
         }}
@@ -146,7 +164,7 @@ export default function WindowFrame({
         </svg>
       </button>
       <button
-        onClick={(e) => {
+        onClick={(e: any) => {
           e.stopPropagation();
           maximizeWindow(id);
         }}
@@ -154,45 +172,25 @@ export default function WindowFrame({
         title={isMaximized ? "Restore" : "Maximize"}
       >
         {isMaximized ? (
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2">
             <rect x="2" y="3" width="5" height="5" rx="0.5" />
             <path d="M3 3V1.5a1 1 0 011-1h4.5a1 1 0 011 1V6" />
           </svg>
         ) : (
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2">
             <rect x="0.5" y="0.5" width="9" height="9" rx="1" />
           </svg>
         )}
       </button>
       <button
-        onClick={(e) => {
+        onClick={(e: any) => {
           e.stopPropagation();
           closeWindow(id);
         }}
         className="w-11 h-8 flex items-center justify-center hover:bg-red-600 text-neutral-400 hover:text-white transition-colors cursor-pointer"
         title="Close"
       >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        >
+        <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.5">
           <path d="M0 0L10 10M10 0L0 10" />
         </svg>
       </button>
@@ -220,7 +218,7 @@ export default function WindowFrame({
           className={`window-drag-handle flex items-center h-8 px-3 ${headerBg} border-b border-neutral-700 select-none shrink-0`}
           onPointerDown={handleHeaderPointerDown}
           onDoubleClick={handleDoubleClick}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e: any) => e.stopPropagation()}
         >
           <span className="text-sm text-neutral-300 font-medium truncate flex-1">
             {title}
@@ -231,9 +229,9 @@ export default function WindowFrame({
           className="flex-1 overflow-auto text-neutral-200 h-full"
           onPointerDown={handleWindowPointerDown}
           onDoubleClick={handleContentDoubleClick}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e: any) => e.stopPropagation()}
         >
-          {cloneElement(children, { windowId: id })}
+          {cloneElement(children as any, { windowId: id })}
         </div>
       </Rnd>
     );
@@ -253,7 +251,7 @@ export default function WindowFrame({
       style={{ zIndex: z }}
       scale={scale}
       dragHandleClassName="window-drag-handle"
-      disableDragging={isActive}
+      disableDragging={false}
       enableResizing={isActive ? false : RESIZE_CONFIG}
       onDragStart={handleDragStart}
       onDragStop={handleDragStop}
@@ -265,7 +263,7 @@ export default function WindowFrame({
         className={`window-drag-handle flex items-center h-8 px-3 ${headerBg} border-b border-neutral-700 cursor-grab select-none shrink-0 active:cursor-grabbing active:bg-neutral-700`}
         onPointerDown={handleHeaderPointerDown}
         onDoubleClick={handleDoubleClick}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: any) => e.stopPropagation()}
       >
         <span className="text-sm text-neutral-300 font-medium truncate flex-1">
           {title}
@@ -276,9 +274,9 @@ export default function WindowFrame({
         className="flex-1 overflow-auto text-neutral-200 h-full"
         onPointerDown={handleWindowPointerDown}
         onDoubleClick={handleContentDoubleClick}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: any) => e.stopPropagation()}
       >
-        {cloneElement(children, { windowId: id })}
+        {cloneElement(children as any, { windowId: id })}
       </div>
     </Rnd>
   );

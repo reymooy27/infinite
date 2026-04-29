@@ -1,8 +1,16 @@
 import { create } from "zustand";
+import type { SSHConnection, CreateConnectionInput } from "@/types";
 
-const API_URL = `http://${window.location.hostname}:3001/api/connections`;
+interface SSHState {
+  connections: SSHConnection[];
+  loading: boolean;
+  error: string | null;
+  fetchConnections: () => Promise<void>;
+  createConnection: (conn: CreateConnectionInput) => Promise<SSHConnection>;
+  deleteConnection: (id: number) => Promise<void>;
+}
 
-const useSSHStore = create((set) => ({
+export const useSSHStore = create<SSHState>((set, get) => ({
   connections: [],
   loading: false,
   error: null,
@@ -10,19 +18,19 @@ const useSSHStore = create((set) => ({
   fetchConnections: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await fetch(API_URL);
+      const res = await fetch("/api/connections");
       if (!res.ok) throw new Error("Failed to fetch connections");
       const data = await res.json();
       set({ connections: data, loading: false });
     } catch (err) {
-      set({ error: err.message, loading: false });
+      set({ error: (err as Error).message, loading: false });
     }
   },
 
   createConnection: async (conn) => {
     set({ loading: true, error: null });
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch("/api/connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(conn),
@@ -35,21 +43,19 @@ const useSSHStore = create((set) => ({
       }));
       return data;
     } catch (err) {
-      set({ error: err.message, loading: false });
+      set({ error: (err as Error).message, loading: false });
       throw err;
     }
   },
 
   deleteConnection: async (id) => {
     try {
-      await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+      await fetch(`/api/connections/${id}`, { method: "DELETE" });
       set((state) => ({
         connections: state.connections.filter((c) => c.id !== id),
       }));
     } catch (err) {
-      set({ error: err.message });
+      set({ error: (err as Error).message });
     }
   },
 }));
-
-export default useSSHStore;

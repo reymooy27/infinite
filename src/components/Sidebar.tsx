@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import SSHPanel from "./SSHPanel";
 
@@ -15,9 +17,9 @@ const MENU_ITEMS = [
 ];
 
 export default function Sidebar() {
-  const [activePanel, setActivePanel] = useState(null);
+  const [activePanel, setActivePanel] = useState<string | null>(null);
 
-  const togglePanel = (id) => {
+  const togglePanel = (id: string) => {
     setActivePanel((prev) => (prev === id ? null : id));
   };
 
@@ -41,7 +43,7 @@ export default function Sidebar() {
       </div>
 
       {activePanel === "ssh" && (
-        <div className="ml-2 w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl overflow-hidden">
+        <div className="ml-3 w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700">
             <h2 className="text-sm font-semibold text-neutral-200">SSH Connections</h2>
             <button
