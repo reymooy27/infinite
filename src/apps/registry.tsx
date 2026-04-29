@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useMemo } from "react";
+import { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -125,6 +125,205 @@ const SimTerminal = () => {
         />
       </div>
       <div ref={endRef} />
+    </div>
+  );
+};
+
+const Browser = () => {
+  const [url, setUrl] = useState("");
+  const [inputUrl, setInputUrl] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [navHistory, setNavHistory] = useState<string[]>([]);
+  const [histIdx, setHistIdx] = useState(-1);
+  const [navKey, setNavKey] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const wsPort = process.env.NEXT_PUBLIC_WS_PORT || "8000";
+
+  const proxyUrl = useMemo(() => {
+    if (!url) return "";
+    return `http://localhost:${wsPort}/proxy?url=${encodeURIComponent(url)}`;
+  }, [url, wsPort]);
+
+  const navigate = useCallback((target: string) => {
+    let formatted = target.trim();
+    if (!formatted) return;
+    if (!/^https?:\/\//i.test(formatted)) {
+      formatted = `https://${formatted}`;
+    }
+    setNavHistory((prev) => {
+      const truncated = prev.slice(0, histIdx + 1);
+      const next = [...truncated, formatted];
+      setHistIdx(next.length - 1);
+      return next;
+    });
+    setUrl(formatted);
+    setInputUrl(formatted);
+    setIsLoading(true);
+    setNavKey((k) => k + 1);
+  }, [histIdx]);
+
+  const goBack = useCallback(() => {
+    if (histIdx <= 0) return;
+    const newIdx = histIdx - 1;
+    setHistIdx(newIdx);
+    const historyUrl = navHistory[newIdx];
+    setUrl(historyUrl);
+    setInputUrl(historyUrl);
+    setIsLoading(true);
+    setNavKey((k) => k + 1);
+  }, [histIdx, navHistory]);
+
+  const goForward = useCallback(() => {
+    if (histIdx >= navHistory.length - 1) return;
+    const newIdx = histIdx + 1;
+    setHistIdx(newIdx);
+    const historyUrl = navHistory[newIdx];
+    setUrl(historyUrl);
+    setInputUrl(historyUrl);
+    setIsLoading(true);
+    setNavKey((k) => k + 1);
+  }, [histIdx, navHistory]);
+
+  const handleRefresh = useCallback(() => {
+    if (!url) return;
+    setIsLoading(true);
+    setNavKey((k) => k + 1);
+  }, [url]);
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      navigate(inputUrl);
+    },
+    [inputUrl, navigate],
+  );
+
+  const handleIframeLoad = useCallback(() => {
+    setIsLoading(false);
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full bg-neutral-900">
+      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-neutral-800 bg-neutral-900">
+        <button
+          onClick={goBack}
+          disabled={histIdx <= 0}
+          className={`w-7 h-7 flex items-center justify-center rounded text-sm transition-colors ${
+            histIdx > 0
+              ? "text-neutral-300 hover:bg-neutral-700 cursor-pointer"
+              : "text-neutral-600 cursor-default"
+          }`}
+          title="Back"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15,18 9,12 15,6" />
+          </svg>
+        </button>
+        <button
+          onClick={goForward}
+          disabled={histIdx >= navHistory.length - 1}
+          className={`w-7 h-7 flex items-center justify-center rounded text-sm transition-colors ${
+            histIdx < navHistory.length - 1
+              ? "text-neutral-300 hover:bg-neutral-700 cursor-pointer"
+              : "text-neutral-600 cursor-default"
+          }`}
+          title="Forward"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9,18 15,12 9,6" />
+          </svg>
+        </button>
+        <button
+          onClick={handleRefresh}
+          className="w-7 h-7 flex items-center justify-center rounded text-neutral-300 hover:bg-neutral-700 cursor-pointer transition-colors text-sm"
+          title="Refresh"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="1,4 1,10 7,10" />
+            <polyline points="23,20 23,14 17,14" />
+            <path d="M20.49,9A9,9,0,0,0,5.64,5.64L1,10" />
+            <path d="M3.51,15A9,9,0,0,0,18.36,18.36L23,14" />
+          </svg>
+        </button>
+        <form onSubmit={handleSubmit} className="flex-1 flex">
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputUrl}
+            onChange={(e) => setInputUrl(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            placeholder="Search or enter URL..."
+            className="w-full px-2.5 py-1 bg-neutral-800 text-neutral-200 text-xs rounded-md outline-none border border-neutral-700 focus:border-blue-500 focus:bg-neutral-800 transition-colors font-mono"
+            spellCheck={false}
+          />
+        </form>
+        {url && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-7 h-7 flex items-center justify-center rounded text-neutral-300 hover:bg-neutral-700 cursor-pointer transition-colors"
+            title="Open in new tab"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18,13v6a2,2,0,0,1-2,2H5a2,2,0,0,1-2-2V8A2,2,0,0,1,5,6h6" />
+              <polyline points="15,3 21,3 21,9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+          </a>
+        )}
+      </div>
+      <div className="flex-1 relative bg-white">
+        {!url ? (
+          <div className="flex items-center justify-center h-full bg-neutral-800">
+            <div className="text-center">
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="mx-auto mb-3 text-neutral-600"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <path d="M12,2a15.3,15.3,0,0,1,4,10,15.3,15.3,0,0,1-4,10" />
+                <path d="M12,2a15.3,15.3,0,0,0-4,10,15.3,15.3,0,0,0,4,10" />
+              </svg>
+              <p className="text-neutral-500 text-xs">Enter a URL above to start browsing</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-neutral-100 z-10">
+                <svg
+                  className="animate-spin h-5 w-5 text-blue-500"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.2" />
+                  <path d="M12,2a10,10,0,1,0,10,10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              </div>
+            )}
+            <iframe
+              key={navKey}
+              ref={iframeRef}
+              src={proxyUrl}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              className="w-full h-full border-none"
+              onLoad={handleIframeLoad}
+              title="Browser"
+            />
+          </>
+        )}
+      </div>
     </div>
   );
 };
@@ -294,6 +493,17 @@ export const registry: Record<AppId, AppDefinition> = {
     }>,
     defaultWidth: 380,
     defaultHeight: 350,
+  },
+  browser: {
+    id: "browser",
+    title: "Browser",
+    icon: "🌐",
+    component: Browser as React.ComponentType<{
+      connectionId?: number;
+      windowId?: string;
+    }>,
+    defaultWidth: 1024,
+    defaultHeight: 700,
   },
   ssh: {
     id: "ssh",

@@ -1,4 +1,4 @@
-export type AppId = "code-editor" | "terminal" | "notes" | "ssh";
+export type AppId = "code-editor" | "terminal" | "notes" | "ssh" | "browser";
 
 export interface SSHConnection {
   id: number;
