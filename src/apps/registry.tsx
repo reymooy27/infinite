@@ -275,11 +275,18 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
 
   const navigate = useCallback(
     (target: string) => {
-      let formatted = target.trim();
-      if (!formatted) return;
-      if (!/^https?:\/\//i.test(formatted)) {
-        formatted = `https://${formatted}`;
+      const trimmed = target.trim();
+      if (!trimmed) return;
+
+      let formatted: string;
+      if (/^https?:\/\//i.test(trimmed)) {
+        formatted = trimmed;
+      } else if (/^[\w-]+\.[\w-]+/.test(trimmed) && !/\s/.test(trimmed)) {
+        formatted = `https://${trimmed}`;
+      } else {
+        formatted = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
       }
+
       setNavHistory((prev) => {
         const truncated = prev.slice(0, histIdx + 1);
         const next = [...truncated, formatted];
