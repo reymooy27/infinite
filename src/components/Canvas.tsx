@@ -350,10 +350,10 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
                 {children}
               </div>
             </TransformComponent>
-            <div className="absolute bottom-4 left-4 z-[9999] flex items-center gap-1 px-2 py-1.5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg shadow-xl text-xs">
+            <div className="absolute bottom-4 left-4 z-[9999] flex items-center gap-1 px-2 py-1.5 sm:px-2 sm:py-1.5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg shadow-xl text-xs">
               <button
                 onClick={() => zoomOut()}
-                className="w-7 h-7 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                className="w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
                 title="Zoom out"
               >
                 <svg
@@ -371,14 +371,14 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 onClick={() => resetTransform()}
-                className="min-w-[52px] h-7 flex items-center justify-center px-1.5 rounded hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-[11px] transition-colors cursor-pointer"
+                className="min-w-[52px] h-8 sm:h-7 flex items-center justify-center px-1.5 rounded hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-[11px] transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
                 title="Reset zoom"
               >
                 {Math.round(zoomScale * 100)}%
               </button>
               <button
                 onClick={() => zoomIn()}
-                className="w-7 h-7 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                className="w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
                 title="Zoom in"
               >
                 <svg
@@ -423,7 +423,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           onClick={(e) => e.stopPropagation()}
         >
           <div
-            className="bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl w-96 max-h-[80vh] overflow-hidden"
+            className="bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl w-[calc(100vw-32px)] sm:w-96 max-h-[80vh] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700">

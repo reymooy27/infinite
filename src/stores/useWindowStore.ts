@@ -30,11 +30,11 @@ interface WindowState {
 }
 
 const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
-  "code-editor": { width: 550, height: 400 },
-  terminal: { width: 500, height: 320 },
-  notes: { width: 380, height: 350 },
-  ssh: { width: 600, height: 400 },
-  browser: { width: 1024, height: 768 },
+  "code-editor": { width: 400, height: 300 },
+  terminal: { width: 400, height: 280 },
+  notes: { width: 320, height: 300 },
+  ssh: { width: 400, height: 350 },
+  browser: { width: 800, height: 600 },
 };
 
 let windowCounter = 0;

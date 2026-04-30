@@ -8,6 +8,8 @@ import { canvasTransform } from "@/lib/canvasTransform";
 
 const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
+const LONG_PRESS_DURATION = 200;
+const DRAG_THRESHOLD = 5;
 
 const RESIZE_CONFIG = {
   bottomRight: true,
@@ -51,6 +53,10 @@ export default function WindowFrame({
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const frameRef = useRef<any>(null);
+  const pointerDownTime = useRef<number>(0);
+  const pointerDownPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isLongPress = useRef(false);
+  const isDraggingRef = useRef(false);
 
   const z = win?.z ?? 1;
   const scale = (canvasTransform.current as any)?.state?.scale ?? 1;
@@ -77,11 +83,18 @@ export default function WindowFrame({
     };
   }, []);
 
-  const handleDragStart = useCallback(() => {
+  const handleDragStart = useCallback((e: any, _d: any) => {
+    const elapsed = Date.now() - pointerDownTime.current;
+    const dx = e.clientX - pointerDownPos.current.x;
+    const dy = e.clientY - pointerDownPos.current.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (elapsed < LONG_PRESS_DURATION && distance < DRAG_THRESHOLD) {
+      return;
+    }
+    isDraggingRef.current = true;
     setIsDragging(true);
     setDragging(id);
     bringToFront(id);
-    // Disable canvas panning while dragging window
     const inst = canvasTransform.current as any;
     if (inst?.setup?.panning) inst.setup.panning.disabled = true;
   }, [id, bringToFront, setDragging]);
@@ -89,9 +102,9 @@ export default function WindowFrame({
   const handleDragStop = useCallback(
     (_e: any, _d: any) => {
       setIsDragging(false);
+      isDraggingRef.current = false;
       if (isMaximized) return;
       setTimeout(() => clearDragging(), 50);
-      // Re-enable canvas panning after window drag
       const inst = canvasTransform.current as any;
       if (inst?.setup?.panning) inst.setup.panning.disabled = false;
     },
@@ -120,6 +133,10 @@ export default function WindowFrame({
 
   const handleHeaderPointerDown = useCallback((e: any) => {
     e.stopPropagation();
+    pointerDownTime.current = Date.now();
+    pointerDownPos.current = { x: e.clientX, y: e.clientY };
+    isLongPress.current = false;
+    isDraggingRef.current = false;
   }, []);
 
   const handleDoubleClick = useCallback(
@@ -150,13 +167,13 @@ export default function WindowFrame({
   const headerBg = isActive ? "bg-neutral-800" : "bg-neutral-800/80";
 
   const headerButtons = (
-    <div className="flex items-center ml-auto gap-0">
+    <div className="flex items-center ml-auto gap-0 touch-manipulation">
       <button
         onClick={(e: any) => {
           e.stopPropagation();
           minimizeWindow(id);
         }}
-        className="w-11 h-8 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+        className="w-11 h-8 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
         title="Minimize"
       >
         <svg width="10" height="1" viewBox="0 0 10 1">
@@ -168,7 +185,7 @@ export default function WindowFrame({
           e.stopPropagation();
           maximizeWindow(id);
         }}
-        className="w-11 h-8 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+        className="w-11 h-8 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
         title={isMaximized ? "Restore" : "Maximize"}
       >
         {isMaximized ? (
@@ -187,7 +204,7 @@ export default function WindowFrame({
           e.stopPropagation();
           closeWindow(id);
         }}
-        className="w-11 h-8 flex items-center justify-center hover:bg-red-600 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+        className="w-11 h-8 flex items-center justify-center hover:bg-red-600 text-neutral-400 hover:text-white transition-colors cursor-pointer active:bg-red-500 touch-manipulation"
         title="Close"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.5">
