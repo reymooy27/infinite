@@ -169,6 +169,9 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const wsUrl = useMemo(() => {
     const configured = process.env.NEXT_PUBLIC_WS_URL;
     if (configured) {
+      if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
+        return `${configured}/ws/browser?width=${width}&height=${height}`;
+      }
       const proto = configured.startsWith("https") ? "wss:" : "ws:";
       const base = configured.replace(/^https?:\/\//, "");
       return `${proto}//${base}/ws/browser?width=${width}&height=${height}`;
@@ -722,6 +725,9 @@ const SSHTerminal = ({ connectionId }: { connectionId?: number }) => {
     if (!connectionId) return null;
     const configured = process.env.NEXT_PUBLIC_WS_URL;
     if (configured) {
+      if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
+        return `${configured}/ws/ssh?connectionId=${connectionId}`;
+      }
       const proto = configured.startsWith("https") ? "wss:" : "ws:";
       const base = configured.replace(/^https?:\/\//, "");
       return `${proto}//${base}/ws/ssh?connectionId=${connectionId}`;

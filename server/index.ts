@@ -7,6 +7,7 @@ import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
 import { createSSHSocket } from "./lib/ssh.js";
+import { createBrowserSession } from "./lib/browser.js";
 import { logger } from "./lib/logger.js";
 
 const app = express();
@@ -35,7 +36,7 @@ server.on("upgrade", (req: IncomingMessage, socket, head) => {
   const pathname = req.url ? new URL(req.url, "http://localhost").pathname : "";
   logger.info(`[WS] Upgrade request for ${pathname}`);
 
-  if (pathname === "/ws/ssh") {
+  if (pathname === "/ws/ssh" || pathname === "/ws/browser") {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });
@@ -48,6 +49,16 @@ server.on("upgrade", (req: IncomingMessage, socket, head) => {
 wss.on("connection", async (ws, req) => {
   const rawUrl = req.url || "";
   const u = new URL(rawUrl, "http://localhost");
+  const pathname = u.pathname;
+
+  if (pathname === "/ws/browser") {
+    logger.info(`[WS] New browser session`);
+    const viewportW = parseInt(u.searchParams.get("width") || "1024", 10);
+    const viewportH = parseInt(u.searchParams.get("height") || "768", 10);
+    createBrowserSession(ws, viewportW, viewportH);
+    return;
+  }
+
   const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
 
   logger.info(`[WS] New SSH connection attempt, connectionId: ${connId}`);
