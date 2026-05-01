@@ -16,7 +16,7 @@
   "dependencies": {
     "@gsap/react": "^2.1.2",
     "@prisma/adapter-pg": "^7.8.0",
-    "@prisma/client": "^6.0.0",
+    "@prisma/client": "^7.8.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",
     "@xterm/addon-web-links": "^0.12.0",
@@ -50,7 +50,7 @@
     "eslint": "^10.2.1",
     "eslint-config-next": "^16.2.4",
     "postcss": "^8.5.12",
-    "prisma": "^6.0.0",
+    "prisma": "^7.8.0",
     "tailwindcss": "^4.2.4",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
