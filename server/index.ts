@@ -7,7 +7,6 @@ import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma";
 import { decrypt } from "./lib/crypto";
 import { createSSHSocket } from "./lib/ssh";
-import { createBrowserSession } from "./lib/browser";
 
 const app = express();
 const server = createServer(app);
@@ -15,6 +14,10 @@ const wss = new WebSocketServer({ noServer: true });
 
 app.use(cors());
 app.use(express.json());
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
 
 interface ConnectionRow {
   id: number;
@@ -33,10 +36,6 @@ server.on("upgrade", (req: IncomingMessage, socket, head) => {
   if (pathname === "/ws/ssh") {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
-    });
-  } else if (pathname === "/ws/browser") {
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      handleBrowserConnection(ws, req);
     });
   } else {
     socket.destroy();
@@ -99,17 +98,6 @@ wss.on("connection", async (ws, req) => {
 
   createSSHSocket(connection, ws as Parameters<typeof createSSHSocket>[1]);
 });
-
-function handleBrowserConnection(
-  ws: Parameters<typeof createBrowserSession>[0],
-  req: IncomingMessage,
-) {
-  const rawUrl = req.url || "";
-  const u = new URL(rawUrl, "http://localhost");
-  const viewportW = parseInt(u.searchParams.get("width") || "1024", 10);
-  const viewportH = parseInt(u.searchParams.get("height") || "768", 10);
-  createBrowserSession(ws, viewportW, viewportH);
-}
 
 const PORT = process.env.WS_PORT || 3001;
 server.listen(PORT, () => {

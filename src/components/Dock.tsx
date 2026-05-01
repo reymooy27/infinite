@@ -4,7 +4,7 @@ import registry from "@/apps/registry";
 import { useWindowStore } from "@/stores/useWindowStore";
 import type { AppId } from "@/types";
 
-const DOCK_APPS: AppId[] = ["code-editor", "terminal", "notes", "browser", "ssh"];
+const DOCK_APPS: AppId[] = ["notes", "browser", "ssh"];
 
 export default function Dock() {
   const windows = useWindowStore((s) => s.windows);

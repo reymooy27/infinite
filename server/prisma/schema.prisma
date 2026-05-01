@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Connection {
+  id                  Int      @id @default(autoincrement())
+  name                String
+  host                String
+  port                Int      @default(22)
+  username            String
+  authType            String   @default("password") @map("auth_type")
+  passwordEncrypted   String?  @map("password_encrypted")
+  privateKeyEncrypted String?  @map("private_key_encrypted")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@map("connections")
+}

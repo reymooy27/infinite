@@ -53,7 +53,7 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <div className="fixed top-4 left-4 sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 sm:top-auto z-[9999] flex items-start sm:items-end gap-0">
+    <div className="fixed top-4 left-4 sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 sm:top-auto z-[10000] flex items-start sm:items-end gap-0">
       <div className="flex flex-col gap-1 bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl p-1.5 sm:hidden">
         {MENU_ITEMS.map((item) => (
           <button
@@ -89,9 +89,9 @@ export default function Sidebar() {
       </div>
 
       {activePanel === "ssh" && (
-        <div
+<div
           ref={sheetRef}
-          className="fixed sm:absolute bottom-0 sm:bottom-auto left-0 sm:left-auto right-0 sm:right-auto sm:ml-3 sm:mt-0 w-full sm:w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:max-h-[60vh] max-h-[70vh] flex flex-col transition-transform touch-none"
+          className="fixed bottom-0 sm:bottom-auto left-0 sm:left-auto right-0 sm:right-auto sm:ml-3 sm:mt-0 w-full sm:w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:max-h-[60vh] max-h-[70vh] flex flex-col transition-transform touch-none z-[10000]"
           style={{ transform: "translateY(0)" }}
         >
           <div

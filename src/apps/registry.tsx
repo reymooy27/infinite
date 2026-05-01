@@ -166,7 +166,12 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(700);
 
-  const wsPort = process.env.NEXT_PUBLIC_WS_PORT || "8000";
+  const wsUrl = useMemo(() => {
+    const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${window.location.protocol}//${window.location.hostname}:3001`;
+    const proto = wsBase.startsWith("wss") || wsBase.startsWith("https") ? "wss:" : "ws:";
+    const base = wsBase.replace(/^wss?:\/\//, "");
+    return `${proto}//${base}/ws/browser?width=${width}&height=${height}`;
+  }, [width, height]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -204,10 +209,6 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const connect = useCallback(
     (targetUrl: string) => {
       disconnect();
-
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${proto}//${window.location.hostname}:${wsPort}/ws/browser?width=${width}&height=${height}`;
-
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -270,7 +271,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
         setIsLoading(false);
       };
     },
-    [disconnect, wsPort, width, height],
+    [disconnect, wsUrl, width, height],
   );
 
   const navigate = useCallback(
@@ -715,9 +716,10 @@ const SSHTerminal = ({ connectionId }: { connectionId?: number }) => {
   const [status, setStatus] = useState<string>("connecting");
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsPort = process.env.NEXT_PUBLIC_WS_PORT || "3001";
-    return `${proto}//${window.location.hostname}:${wsPort}/ws/ssh?connectionId=${connectionId}`;
+    const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${window.location.protocol}//${window.location.hostname}:3001`;
+    const proto = wsBase.startsWith("wss") ? "wss:" : wsBase.startsWith("https") ? "wss:" : "ws:";
+    const base = wsBase.replace(/^wss?:\/\//, "");
+    return `${proto}//${base}/ws/ssh?connectionId=${connectionId}`;
   }, [connectionId]);
 
   useEffect(() => {
