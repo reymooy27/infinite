@@ -174,7 +174,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
       return `${proto}//${base}/ws/browser?width=${width}&height=${height}`;
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}:3001/ws/browser?width=${width}&height=${height}`;
+    return `${proto}//${window.location.hostname}:3001/ws/browser?width=${width}&height=${height}`;
   }, [width, height]);
 
   useEffect(() => {
@@ -727,7 +727,7 @@ const SSHTerminal = ({ connectionId }: { connectionId?: number }) => {
       return `${proto}//${base}/ws/ssh?connectionId=${connectionId}`;
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}:3001/ws/ssh?connectionId=${connectionId}`;
+    return `${proto}//${window.location.hostname}:3001/ws/ssh?connectionId=${connectionId}`;
   }, [connectionId]);
 
   useEffect(() => {
