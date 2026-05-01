@@ -1,4 +1,5 @@
 import { Client, ClientChannel } from "ssh2";
+import { logger } from "./logger.js";
 
 const ERR_UNHANDLED = "ERR_UNHANDLED_ERROR";
 
@@ -45,6 +46,12 @@ export function createSSHSocket(
     on: (event: string, cb: (msg: unknown) => void) => void;
   },
 ) {
+  logger.info(`[SSH] Connecting to ${connection.host}:${connection.port} as ${connection.username}`, {
+    connectionId: connection.id,
+    name: connection.name,
+    authType: connection.authType
+  });
+
   const conn = new Client();
 
   const config: {
@@ -64,6 +71,7 @@ export function createSSHSocket(
   if (connection.authType === "key" && connection.privateKey) {
     const validation = validatePrivateKey(connection.privateKey);
     if (!validation.valid) {
+      logger.warn(`[SSH] Invalid private key for connection ${connection.id}`);
       ws.send(
         JSON.stringify({
           type: "error",
@@ -77,20 +85,22 @@ export function createSSHSocket(
   } else {
     config.password = connection.password;
   }
-  // Define a temporary store for dimensions if they arrive before the shell is ready
+
   let initialCols = 80;
   let initialRows = 24;
 
   conn.on("ready", () => {
+    logger.info(`[SSH] Shell ready for connection ${connection.id}`);
     ws.send(JSON.stringify({ type: "connected" }));
     const shellOptions = {
       term: "xterm-256color",
-      cols: initialCols, // Use the latest numbers received from WS
+      cols: initialCols,
       rows: initialRows,
     };
 
     conn.shell(shellOptions, (err: Error | null, stream: ClientChannel) => {
       if (err) {
+        logger.error(`[SSH] Shell error for connection ${connection.id}`, { error: err.message });
         ws.send(
           JSON.stringify({
             type: "error",
@@ -99,6 +109,8 @@ export function createSSHSocket(
         );
         return;
       }
+
+      logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
 
       stream.on("data", (data: Buffer) => {
         ws.send(
@@ -118,20 +130,21 @@ export function createSSHSocket(
           if (parsed.type === "data" && parsed.data) {
             stream.write(parsed.data);
           } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
-            console.log("setting window", parsed.cols, parsed.rows);
             stream.setWindow(parsed.rows, parsed.cols, 0, 0);
           }
         } catch {
-          /* ignore malformed messages */
+          logger.debug(`[SSH] Malformed message from connection ${connection.id}`);
         }
       });
 
       stream.on("close", () => {
+        logger.info(`[SSH] Shell stream closed for connection ${connection.id}`);
         ws.send(JSON.stringify({ type: "disconnected" }));
         ws.close();
       });
 
       ws.on("close", () => {
+        logger.info(`[SSH] WebSocket closed for connection ${connection.id}`);
         stream.close();
         conn.end();
       });
@@ -139,13 +152,26 @@ export function createSSHSocket(
   });
 
   conn.on("error", (err: Error & { code?: string }) => {
+    logger.error(`[SSH] Connection error for ${connection.id}`, {
+      error: err.message,
+      code: err.code
+    });
     ws.send(JSON.stringify({ type: "error", message: err.message }));
   });
 
+  conn.on("close", () => {
+    logger.info(`[SSH] Connection closed for ${connection.id}`);
+  });
+
   try {
+    logger.debug(`[SSH] Initiating connection to ${connection.host}:${connection.port}`);
     conn.connect(config);
   } catch (err: unknown) {
     const error = err as Error & { code?: string };
+    logger.error(`[SSH] Connect failed for ${connection.id}`, {
+      error: error.message,
+      code: error.code
+    });
     if (error.code === ERR_UNHANDLED) {
       ws.send(
         JSON.stringify({
@@ -153,10 +179,9 @@ export function createSSHSocket(
           message: "Invalid private key format",
         }),
       );
-      ws.close();
-      return null;
+    } else {
+      ws.send(JSON.stringify({ type: "error", message: error.message }));
     }
-    ws.send(JSON.stringify({ type: "error", message: error.message }));
     ws.close();
     return null;
   }
