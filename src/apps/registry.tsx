@@ -167,10 +167,14 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [height, setHeight] = useState(700);
 
   const wsUrl = useMemo(() => {
-    const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${window.location.protocol}//${window.location.hostname}:3001`;
-    const proto = wsBase.startsWith("wss") || wsBase.startsWith("https") ? "wss:" : "ws:";
-    const base = wsBase.replace(/^wss?:\/\//, "");
-    return `${proto}//${base}/ws/browser?width=${width}&height=${height}`;
+    const configured = process.env.NEXT_PUBLIC_WS_URL;
+    if (configured) {
+      const proto = configured.startsWith("https") ? "wss:" : "ws:";
+      const base = configured.replace(/^https?:\/\//, "");
+      return `${proto}//${base}/ws/browser?width=${width}&height=${height}`;
+    }
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}:3001/ws/browser?width=${width}&height=${height}`;
   }, [width, height]);
 
   useEffect(() => {
@@ -716,10 +720,14 @@ const SSHTerminal = ({ connectionId }: { connectionId?: number }) => {
   const [status, setStatus] = useState<string>("connecting");
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
-    const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${window.location.protocol}//${window.location.hostname}:3001`;
-    const proto = wsBase.startsWith("wss") ? "wss:" : wsBase.startsWith("https") ? "wss:" : "ws:";
-    const base = wsBase.replace(/^wss?:\/\//, "");
-    return `${proto}//${base}/ws/ssh?connectionId=${connectionId}`;
+    const configured = process.env.NEXT_PUBLIC_WS_URL;
+    if (configured) {
+      const proto = configured.startsWith("https") ? "wss:" : "ws:";
+      const base = configured.replace(/^https?:\/\//, "");
+      return `${proto}//${base}/ws/ssh?connectionId=${connectionId}`;
+    }
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}:3001/ws/ssh?connectionId=${connectionId}`;
   }, [connectionId]);
 
   useEffect(() => {
