@@ -1,26 +1,23 @@
-app = "infinite-server"
-primary_region = "sin"
-
-[build]
-dockerfile = "Dockerfile"
-
-[env]
-PORT = "3001"
-WS_PORT = "3001"
-
 [http_service]
-internal_port = 3001
-force_https = false
-auto_stop_machines = true
-auto_start_machines = true
-min_machines_running = 1
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
 
 [[services]]
-internal_port = 3001
-protocol = "tcp"
+  internal_port = 3001
+  protocol = "tcp"
 
+  # Handle Standard HTTP (Port 80) -> Redirects to 443
   [[services.ports]]
-    port = 3001
+    handlers = ["http"]
+    port = 80
+
+  # Handle Secure WebSockets/HTTPS (Port 443) -> Maps to 3001
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
 
   [services.tcp_checks]
     interval = "10s"
