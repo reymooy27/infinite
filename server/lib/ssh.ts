@@ -21,6 +21,20 @@ interface WebSocketMessage {
   rows?: number;
 }
 
+interface ActiveSession {
+  conn: Client;
+  stream: ClientChannel;
+  ws?: {
+    send: (data: string) => void;
+    close: () => void;
+    on: (event: string, cb: (msg: unknown) => void) => void;
+  };
+  cleanupTimer?: ReturnType<typeof setTimeout>;
+}
+
+const sessions = new Map<string, ActiveSession>();
+const SESSION_TIMEOUT = 1000 * 60 * 30; // 30 minutes
+
 function validatePrivateKey(keyStr: string): {
   valid: boolean;
   error?: string;
@@ -45,11 +59,56 @@ export function createSSHSocket(
     close: () => void;
     on: (event: string, cb: (msg: unknown) => void) => void;
   },
+  windowId?: string
 ) {
+  if (windowId && sessions.has(windowId)) {
+    const session = sessions.get(windowId)!;
+    logger.info(`[SSH] Re-attaching to session ${windowId}`);
+
+    if (session.cleanupTimer) {
+      clearTimeout(session.cleanupTimer);
+      session.cleanupTimer = undefined;
+    }
+
+    // Update the session's WebSocket
+    session.ws = ws;
+
+    // Send connected status immediately
+    ws.send(JSON.stringify({ type: "connected" }));
+
+    // Re-attach listeners
+    ws.on("message", (msg: unknown) => {
+      try {
+        const parsed = JSON.parse(msg as string) as WebSocketMessage;
+        if (parsed.type === "data" && parsed.data) {
+          session.stream.write(parsed.data);
+        } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
+          session.stream.setWindow(parsed.rows, parsed.cols, 0, 0);
+        }
+      } catch {
+        logger.debug(`[SSH] Malformed message from session ${windowId}`);
+      }
+    });
+
+    ws.on("close", () => {
+      logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
+      session.ws = undefined;
+      session.cleanupTimer = setTimeout(() => {
+        logger.info(`[SSH] Cleaning up idle session ${windowId}`);
+        session.stream.close();
+        session.conn.end();
+        sessions.delete(windowId);
+      }, SESSION_TIMEOUT);
+    });
+
+    return;
+  }
+
   logger.info(`[SSH] Connecting to ${connection.host}:${connection.port} as ${connection.username}`, {
     connectionId: connection.id,
     name: connection.name,
-    authType: connection.authType
+    authType: connection.authType,
+    windowId
   });
 
   const conn = new Client();
@@ -110,16 +169,19 @@ export function createSSHSocket(
         return;
       }
 
+      const session: ActiveSession = { conn, stream, ws };
+      if (windowId) sessions.set(windowId, session);
+
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
 
       stream.on("data", (data: Buffer) => {
-        ws.send(
+        session.ws?.send(
           JSON.stringify({ type: "data", data: data.toString("base64") }),
         );
       });
 
       stream.stderr.on("data", (data: Buffer) => {
-        ws.send(
+        session.ws?.send(
           JSON.stringify({ type: "data", data: data.toString("base64") }),
         );
       });
@@ -139,14 +201,26 @@ export function createSSHSocket(
 
       stream.on("close", () => {
         logger.info(`[SSH] Shell stream closed for connection ${connection.id}`);
-        ws.send(JSON.stringify({ type: "disconnected" }));
-        ws.close();
+        session.ws?.send(JSON.stringify({ type: "disconnected" }));
+        session.ws?.close();
+        if (windowId) sessions.delete(windowId);
       });
 
       ws.on("close", () => {
-        logger.info(`[SSH] WebSocket closed for connection ${connection.id}`);
-        stream.close();
-        conn.end();
+        if (windowId) {
+          logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
+          session.ws = undefined;
+          session.cleanupTimer = setTimeout(() => {
+            logger.info(`[SSH] Cleaning up idle session ${windowId}`);
+            stream.close();
+            conn.end();
+            sessions.delete(windowId);
+          }, SESSION_TIMEOUT);
+        } else {
+          logger.info(`[SSH] WebSocket closed for ephemeral connection, ending...`);
+          stream.close();
+          conn.end();
+        }
       });
     });
   });
@@ -161,6 +235,7 @@ export function createSSHSocket(
 
   conn.on("close", () => {
     logger.info(`[SSH] Connection closed for ${connection.id}`);
+    if (windowId) sessions.delete(windowId);
   });
 
   try {

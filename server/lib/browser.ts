@@ -82,11 +82,105 @@ async function releaseBrowserRef() {
   }
 }
 
+interface ActiveBrowserSession {
+  page: Page;
+  ws?: WebSocket;
+  frameTimer?: ReturnType<typeof setInterval>;
+  activeTimer?: ReturnType<typeof setTimeout>;
+  cleanupTimer?: ReturnType<typeof setTimeout>;
+  width: number;
+  height: number;
+}
+
+const browserSessions = new Map<string, ActiveBrowserSession>();
+const BROWSER_SESSION_TIMEOUT = 1000 * 60 * 30; // 30 minutes
+
 export function createBrowserSession(
   ws: WebSocket,
   viewportWidth: number,
   viewportHeight: number,
+  windowId?: string
 ) {
+  if (windowId && browserSessions.has(windowId)) {
+    const session = browserSessions.get(windowId)!;
+    logger.info(`[Browser] Re-attaching to session ${windowId}`);
+
+    if (session.cleanupTimer) {
+      clearTimeout(session.cleanupTimer);
+      session.cleanupTimer = undefined;
+    }
+
+    session.ws = ws;
+
+    // Restart frame rate timer with new WS
+    const sendFrame = async () => {
+      if (!session.ws || !session.page) return;
+      try {
+        const loading = await session.page.evaluate(() => {
+          try {
+            return document.readyState !== "complete";
+          } catch {
+            return false;
+          }
+        }).catch(() => false);
+
+        if (loading) {
+          session.ws.send(JSON.stringify({ type: "loading", loading: true }));
+          return;
+        }
+
+        const frameData = await session.page.screenshot({
+          type: "jpeg",
+          quality: 55,
+          encoding: "base64",
+        });
+        session.ws.send(JSON.stringify({ type: "frame", data: frameData }));
+
+        const currentUrl = session.page.url();
+        if (
+          currentUrl &&
+          !currentUrl.startsWith("chrome://") &&
+          !currentUrl.startsWith("chrome-error://")
+        ) {
+          session.ws.send(JSON.stringify({ type: "url", url: currentUrl }));
+        }
+
+        const title = await session.page.title().catch(() => "");
+        if (title) {
+          session.ws.send(JSON.stringify({ type: "title", title }));
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    if (session.frameTimer) clearInterval(session.frameTimer);
+    session.frameTimer = setInterval(sendFrame, FRAME_INTERVAL_IDLE);
+
+    ws.on("message", (raw) => {
+      try {
+        const msg = JSON.parse(raw as string);
+        handleMessage(msg, session.page, ws, session);
+      } catch {
+        // ignore
+      }
+    });
+
+    ws.on("close", () => {
+      logger.info(`[Browser] WebSocket closed for session ${windowId}, detaching...`);
+      session.ws = undefined;
+      if (session.frameTimer) clearInterval(session.frameTimer);
+      session.cleanupTimer = setTimeout(async () => {
+        logger.info(`[Browser] Cleaning up idle session ${windowId}`);
+        await session.page.close().catch(() => {});
+        browserSessions.delete(windowId);
+        releaseBrowserRef();
+      }, BROWSER_SESSION_TIMEOUT);
+    });
+
+    return;
+  }
+
   let page: Page | null = null;
   let frameTimer: ReturnType<typeof setInterval> | null = null;
   let activeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -97,11 +191,13 @@ export function createBrowserSession(
   let ready = false;
   const pendingMessages: BrowserMessage[] = [];
 
+  const sessionObj: Partial<ActiveBrowserSession> = { width, height };
+
   function flushPending() {
     ready = true;
     const msgs = pendingMessages.splice(0);
     for (const m of msgs) {
-      handleMessage(m);
+      if (page) handleMessage(m, page, ws, sessionObj as ActiveBrowserSession);
     }
   }
 
@@ -121,10 +217,14 @@ export function createBrowserSession(
     }
     const interval = isActive ? FRAME_INTERVAL_ACTIVE : FRAME_INTERVAL_IDLE;
     frameTimer = setInterval(sendFrame, interval);
+    if (windowId && browserSessions.has(windowId)) {
+      browserSessions.get(windowId)!.frameTimer = frameTimer;
+    }
   }
 
   async function sendFrame() {
-    if (closed || !page) return;
+    const targetWs = windowId ? browserSessions.get(windowId)?.ws : ws;
+    if (closed || !page || !targetWs) return;
     try {
       const loading = await page.evaluate(() => {
         try {
@@ -135,7 +235,7 @@ export function createBrowserSession(
       }).catch(() => false);
 
       if (loading) {
-        ws.send(JSON.stringify({ type: "loading", loading: true }));
+        targetWs.send(JSON.stringify({ type: "loading", loading: true }));
         return;
       }
 
@@ -144,7 +244,7 @@ export function createBrowserSession(
         quality: 55,
         encoding: "base64",
       });
-      ws.send(JSON.stringify({ type: "frame", data: frameData }));
+      targetWs.send(JSON.stringify({ type: "frame", data: frameData }));
 
       const currentUrl = page.url();
       if (
@@ -152,12 +252,12 @@ export function createBrowserSession(
         !currentUrl.startsWith("chrome://") &&
         !currentUrl.startsWith("chrome-error://")
       ) {
-        ws.send(JSON.stringify({ type: "url", url: currentUrl }));
+        targetWs.send(JSON.stringify({ type: "url", url: currentUrl }));
       }
 
       const title = await page.title().catch(() => "");
       if (title) {
-        ws.send(JSON.stringify({ type: "title", title }));
+        targetWs.send(JSON.stringify({ type: "title", title }));
       }
     } catch {
       // Page may have closed; ignore frame errors
@@ -173,8 +273,18 @@ export function createBrowserSession(
       page = await browser.newPage();
       await page.setViewport({ width, height });
 
+      if (windowId) {
+        browserSessions.set(windowId, {
+          page,
+          ws,
+          width,
+          height,
+        });
+      }
+
       page.on("load", () => {
-        ws.send(JSON.stringify({ type: "loading", loading: false }));
+        const targetWs = windowId ? browserSessions.get(windowId)?.ws : ws;
+        targetWs?.send(JSON.stringify({ type: "loading", loading: false }));
         markActive();
       });
 
@@ -203,46 +313,46 @@ export function createBrowserSession(
       return;
     }
 
-    handleMessage(msg);
+    if (page) handleMessage(msg, page, ws, sessionObj as ActiveBrowserSession);
   });
 
-  async function handleMessage(msg: BrowserMessage) {
-    if (!page || closed) return;
+  async function handleMessage(msg: BrowserMessage, p: Page, w: WebSocket, session: ActiveBrowserSession) {
+    if (!p || closed) return;
 
     try {
       switch (msg.type) {
         case "navigate": {
           if (!msg.url) break;
-          ws.send(JSON.stringify({ type: "loading", loading: true }));
-          await page.goto(msg.url, {
+          w.send(JSON.stringify({ type: "loading", loading: true }));
+          await p.goto(msg.url, {
             waitUntil: "networkidle2",
             timeout: 30000,
           });
-          ws.send(JSON.stringify({ type: "loading", loading: false }));
+          w.send(JSON.stringify({ type: "loading", loading: false }));
           markActive();
           break;
         }
 
         case "goBack": {
-          ws.send(JSON.stringify({ type: "loading", loading: true }));
-          await page.goBack({ waitUntil: "networkidle2", timeout: 15000 });
-          ws.send(JSON.stringify({ type: "loading", loading: false }));
+          w.send(JSON.stringify({ type: "loading", loading: true }));
+          await p.goBack({ waitUntil: "networkidle2", timeout: 15000 });
+          w.send(JSON.stringify({ type: "loading", loading: false }));
           markActive();
           break;
         }
 
         case "goForward": {
-          ws.send(JSON.stringify({ type: "loading", loading: true }));
-          await page.goForward({ waitUntil: "networkidle2", timeout: 15000 });
-          ws.send(JSON.stringify({ type: "loading", loading: false }));
+          w.send(JSON.stringify({ type: "loading", loading: true }));
+          await p.goForward({ waitUntil: "networkidle2", timeout: 15000 });
+          w.send(JSON.stringify({ type: "loading", loading: false }));
           markActive();
           break;
         }
 
         case "refresh": {
-          ws.send(JSON.stringify({ type: "loading", loading: true }));
-          await page.reload({ waitUntil: "networkidle2", timeout: 30000 });
-          ws.send(JSON.stringify({ type: "loading", loading: false }));
+          w.send(JSON.stringify({ type: "loading", loading: true }));
+          await p.reload({ waitUntil: "networkidle2", timeout: 30000 });
+          w.send(JSON.stringify({ type: "loading", loading: false }));
           markActive();
           break;
         }
@@ -251,7 +361,7 @@ export function createBrowserSession(
           const x = msg.x ?? 0;
           const y = msg.y ?? 0;
           const count = msg.clickCount ?? 1;
-          await page.mouse.click(x, y, { clickCount: count });
+          await p.mouse.click(x, y, { clickCount: count });
           markActive();
           break;
         }
@@ -260,9 +370,9 @@ export function createBrowserSession(
           const deltaX = msg.deltaX ?? 0;
           const deltaY = msg.deltaY ?? 0;
           if (msg.x !== undefined && msg.y !== undefined) {
-            await page.mouse.move(msg.x, msg.y);
+            await p.mouse.move(msg.x, msg.y);
           }
-          await page.mouse.wheel({
+          await p.mouse.wheel({
             deltaX,
             deltaY,
           });
@@ -272,27 +382,27 @@ export function createBrowserSession(
 
         case "keydown": {
           const keyName = codeToPuppeteerKey(msg.code || "", msg.key || "");
-          await page.keyboard.down(keyName);
+          await p.keyboard.down(keyName);
           break;
         }
 
         case "keyup": {
           const keyName = codeToPuppeteerKey(msg.code || "", msg.key || "");
-          await page.keyboard.up(keyName);
+          await p.keyboard.up(keyName);
           break;
         }
 
         case "resize": {
-          width = msg.width || width;
-          height = msg.height || height;
-          await page.setViewport({ width, height });
+          session.width = msg.width || session.width;
+          session.height = msg.height || session.height;
+          await p.setViewport({ width: session.width, height: session.height });
           markActive();
           break;
         }
 
         case "text": {
           if (msg.key) {
-            await page.keyboard.type(msg.key);
+            await p.keyboard.type(msg.key);
             markActive();
           }
           break;
@@ -301,30 +411,39 @@ export function createBrowserSession(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown error";
       logger.error("[Browser] Handle message error", { error: errMsg, type: msg.type });
-      ws.send(JSON.stringify({ type: "error", message: errMsg }));
+      w.send(JSON.stringify({ type: "error", message: errMsg }));
     }
   }
 
   ws.on("close", async () => {
-    logger.info("[Browser] Session closed");
-    closed = true;
-    if (frameTimer) clearInterval(frameTimer);
-    if (activeTimer) clearTimeout(activeTimer);
-    if (page) {
-      await page.close().catch(() => {});
-      page = null;
+    if (windowId) {
+      logger.info(`[Browser] WebSocket closed for session ${windowId}, detaching...`);
+      const session = browserSessions.get(windowId);
+      if (session) {
+        session.ws = undefined;
+        if (session.frameTimer) clearInterval(session.frameTimer);
+        session.cleanupTimer = setTimeout(async () => {
+          logger.info(`[Browser] Cleaning up idle session ${windowId}`);
+          await session.page.close().catch(() => {});
+          browserSessions.delete(windowId);
+          releaseBrowserRef();
+        }, BROWSER_SESSION_TIMEOUT);
+      }
+    } else {
+      logger.info("[Browser] Session closed (ephemeral)");
+      closed = true;
+      if (frameTimer) clearInterval(frameTimer);
+      if (activeTimer) clearTimeout(activeTimer);
+      if (page) {
+        await page.close().catch(() => {});
+        page = null;
+      }
+      releaseBrowserRef();
     }
-    releaseBrowserRef();
   });
 
   ws.on("error", async () => {
-    closed = true;
-    if (frameTimer) clearInterval(frameTimer);
-    if (activeTimer) clearTimeout(activeTimer);
-    if (page) {
-      await page.close().catch(() => {});
-      page = null;
-    }
-    releaseBrowserRef();
+    // Same as close
+    ws.emit("close");
   });
 }

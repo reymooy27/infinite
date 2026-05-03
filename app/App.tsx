@@ -13,6 +13,11 @@ import registry from "@/apps/registry";
 export default function App() {
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
+  const loadLayout = useWindowStore((s) => s.loadLayout);
+
+  useEffect(() => {
+    loadLayout();
+  }, [loadLayout]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {

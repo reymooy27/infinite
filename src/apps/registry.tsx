@@ -178,20 +178,21 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [histIdx, setHistIdx] = useState(-1);
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(700);
+  const [retryKey, setRetryKey] = useState(0);
 
   const wsUrl = useMemo(() => {
     const configured = process.env.NEXT_PUBLIC_WS_URL;
     if (configured) {
       if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
-        return `${configured}/ws/browser?width=${width}&height=${height}`;
+        return `${configured}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}`;
       }
       const proto = configured.startsWith("https") ? "wss:" : "ws:";
       const base = configured.replace(/^https?:\/\//, "");
-      return `${proto}//${base}/ws/browser?width=${width}&height=${height}`;
+      return `${proto}//${base}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}`;
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:3001/ws/browser?width=${width}&height=${height}`;
-  }, [width, height]);
+    return `${proto}//${window.location.hostname}:3001/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}`;
+  }, [width, height, windowId, retryKey]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -657,9 +658,17 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
                 <path d="M12,2a15.3,15.3,0,0,1,4,10,15.3,15.3,0,0,1-4,10" />
                 <path d="M12,2a15.3,15.3,0,0,0-4,10,15.3,15.3,0,0,0,4,10" />
               </svg>
-              <p className="text-neutral-500 text-xs">
+              <p className="text-neutral-500 text-xs mb-4">
                 Enter a URL above to start browsing
               </p>
+              {windowId && wsStatus === "disconnected" && (
+                <button 
+                  onClick={() => setRetryKey(k => k + 1)}
+                  className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-white text-xs rounded transition-colors"
+                >
+                  Reconnect Session
+                </button>
+              )}
             </div>
           </div>
         ) : error ? (
@@ -682,14 +691,22 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
               </svg>
               <p className="text-neutral-300 text-sm mb-1">Failed to load page</p>
               <p className="text-neutral-500 text-xs mb-3">{error}</p>
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-md cursor-pointer transition-colors"
-              >
-                Open in new tab
-              </a>
+              <div className="flex items-center justify-center gap-2">
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-md cursor-pointer transition-colors"
+                >
+                  Open in new tab
+                </a>
+                <button 
+                  onClick={() => setRetryKey(k => k + 1)}
+                  className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-white text-xs rounded transition-colors"
+                >
+                  Reconnect
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -763,20 +780,22 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
   const termInstanceRef = useRef<XTerminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<string>("connecting");
+  const [retryKey, setRetryKey] = useState(0);
+
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
     const configured = process.env.NEXT_PUBLIC_WS_URL;
     if (configured) {
       if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
-        return `${configured}/ws/ssh?connectionId=${connectionId}`;
+        return `${configured}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
       }
       const proto = configured.startsWith("https") ? "wss:" : "ws:";
       const base = configured.replace(/^https?:\/\//, "");
-      return `${proto}//${base}/ws/ssh?connectionId=${connectionId}`;
+      return `${proto}//${base}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:3001/ws/ssh?connectionId=${connectionId}`;
-  }, [connectionId]);
+    return `${proto}//${window.location.hostname}:3001/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
+  }, [connectionId, windowId, retryKey]);
 
   useEffect(() => {
     const handleScrollEvent = (e: any) => {
@@ -851,7 +870,7 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
           }
           term.write(bytes);
         } else if (msg.type === "error") {
-          term.write(`rn${msg.message}rn`);
+          term.write(`\r\n${msg.message}\r\n`);
         }
       } catch {
         term.write(e.data);
@@ -879,6 +898,7 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
       observer.disconnect();
       ws.close();
       term.dispose();
+      termInstanceRef.current = null;
     };
   }, [wsUrl]);
 
@@ -886,15 +906,31 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
     <div className="relative w-full h-full pt-2 px-2 pb-12 bg-[#0a0a0a]">
       <div ref={terminalRef} className="w-full h-full" />
       {status !== "connected" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-white text-sm">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white text-sm z-50">
           {status === "connecting" && (
             <span className="text-neutral-400">Connecting...</span>
           )}
           {status === "error" && (
-            <span className="text-red-400">Connection error</span>
+            <div className="text-center">
+              <p className="text-red-400 mb-4">Connection error</p>
+              <button 
+                onClick={() => setRetryKey(k => k + 1)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md transition-colors text-xs"
+              >
+                Reconnect
+              </button>
+            </div>
           )}
           {status === "disconnected" && (
-            <span className="text-neutral-400">Disconnected</span>
+            <div className="text-center">
+              <p className="text-neutral-400 mb-4">Disconnected</p>
+              <button 
+                onClick={() => setRetryKey(k => k + 1)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md transition-colors text-xs"
+              >
+                Reconnect
+              </button>
+            </div>
           )}
         </div>
       )}

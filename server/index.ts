@@ -52,16 +52,18 @@ wss.on("connection", async (ws, req) => {
   const pathname = u.pathname;
 
   if (pathname === "/ws/browser") {
-    logger.info(`[WS] New browser session`);
+    const windowId = u.searchParams.get("windowId") || "";
+    logger.info(`[WS] New browser session, windowId: ${windowId}`);
     const viewportW = parseInt(u.searchParams.get("width") || "1024", 10);
     const viewportH = parseInt(u.searchParams.get("height") || "768", 10);
-    createBrowserSession(ws, viewportW, viewportH);
+    createBrowserSession(ws, viewportW, viewportH, windowId);
     return;
   }
 
   const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
+  const windowId = u.searchParams.get("windowId") || "";
 
-  logger.info(`[WS] New SSH connection attempt, connectionId: ${connId}`);
+  logger.info(`[WS] New SSH connection attempt, connectionId: ${connId}, windowId: ${windowId}`);
 
   if (!connId) {
     logger.warn(`[WS] Connection rejected: missing connectionId`);
@@ -136,7 +138,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   logger.info(`[WS] SSH connection established: ${connection.name} (${connection.host})`);
-  createSSHSocket(connection, ws as Parameters<typeof createSSHSocket>[1]);
+  createSSHSocket(connection, ws as Parameters<typeof createSSHSocket>[1], windowId);
 });
 
 wss.on("error", (err) => {

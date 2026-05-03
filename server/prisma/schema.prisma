@@ -19,3 +19,11 @@ model Connection {
 
   @@map("connections")
 }
+
+model Layout {
+  id        Int      @id @default(1)
+  data      Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("layouts")
+}

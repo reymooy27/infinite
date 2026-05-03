@@ -27,6 +27,8 @@ interface WindowState {
   restoreWindow: (id: string) => void;
   maximizeWindow: (id: string) => void;
   focusLastWindow: () => void;
+  loadLayout: () => Promise<void>;
+  saveLayout: () => Promise<void>;
 }
 
 const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
@@ -48,7 +50,10 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   minimizedWindows: [],
 
   setDragging: (id) => set({ draggingId: id }),
-  clearDragging: () => set({ draggingId: null }),
+  clearDragging: () => {
+    set({ draggingId: null });
+    get().saveLayout();
+  },
 
   setPlacingApp: (appId) => set({ placingAppId: appId }),
   clearPlacing: () => set({ placingAppId: null }),
@@ -62,7 +67,8 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   },
 
   openApp: (appId, x = Math.random() * 400 + 100, y = Math.random() * 300 + 100, metadata) => {
-    const id = `window-${++windowCounter}`;
+    // Generate a unique numeric ID for the session
+    const id = `window-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const { width, height } = DEFAULT_DIMENSIONS[appId];
     const topZ = get().topZ + 1;
     set((state) => ({
@@ -73,12 +79,14 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       topZ,
       placingAppId: null,
     }));
+    get().saveLayout();
   },
 
   closeWindow: (id) => {
     set((state) => ({
       windows: state.windows.filter((w) => w.id !== id),
     }));
+    get().saveLayout();
   },
 
   bringToFront: (id) => {
@@ -89,6 +97,8 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       ),
       topZ,
     }));
+    // We don't necessarily need to save layout on every focus, but maybe on z-order changes
+    get().saveLayout();
   },
 
   focusWindow: (id) => {
@@ -105,6 +115,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       ),
       minimizedWindows: [...state.minimizedWindows, id],
     }));
+    get().saveLayout();
   },
 
   restoreWindow: (id) => {
@@ -114,6 +125,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       ),
       minimizedWindows: state.minimizedWindows.filter((wId) => wId !== id),
     }));
+    get().saveLayout();
   },
 
   maximizeWindow: (id) => {
@@ -130,10 +142,39 @@ export const useWindowStore = create<WindowState>((set, get) => ({
         };
       }),
     }));
+    get().saveLayout();
   },
 
   focusLastWindow: () => {
     const last = get().windows.filter((w) => !w.minimized).at(-1);
     if (last) get().focusWindow(last.id);
+  },
+
+  loadLayout: async () => {
+    try {
+      const res = await fetch("/api/layout");
+      const data = await res.json();
+      if (data.windows) {
+        set({ 
+          windows: data.windows,
+          topZ: Math.max(0, ...data.windows.map((w: any) => w.z || 0))
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load layout", err);
+    }
+  },
+
+  saveLayout: async () => {
+    try {
+      const { windows } = get();
+      await fetch("/api/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ windows }),
+      });
+    } catch (err) {
+      console.error("Failed to save layout", err);
+    }
   },
 }));
