@@ -53,10 +53,27 @@ export default function WindowFrame({
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const frameRef = useRef<any>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const pointerDownTime = useRef<number>(0);
   const pointerDownPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isLongPress = useRef(false);
   const isDraggingRef = useRef(false);
+
+  const handleScroll = useCallback((direction: "up" | "down") => {
+    const amount = direction === "up" ? -150 : 150;
+    
+    // Dispatch a custom event that components can listen to
+    const event = new CustomEvent(`app-scroll-${id}`, { 
+      detail: { amount, direction } 
+    });
+    window.dispatchEvent(event);
+
+    // Manual fallback for standard scrollable elements
+    if (contentRef.current) {
+      const targets = contentRef.current.querySelectorAll('.overflow-auto, .xterm-viewport');
+      targets.forEach(t => t.scrollBy({ top: amount, behavior: 'smooth' }));
+    }
+  }, [id]);
 
   const z = win?.z ?? 1;
   const scale = (canvasTransform.current as any)?.state?.scale ?? 1;
@@ -167,13 +184,17 @@ export default function WindowFrame({
   const headerBg = isActive ? "bg-neutral-800" : "bg-neutral-800/80";
 
   const headerButtons = (
-    <div className="flex items-center ml-auto gap-0 touch-manipulation">
+    <div 
+      className="flex items-center ml-auto gap-0 touch-manipulation"
+      onPointerDown={(e: any) => e.stopPropagation()}
+    >
       <button
+        onPointerDown={(e: any) => e.stopPropagation()}
         onClick={(e: any) => {
           e.stopPropagation();
           minimizeWindow(id);
         }}
-        className="w-11 h-8 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
+        className="w-12 h-10 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
         title="Minimize"
       >
         <svg width="10" height="1" viewBox="0 0 10 1">
@@ -181,11 +202,12 @@ export default function WindowFrame({
         </svg>
       </button>
       <button
+        onPointerDown={(e: any) => e.stopPropagation()}
         onClick={(e: any) => {
           e.stopPropagation();
           maximizeWindow(id);
         }}
-        className="w-11 h-8 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
+        className="w-12 h-10 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
         title={isMaximized ? "Restore" : "Maximize"}
       >
         {isMaximized ? (
@@ -200,11 +222,12 @@ export default function WindowFrame({
         )}
       </button>
       <button
+        onPointerDown={(e: any) => e.stopPropagation()}
         onClick={(e: any) => {
           e.stopPropagation();
           closeWindow(id);
         }}
-        className="w-11 h-8 flex items-center justify-center hover:bg-red-600 text-neutral-400 hover:text-white transition-colors cursor-pointer active:bg-red-500 touch-manipulation"
+        className="w-12 h-10 flex items-center justify-center hover:bg-red-600 text-neutral-400 hover:text-white transition-colors cursor-pointer active:bg-red-500 touch-manipulation"
         title="Close"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.5">
@@ -232,23 +255,58 @@ export default function WindowFrame({
         className={`flex flex-col overflow-hidden bg-neutral-900 border transition-[border-color,box-shadow] duration-150 ${activeClass}`}
       >
         <div
-          className={`window-drag-handle flex items-center h-8 px-3 ${headerBg} border-b border-neutral-700 select-none shrink-0`}
+          className={`window-drag-handle flex items-center h-10 px-3 ${headerBg} border-b border-neutral-700 select-none shrink-0`}
           onPointerDown={handleHeaderPointerDown}
           onDoubleClick={handleDoubleClick}
           onClick={(e: any) => e.stopPropagation()}
         >
-          <span className="text-sm text-neutral-300 font-medium truncate flex-1">
+          <span className="text-sm text-neutral-300 font-medium truncate pr-32">
             {title}
           </span>
+        </div>
+
+        {/* Floating buttons outside of drag handle */}
+        <div 
+          className="absolute top-0 right-0 h-10 flex items-center z-[60]"
+          onPointerDown={(e: any) => e.stopPropagation()}
+        >
           {headerButtons}
         </div>
+
         <div
-          className="flex-1 overflow-auto text-neutral-200 h-full"
-          onPointerDown={handleWindowPointerDown}
+          ref={contentRef}
+          className="flex-1 min-h-0 w-full overflow-hidden text-neutral-200 pb-16 h-full touch-auto"
+          onPointerDown={(e: any) => {
+            handleWindowPointerDown();
+            e.stopPropagation();
+          }}
           onDoubleClick={handleContentDoubleClick}
           onClick={(e: any) => e.stopPropagation()}
         >
           {cloneElement(children as any, { windowId: id })}
+        </div>
+
+        {/* Floating scroll buttons for mobile - Right edge */}
+        <div 
+          className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-[100]"
+          onPointerDown={(e: any) => e.stopPropagation()}
+        >
+          <button 
+            onPointerDown={(e: any) => { e.stopPropagation(); handleScroll('up'); }}
+            className="w-12 h-12 rounded-full bg-neutral-800/80 border border-neutral-700 flex items-center justify-center text-white active:bg-neutral-600 shadow-2xl backdrop-blur-sm"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="18 15 12 9 6 15"></polyline>
+            </svg>
+          </button>
+          <button 
+            onPointerDown={(e: any) => { e.stopPropagation(); handleScroll('down'); }}
+            className="w-12 h-12 rounded-full bg-neutral-800/80 border border-neutral-700 flex items-center justify-center text-white active:bg-neutral-600 shadow-2xl backdrop-blur-sm"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
         </div>
       </Rnd>
     );
@@ -269,32 +327,88 @@ export default function WindowFrame({
       scale={scale}
       dragHandleClassName="window-drag-handle"
       disableDragging={false}
-      enableResizing={isActive ? false : RESIZE_CONFIG}
+      enableResizing={RESIZE_CONFIG}
+      resizeHandleStyles={{
+        bottom: { height: "20px", bottom: "-10px" },
+        right: { width: "20px", right: "-10px" },
+        bottomRight: { width: "30px", height: "30px", right: "-15px", bottom: "-15px" },
+        bottomLeft: { width: "30px", height: "30px", left: "-15px", bottom: "-15px" },
+        topRight: { width: "30px", height: "30px", right: "-15px", top: "-15px" },
+        topLeft: { width: "30px", height: "30px", left: "-15px", top: "-15px" },
+      }}
       onDragStart={handleDragStart}
       onDragStop={handleDragStop}
       onResizeStart={handleResizeStart}
       onResizeStop={handleResizeStop}
-      className={`flex flex-col rounded-lg overflow-hidden bg-neutral-900 border transition-[border-color,box-shadow] duration-150 ${activeClass}`}
+      className={`flex flex-col rounded-lg bg-neutral-900 border transition-[border-color,box-shadow] duration-150 ${activeClass}`}
     >
       <div
-        className={`window-drag-handle flex items-center h-8 px-3 ${headerBg} border-b border-neutral-700 cursor-grab select-none shrink-0 active:cursor-grabbing active:bg-neutral-700`}
+        className={`window-drag-handle flex items-center h-10 px-3 ${headerBg} border-b border-neutral-700 cursor-grab select-none shrink-0 active:cursor-grabbing active:bg-neutral-700 touch-none`}
         onPointerDown={handleHeaderPointerDown}
         onDoubleClick={handleDoubleClick}
         onClick={(e: any) => e.stopPropagation()}
       >
-        <span className="text-sm text-neutral-300 font-medium truncate flex-1">
+        <div className="flex flex-col gap-1 mr-2 opacity-40">
+          <div className="w-4 h-0.5 bg-neutral-400 rounded-full" />
+          <div className="w-4 h-0.5 bg-neutral-400 rounded-full" />
+        </div>
+        <span className="text-sm text-neutral-300 font-medium truncate pr-32">
           {title}
         </span>
+      </div>
+
+      {/* Floating buttons outside of drag handle */}
+      <div 
+        className="absolute top-0 right-0 h-10 flex items-center z-[60]"
+        onPointerDown={(e: any) => e.stopPropagation()}
+      >
         {headerButtons}
       </div>
+
       <div
-        className="flex-1 overflow-auto text-neutral-200 h-full"
-        onPointerDown={handleWindowPointerDown}
+        ref={contentRef}
+        className="flex-1 min-h-0 w-full overflow-hidden text-neutral-200 pb-16 h-full"
+        onPointerDown={(e: any) => {
+          handleWindowPointerDown();
+          e.stopPropagation();
+        }}
         onDoubleClick={handleContentDoubleClick}
         onClick={(e: any) => e.stopPropagation()}
       >
         {cloneElement(children as any, { windowId: id })}
       </div>
+
+      {/* Visual resize handle for mobile */}
+      <div className="absolute bottom-1 right-1 w-4 h-4 pointer-events-none opacity-30">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="20" y1="12" x2="12" y2="20" />
+          <line x1="20" y1="18" x2="18" y2="20" />
+        </svg>
+      </div>
+
+      {/* Scroll Helper Buttons for Mobile - Floating to the right */}
+      <div 
+        className="absolute -right-14 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-[100]"
+        onPointerDown={(e: any) => e.stopPropagation()}
+      >
+        <button 
+          onPointerDown={(e: any) => { e.stopPropagation(); handleScroll('up'); }}
+          className="w-12 h-12 rounded-full bg-neutral-800/80 border border-neutral-700 flex items-center justify-center text-white active:bg-neutral-600 shadow-2xl backdrop-blur-sm"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="18 15 12 9 6 15"></polyline>
+          </svg>
+        </button>
+        <button 
+          onPointerDown={(e: any) => { e.stopPropagation(); handleScroll('down'); }}
+          className="w-12 h-12 rounded-full bg-neutral-800/80 border border-neutral-700 flex items-center justify-center text-white active:bg-neutral-600 shadow-2xl backdrop-blur-sm"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+      </div>
     </Rnd>
-  );
+    );
+
 }

@@ -11,7 +11,7 @@ export default function App() {
   const windows = useWindowStore((s) => s.windows);
 
   return (
-    <div className="h-screen bg-neutral-950 overflow-hidden relative select-none">
+    <div className="h-[100dvh] bg-neutral-950 overflow-hidden relative select-none touch-none">
       <Canvas>
         {windows
           .filter((w) => !w.minimized)

@@ -1,0 +1,16 @@
+[Unit]
+Description=Infinite Project (Next.js + Node.js)
+After=network.target
+
+[Service]
+Type=simple
+User=rey
+WorkingDirectory=/home/rey/project/infinite
+ExecStart=/home/rey/project/infinite/run.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/rey/project/infinite/startup.log
+StandardError=append:/home/rey/project/infinite/startup.log
+
+[Install]
+WantedBy=multi-user.target

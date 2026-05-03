@@ -31,7 +31,7 @@ const CodeEditor = () => {
   );
 };
 
-const SimTerminal = () => {
+const SimTerminal = ({ windowId }: { windowId?: string }) => {
   const [history, setHistory] = useState<string[]>([
     "$ neofetch",
     "   ┌──────────────────────────┐",
@@ -47,8 +47,21 @@ const SimTerminal = () => {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView();
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [history]);
+
+  useEffect(() => {
+    const handleScrollEvent = (e: any) => {
+      const container = endRef.current?.parentElement;
+      if (container) {
+        const { amount } = e.detail;
+        container.scrollBy({ top: amount, behavior: "smooth" });
+      }
+    };
+
+    window.addEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+    return () => window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+  }, [windowId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -103,7 +116,7 @@ const SimTerminal = () => {
 
   return (
     <div
-      className="flex flex-col h-full bg-black text-green-400 p-3 font-mono text-sm cursor-text"
+      className="flex flex-col h-full bg-black text-green-400 pt-3 px-3 pb-12 font-mono text-sm cursor-text"
       onClick={() => inputRef.current?.focus()}
     >
       <div className="flex-1 overflow-auto">
@@ -385,6 +398,34 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     },
     [width, height],
   );
+
+  useEffect(() => {
+    const handleScrollEvent = (e: any) => {
+      if (!wsRef.current) return;
+      const { amount } = e.detail;
+      
+      // Use center of viewport for scrolling
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const { x, y } = getViewportCoords(centerX, centerY);
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "wheel",
+          deltaX: 0,
+          deltaY: amount,
+          x,
+          y,
+        }),
+      );
+    };
+
+    window.addEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+    return () => window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+  }, [windowId, getViewportCoords]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -717,8 +758,9 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   );
 };
 
-const SSHTerminal = ({ connectionId }: { connectionId?: number }) => {
+const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; windowId?: string }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
+  const termInstanceRef = useRef<XTerminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<string>("connecting");
   const wsUrl = useMemo(() => {
@@ -737,6 +779,22 @@ const SSHTerminal = ({ connectionId }: { connectionId?: number }) => {
   }, [connectionId]);
 
   useEffect(() => {
+    const handleScrollEvent = (e: any) => {
+      if (termInstanceRef.current) {
+        const { direction } = e.detail;
+        if (direction === "up") {
+          termInstanceRef.current.scrollLines(-5);
+        } else {
+          termInstanceRef.current.scrollLines(5);
+        }
+      }
+    };
+
+    window.addEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+    return () => window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+  }, [windowId]);
+
+  useEffect(() => {
     if (!terminalRef.current || !wsUrl) return;
 
     const term = new XTerminal({
@@ -750,6 +808,7 @@ const SSHTerminal = ({ connectionId }: { connectionId?: number }) => {
       allowProposedApi: true,
       cursorBlink: true,
     });
+    termInstanceRef.current = term;
 
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -824,7 +883,7 @@ const SSHTerminal = ({ connectionId }: { connectionId?: number }) => {
   }, [wsUrl]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full pt-2 px-2 pb-12 bg-[#0a0a0a]">
       <div ref={terminalRef} className="w-full h-full" />
       {status !== "connected" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-white text-sm">
