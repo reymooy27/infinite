@@ -905,6 +905,9 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
   return (
     <div className="relative w-full h-full pt-2 px-2 pb-12 bg-[#0a0a0a]">
       <div ref={terminalRef} className="w-full h-full" />
+      <div className="absolute bottom-2 left-2 text-xs text-neutral-500">
+        terminal {windowId} | conn {connectionId} | status: {status}
+      </div>
       {status !== "connected" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white text-sm z-50">
           {status === "connecting" && (

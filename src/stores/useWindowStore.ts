@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AppId, WindowData } from "@/types";
+import { canvasTransform } from "@/lib/canvasTransform";
 
 interface WindowState {
   windows: WindowData[];
@@ -129,6 +130,13 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   },
 
   maximizeWindow: (id) => {
+    const win = get().windows.find((w) => w.id === id);
+    const isMaximizing = !win?.maximized;
+    
+    if (isMaximizing) {
+      canvasTransform.resetZoom();
+    }
+    
     set((state) => ({
       windows: state.windows.map((w) => {
         if (w.id !== id) return w;

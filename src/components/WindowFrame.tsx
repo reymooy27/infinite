@@ -80,6 +80,7 @@ export default function WindowFrame({
   const isActive = focusTargetId === id;
   const isMaximized = win?.maximized;
   const isMinimized = win?.minimized;
+  const maxZ = useWindowStore((s) => Math.max(...s.windows.map((w) => w.z), 0));
 
   const getViewBounds = useCallback(() => {
     const inst = canvasTransform.current as any;
@@ -238,24 +239,21 @@ export default function WindowFrame({
   );
 
   if (isMaximized) {
-    const bounds = getViewBounds();
+    const isTopWindow = z >= maxZ;
     return (
-      <Rnd
-        ref={frameRef}
-        position={{ x: bounds.x, y: bounds.y }}
-        size={{ width: bounds.width, height: bounds.height }}
-        disableDragging
-        enableResizing={false}
-        style={{ zIndex: z }}
-        scale={scale}
-        onDragStart={handleDragStart}
-        onDragStop={handleDragStop}
-        onResizeStart={handleResizeStart}
-        onResizeStop={handleResizeStop}
-        className={`flex flex-col overflow-hidden bg-neutral-900 border transition-[border-color,box-shadow] duration-150 ${activeClass}`}
+      <div
+        style={{ 
+          zIndex: isTopWindow ? 10001 : z,
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+        }}
+        className={`flex flex-col overflow-hidden bg-neutral-900 ${isTopWindow ? "ring-1 ring-neutral-700" : ""}`}
       >
         <div
-          className={`window-drag-handle flex items-center h-10 px-3 ${headerBg} border-b border-neutral-700 select-none shrink-0`}
+          className={`flex items-center h-10 px-3 ${headerBg} border-b border-neutral-700 select-none shrink-0`}
           onPointerDown={handleHeaderPointerDown}
           onDoubleClick={handleDoubleClick}
           onClick={(e: any) => e.stopPropagation()}
@@ -275,7 +273,8 @@ export default function WindowFrame({
 
         <div
           ref={contentRef}
-          className="flex-1 min-h-0 w-full overflow-hidden text-neutral-200 pb-16 h-full touch-auto"
+          className="flex-1 min-h-0 w-full overflow-hidden text-neutral-200"
+          style={{ height: "calc(100vh - 40px)" }}
           onPointerDown={(e: any) => {
             handleWindowPointerDown();
             e.stopPropagation();
@@ -308,7 +307,7 @@ export default function WindowFrame({
             </svg>
           </button>
         </div>
-      </Rnd>
+      </div>
     );
   }
 
