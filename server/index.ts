@@ -136,7 +136,11 @@ wss.on("connection", async (ws, req) => {
   }
 
   logger.info(`[WS] SSH connection established: ${connection.name} (${connection.host})`);
-  createSSHSocket(connection, ws as Parameters<typeof createSSHSocket>[1]);
+  createSSHSocket(connection, ws as Parameters<typeof createSSHSocket>[1]).catch((err: unknown) => {
+    logger.error(`[WS] createSSHSocket failed for ${connId}`, {
+      error: err instanceof Error ? err.message : String(err)
+    });
+  });
 });
 
 wss.on("error", (err) => {

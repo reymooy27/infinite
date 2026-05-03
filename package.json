@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"next dev\" \"tsx watch server/index.ts\"",
+    "dev:proxy": "concurrently \"next dev\" \"tsx watch server/index.ts\" \"caddy run\"",
+    "dev:expose": "tailscale funnel 8080",
     "build": "prisma generate && next build",
     "start": "concurrently \"next start\" \"tsx server/index.ts\"",
     "lint": "next lint",
@@ -26,6 +28,7 @@
     "dotenv": "^17.0.0",
     "express": "^5.0.0",
     "gsap": "^3.12.0",
+    "http-proxy": "^1.18.1",
     "next": "^16.2.4",
     "pg": "^8.20.0",
     "puppeteer": "^24.42.0",

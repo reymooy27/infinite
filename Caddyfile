@@ -1,0 +1,7 @@
+:8080 {
+	reverse_proxy /ws/* localhost:3001 {
+		header_up Connection {>Connection}
+		header_up Upgrade {>Upgrade}
+	}
+	reverse_proxy /* localhost:3000
+}

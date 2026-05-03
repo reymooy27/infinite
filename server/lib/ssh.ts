@@ -1,7 +1,37 @@
-import { Client, ClientChannel } from "ssh2";
+import { Client, ClientChannel, ConnectConfig } from "ssh2";
+import { SocksClient } from "socks";
+import type { Socket as NodeSocket } from "net";
 import { logger } from "./logger.js";
 
 const ERR_UNHANDLED = "ERR_UNHANDLED_ERROR";
+
+const SOCKS_PROXY_HOST = "127.0.0.1";
+const SOCKS_PROXY_PORT = 1055;
+
+const TS_SUBNET = /^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./;
+
+function isTailscaleIP(host: string): boolean {
+  return TS_SUBNET.test(host);
+}
+
+async function createSocksSocket(
+  targetHost: string,
+  targetPort: number,
+): Promise<NodeJS.Socket> {
+  const { socket } = await SocksClient.createConnection({
+    proxy: {
+      host: SOCKS_PROXY_HOST,
+      port: SOCKS_PROXY_PORT,
+      type: 5,
+    },
+    command: "connect",
+    destination: {
+      host: targetHost,
+      port: targetPort,
+    },
+  });
+  return socket;
+}
 
 interface SSHConnection {
   id: number;
@@ -38,7 +68,7 @@ function validatePrivateKey(keyStr: string): {
   return { valid: true };
 }
 
-export function createSSHSocket(
+export async function createSSHSocket(
   connection: SSHConnection,
   ws: {
     send: (data: string) => void;
@@ -54,19 +84,26 @@ export function createSSHSocket(
 
   const conn = new Client();
 
-  const config: {
-    host: string;
-    port: number;
-    username: string;
-    readyTimeout: number;
-    password?: string;
-    privateKey?: string;
-  } = {
+  const config: ConnectConfig = {
     host: connection.host,
     port: connection.port || 22,
     username: connection.username,
-    readyTimeout: 15000,
+    readyTimeout: 30000,
   };
+
+  if (isTailscaleIP(connection.host)) {
+    try {
+      logger.info(`[SSH] Routing ${connection.host} through Tailscale SOCKS5 proxy`);
+      const socket = await createSocksSocket(connection.host, connection.port || 22);
+      config.sock = socket as unknown as ConnectConfig["sock"];
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`[SSH] SOCKS5 proxy connection failed for ${connection.id}`, { error: msg });
+      ws.send(JSON.stringify({ type: "error", message: `Tailscale proxy failed: ${msg}` }));
+      ws.close();
+      return null;
+    }
+  }
 
   if (connection.authType === "key" && connection.privateKey) {
     const validation = validatePrivateKey(connection.privateKey);

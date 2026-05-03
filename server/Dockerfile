@@ -1,6 +1,6 @@
 FROM node:20-slim
 
-# Install system dependencies for ssh2 + puppeteer (chromium)
+# Install system dependencies for ssh2 + puppeteer (chromium) + tailscale
 RUN apt-get update && apt-get install -y \
     # ssh2 deps
     openssl \
@@ -45,7 +45,20 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     wget \
     xdg-utils \
+    curl \
+    gnupg \
+    iptables \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Tailscale
+RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null \
+    && curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list >/dev/null \
+    && apt-get update \
+    && apt-get install -y tailscale \
+    && rm -rf /var/lib/apt/lists/*
+
+# Tailscale state directory (mounted from Fly volume)
+RUN mkdir -p /data
 
 WORKDIR /app
 
@@ -57,6 +70,11 @@ RUN npx prisma generate
 
 COPY . .
 
+# Make startup script executable
+RUN chmod +x start.sh
+
 EXPOSE 3001
 
-CMD ["npx", "tsx", "index.ts"]
+# /dev/net/tun needed by tailscale
+# --cap-add=NET_ADMIN + device mapping handled by fly.toml
+CMD ["./start.sh"]
