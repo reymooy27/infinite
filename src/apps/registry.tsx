@@ -823,7 +823,7 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
         cursor: "#e0e0e0",
       },
       fontSize: 13,
-      fontFamily: '"JetBrainsMono Nerd Font", "Courier New", monospace',
+      fontFamily: '"JetBrains Mono", "JetBrainsMono Nerd Font", monospace',
       allowProposedApi: true,
       cursorBlink: true,
     });
