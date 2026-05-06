@@ -161,6 +161,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hiddenInputRef = useRef<HTMLInputElement>(null);
   const lastClickRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
   const frameCountRef = useRef(0);
   const clickRippleRef = useRef<{ x: number; y: number; id: number } | null>(null);
@@ -176,6 +177,8 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [error, setError] = useState<string | null>(null);
   const [navHistory, setNavHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
+  const [showMobileKeyboard, setShowMobileKeyboard] = useState(false);
+  const isMovingRef = useRef(false);
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(700);
   const [retryKey, setRetryKey] = useState(0);
@@ -227,8 +230,14 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     return () => disconnect();
   }, [disconnect]);
 
+  useEffect(() => {
+    if (retryKey > 0 || (url && !isConnected && !error)) {
+      connect();
+    }
+  }, [wsUrl, retryKey]);
+
   const connect = useCallback(
-    (targetUrl: string) => {
+    () => {
       disconnect();
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -239,7 +248,9 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
         setIsLoading(true);
         setError(null);
         frameCountRef.current = 0;
-        ws.send(JSON.stringify({ type: "navigate", url: targetUrl }));
+        if (url) {
+          ws.send(JSON.stringify({ type: "navigate", url }));
+        }
       };
 
       ws.onmessage = (e) => {
@@ -265,10 +276,28 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
               ) {
                 setPageUrl(msg.url);
                 setInputUrl(msg.url);
+
+                if (isMovingRef.current) {
+                  isMovingRef.current = false;
+                } else {
+                  setNavHistory((prev) => {
+                    const next = prev.slice(0, histIdx + 1);
+                    if (next[next.length - 1] !== msg.url) {
+                      next.push(msg.url);
+                      setHistIdx(next.length - 1);
+                    }
+                    return next;
+                  });
+                }
               }
               break;
             case "title":
               setPageTitle(msg.title);
+              break;
+            case "focus":
+              if (msg.isInput) {
+                setShowMobileKeyboard(true);
+              }
               break;
             case "error":
               setError(msg.message);
@@ -309,39 +338,42 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
         formatted = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
       }
 
-      setNavHistory((prev) => {
-        const truncated = prev.slice(0, histIdx + 1);
-        const next = [...truncated, formatted];
-        setHistIdx(next.length - 1);
-        return next;
-      });
       setUrl(formatted);
       setInputUrl(formatted);
       setError(null);
-      connect(formatted);
     },
-    [connect, histIdx],
+    [],
   );
 
   const goBack = useCallback(() => {
-    if (!wsRef.current) return;
+    if (!wsRef.current || histIdx <= 0) return;
+    isMovingRef.current = true;
     wsRef.current.send(JSON.stringify({ type: "goBack" }));
     setIsLoading(true);
-    if (histIdx > 0) {
-      const newIdx = histIdx - 1;
-      setHistIdx(newIdx);
-    }
+    setHistIdx((prev) => prev - 1);
   }, [histIdx]);
 
   const goForward = useCallback(() => {
-    if (!wsRef.current) return;
+    if (!wsRef.current || histIdx >= navHistory.length - 1) return;
+    isMovingRef.current = true;
     wsRef.current.send(JSON.stringify({ type: "goForward" }));
     setIsLoading(true);
-    if (histIdx < navHistory.length - 1) {
-      const newIdx = histIdx + 1;
-      setHistIdx(newIdx);
-    }
+    setHistIdx((prev) => prev + 1);
   }, [histIdx, navHistory]);
+
+  const handleHiddenInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!wsRef.current) return;
+    const text = e.target.value;
+    if (text) {
+      wsRef.current.send(JSON.stringify({ type: "text", key: text }));
+      e.target.value = ""; // Clear for next input
+    }
+  }, []);
+
+  const handleMobileSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setShowMobileKeyboard(false);
+  };
 
   const handleRefresh = useCallback(() => {
     if (!wsRef.current) return;
@@ -452,7 +484,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
 
       showRipple(containerCoords.x, containerCoords.y);
 
-      containerRef.current?.focus();
+      hiddenInputRef.current?.focus();
     },
     [getCoords, getViewportCoords],
   );
@@ -485,7 +517,8 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
         e.key === "Shift" ||
         e.key === "Alt" ||
         e.key === "Meta" ||
-        e.target === inputRef.current
+        e.target === inputRef.current ||
+        e.target === hiddenInputRef.current
       )
         return;
 
@@ -513,7 +546,8 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
         e.key === "Shift" ||
         e.key === "Alt" ||
         e.key === "Meta" ||
-        e.target === inputRef.current
+        e.target === inputRef.current ||
+        e.target === hiddenInputRef.current
       )
         return;
 
@@ -600,6 +634,18 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
             <path d="M3.51,15A9,9,0,0,0,18.36,18.36L23,14" />
           </svg>
         </button>
+        <button
+          onClick={() => setShowMobileKeyboard(!showMobileKeyboard)}
+          className={`w-7 h-7 flex items-center justify-center rounded transition-colors text-sm cursor-pointer ${
+            showMobileKeyboard ? "bg-blue-600 text-white" : "text-neutral-300 hover:bg-neutral-700"
+          }`}
+          title="Toggle Mobile Keyboard"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
+            <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
+          </svg>
+        </button>
         <form onSubmit={handleSubmit} className="flex-1 flex min-w-0">
           <input
             ref={inputRef}
@@ -639,6 +685,45 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
         onPaste={handlePaste}
         style={{ outline: "none" }}
       >
+        <input
+          ref={hiddenInputRef}
+          type="text"
+          className="absolute opacity-0 pointer-events-none p-0 m-0 border-none outline-none w-px h-px overflow-hidden"
+          style={{ left: -10, top: -10, zIndex: -1 }}
+          onChange={handleHiddenInput}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          autoComplete="off"
+        />
+
+        {showMobileKeyboard && (
+          <div className="absolute bottom-0 left-0 right-0 p-2 bg-neutral-900/90 border-t border-neutral-700 z-50 animate-in slide-in-from-bottom-2 duration-200">
+            <div className="flex items-center gap-2 max-w-md mx-auto">
+              <form onSubmit={handleMobileSubmit} className="flex-1 flex">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Type here..."
+                  className="w-full h-10 px-4 bg-neutral-800 text-white rounded-lg border border-neutral-600 focus:border-blue-500 outline-none text-sm"
+                  onChange={handleHiddenInput}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </form>
+              <button
+                onClick={() => setShowMobileKeyboard(false)}
+                className="w-10 h-10 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 text-neutral-400 rounded-lg transition-colors cursor-pointer"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
         {!isConnected && !error ? (
           <div className="flex items-center justify-center h-full bg-neutral-800">
             <div className="text-center">

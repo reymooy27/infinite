@@ -53,7 +53,7 @@ export default function App() {
       <NavigationBlockModal />
       <Canvas>
         {windows
-          .filter((w) => !w.minimized)
+          .filter((w) => !w.minimized && !w.maximized)
           .map((win) => {
             const app = registry[win.appId];
             if (!app) return null;
@@ -73,6 +73,30 @@ export default function App() {
             );
           })}
       </Canvas>
+      {windows
+        .filter((w) => !w.minimized && w.maximized)
+        .map((win) => {
+          const app = registry[win.appId];
+          if (!app) return null;
+          const AppComponent = app.component;
+          return (
+            <WindowFrame
+              key={win.id}
+              id={win.id}
+              title={(win.metadata?.title as string) || app.title}
+              defaultX={win.x}
+              defaultY={win.y}
+              defaultWidth={app.defaultWidth}
+              defaultHeight={app.defaultHeight}
+            >
+              <AppComponent 
+                key={`${win.id}-${win.maximized}`} 
+                connectionId={win.metadata?.connectionId as number} 
+                windowId={win.id} 
+              />
+            </WindowFrame>
+          );
+        })}
       <Sidebar />
       <Dock />
     </div>

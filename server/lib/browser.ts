@@ -1,7 +1,14 @@
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import type { Browser, Page } from "puppeteer";
 import type { WebSocket } from "ws";
 import { logger } from "./logger.js";
+import path from "path";
+
+const USER_DATA_DIR = path.resolve("profiles/default");
+
+// @ts-ignore
+puppeteer.use(StealthPlugin());
 
 interface BrowserMessage {
   type: string;
@@ -24,6 +31,7 @@ interface BrowserMessage {
 const FRAME_INTERVAL_ACTIVE = 60;
 const FRAME_INTERVAL_IDLE = 500;
 const IDLE_TIMEOUT = 2000;
+const DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
 
 let sharedBrowser: Browser | null = null;
 let browserRefs = 0;
@@ -47,15 +55,18 @@ function codeToPuppeteerKey(code: string, key: string): string {
 
 async function getBrowser(): Promise<Browser> {
   if (sharedBrowser?.isConnected()) return sharedBrowser;
-  logger.info("[Browser] Launching Chromium...");
+  logger.info("[Browser] Launching Chromium with Stealth & Persistence...");
+  // @ts-ignore
   sharedBrowser = await puppeteer.launch({
     headless: true,
+    userDataDir: USER_DATA_DIR,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-accelerated-2d-canvas",
       "--disable-gpu",
+      "--window-size=1280,720",
     ],
   });
   logger.info("[Browser] Chromium launched");
@@ -95,7 +106,7 @@ interface ActiveBrowserSession {
 const browserSessions = new Map<string, ActiveBrowserSession>();
 const BROWSER_SESSION_TIMEOUT = 1000 * 60 * 30; // 30 minutes
 
-export function createBrowserSession(
+export async function createBrowserSession(
   ws: WebSocket,
   viewportWidth: number,
   viewportHeight: number,
@@ -111,6 +122,9 @@ export function createBrowserSession(
     }
 
     session.ws = ws;
+    
+    // Ensure viewport is correct on re-attach
+    await session.page.setViewport({ width: session.width, height: session.height }).catch(() => {});
 
     // Restart frame rate timer with new WS
     const sendFrame = async () => {
@@ -271,6 +285,10 @@ export function createBrowserSession(
       clearBrowserCloseTimer();
 
       page = await browser.newPage();
+      await page.setUserAgent(DEFAULT_USER_AGENT);
+      await page.setExtraHTTPHeaders({
+        "Accept-Language": "en-US,en;q=0.9",
+      });
       await page.setViewport({ width, height });
 
       if (windowId) {
@@ -363,6 +381,17 @@ export function createBrowserSession(
           const count = msg.clickCount ?? 1;
           await p.mouse.click(x, y, { clickCount: count });
           markActive();
+          
+          // Check if an input is focused after click
+          setTimeout(async () => {
+            try {
+              const isInput = await p.evaluate(() => {
+                const el = document.activeElement;
+                return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable);
+              });
+              w.send(JSON.stringify({ type: "focus", isInput }));
+            } catch {}
+          }, 100);
           break;
         }
 
