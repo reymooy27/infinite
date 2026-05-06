@@ -56,7 +56,9 @@ wss.on("connection", async (ws, req) => {
     logger.info(`[WS] New browser session, windowId: ${windowId}`);
     const viewportW = parseInt(u.searchParams.get("width") || "1024", 10);
     const viewportH = parseInt(u.searchParams.get("height") || "768", 10);
-    createBrowserSession(ws, viewportW, viewportH, windowId);
+    createBrowserSession(ws, viewportW, viewportH, windowId).catch((err) => {
+      logger.error(`[WS] Failed to create browser session`, { error: err.message });
+    });
     return;
   }
 
