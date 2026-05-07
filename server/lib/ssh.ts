@@ -118,6 +118,8 @@ export function createSSHSocket(
     port: number;
     username: string;
     readyTimeout: number;
+    keepaliveInterval?: number;
+    keepaliveCountMax?: number;
     password?: string;
     privateKey?: string;
   } = {
@@ -125,6 +127,8 @@ export function createSSHSocket(
     port: connection.port || 22,
     username: connection.username,
     readyTimeout: 15000,
+    keepaliveInterval: 10000,
+    keepaliveCountMax: 3,
   };
 
   if (connection.authType === "key" && connection.privateKey) {

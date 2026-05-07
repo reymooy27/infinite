@@ -864,8 +864,11 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
   const [status, setStatus] = useState<string>("connecting");
   const [retryKey, setRetryKey] = useState(0);
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
@@ -899,7 +902,17 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
   }, [windowId]);
 
   useEffect(() => {
-    if (!terminalRef.current || !wsUrl) return;
+    const handleVisibility = () => {
+      if (!document.hidden && (statusRef.current === "disconnected" || statusRef.current === "error")) {
+        setRetryKey(k => k + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (!terminalRef.current) return;
 
     const term = new XTerminal({
       theme: {
@@ -915,6 +928,7 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
     termInstanceRef.current = term;
 
     const fit = new FitAddon();
+    fitRef.current = fit;
     term.loadAddon(fit);
     const links = new WebLinksAddon();
     term.loadAddon(links);
@@ -924,20 +938,48 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
     term.open(terminalRef.current);
     fit.fit();
 
+    term.onData((data) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "data", data }));
+      }
+    });
+
+    term.onResize(({ cols, rows }) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "resize", cols, rows }));
+      }
+    });
+
+    const observer = new ResizeObserver(() => fit.fit());
+    observer.observe(terminalRef.current);
+
+    return () => {
+      observer.disconnect();
+      term.dispose();
+      termInstanceRef.current = null;
+      fitRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!wsUrl) return;
+
+    const term = termInstanceRef.current;
+    const fit = fitRef.current;
+
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     setStatus("connecting");
 
     ws.onopen = () => {
-      fit.fit();
-
-      const initialSize = {
-        type: "resize",
-        cols: term.cols,
-        rows: term.rows,
-      };
-      ws.send(JSON.stringify(initialSize));
-
+      if (fit && term) {
+        fit.fit();
+        ws.send(JSON.stringify({
+          type: "resize",
+          cols: term.cols,
+          rows: term.rows,
+        }));
+      }
       setStatus("connected");
     };
 
@@ -947,43 +989,23 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        if (msg.type === "data") {
+        if (msg.type === "data" && term) {
           const binaryStr = atob(msg.data);
           const bytes = new Uint8Array(binaryStr.length);
           for (let i = 0; i < binaryStr.length; i++) {
             bytes[i] = binaryStr.charCodeAt(i);
           }
           term.write(bytes);
-        } else if (msg.type === "error") {
+        } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
         }
       } catch {
-        term.write(e.data);
+        term?.write(e.data);
       }
     };
 
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "data", data }));
-      }
-    });
-
-    term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "resize", cols, rows }));
-      }
-    });
-
-    fit.fit();
-
-    const observer = new ResizeObserver(() => fit.fit());
-    observer.observe(terminalRef.current);
-
     return () => {
-      observer.disconnect();
       ws.close();
-      term.dispose();
-      termInstanceRef.current = null;
     };
   }, [wsUrl]);
 

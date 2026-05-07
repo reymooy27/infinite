@@ -12,7 +12,7 @@ import { logger } from "./lib/logger.js";
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, pingInterval: 15000, pingTimeout: 5000 });
 
 app.use(cors());
 app.use(express.json());
