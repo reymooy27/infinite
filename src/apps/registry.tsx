@@ -1,9 +1,11 @@
 import { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { FileText, Globe, Monitor, Code2 } from "lucide-react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { AppDefinition, AppId } from "@/types";
+import DevBrowser from "./DevBrowser";
 
 const CodeEditor = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1009,9 +1011,158 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
     };
   }, [wsUrl]);
 
+  const sendShortcut = useCallback((data: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "data", data }));
+    }
+  }, []);
+
+  const sendTmux = useCallback((key: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "data", data: "\x02" }));
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "data", data: key }));
+        }
+      }, 80);
+    }
+  }, []);
+
   return (
-    <div className="relative w-full h-full pt-2 px-2 pb-12 bg-[#0a0a0a]">
+    <div className="relative w-full h-full pt-2 px-2 pb-28 bg-[#0a0a0a]">
       <div ref={terminalRef} className="w-full h-full" />
+      {status === "connected" && (
+        <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
+          <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
+            <button
+              onClick={() => sendShortcut("\x03")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Ctrl+C (interrupt)"
+            >
+              C-c
+            </button>
+            <button
+              onClick={() => sendShortcut("\x04")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Ctrl+D (EOF)"
+            >
+              C-d
+            </button>
+            <button
+              onClick={() => sendShortcut("\x15")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Ctrl+U (clear line)"
+            >
+              C-u
+            </button>
+            <button
+              onClick={() => sendShortcut("\x17")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Ctrl+W (delete word)"
+            >
+              C-w
+            </button>
+            <button
+              onClick={() => sendShortcut("\x0c")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Ctrl+L (clear screen)"
+            >
+              C-l
+            </button>
+            <div className="w-px h-4 bg-neutral-700" />
+            <button
+              onClick={() => sendShortcut("\x1b[A")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-sm text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer"
+              title="Arrow Up"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+            </button>
+            <button
+              onClick={() => sendShortcut("\x1b[B")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-sm text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer"
+              title="Arrow Down"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            </button>
+            <div className="w-px h-4 bg-neutral-700" />
+            <button
+              onClick={() => sendShortcut("\x09")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Tab"
+            >
+              Tab
+            </button>
+            <button
+              onClick={() => sendShortcut("\r")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Enter"
+            >
+              ↵
+            </button>
+          </div>
+          <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-600 rounded-lg">
+              <span className="text-[9px] text-neutral-600 font-mono shrink-0 mr-0.5">tmux</span>
+            <button
+              onClick={() => sendTmux("n")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Next window"
+            >
+              next
+            </button>
+            <button
+              onClick={() => sendTmux("p")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Previous window"
+            >
+              prev
+            </button>
+            <button
+              onClick={() => sendTmux("c")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="New window"
+            >
+              new
+            </button>
+            <div className="w-px h-4 bg-neutral-700" />
+            <button
+              onClick={() => sendTmux("%")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Split vertical"
+            >
+              vsplt
+            </button>
+            <button
+              onClick={() => sendTmux('"')}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Split horizontal"
+            >
+              hsplt
+            </button>
+            <div className="w-px h-4 bg-neutral-700" />
+            <button
+              onClick={() => sendTmux("z")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Zoom pane"
+            >
+              zoom
+            </button>
+            <button
+              onClick={() => sendTmux("x")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Kill pane"
+            >
+              kill
+            </button>
+            <button
+              onClick={() => sendTmux("d")}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Detach"
+            >
+              detach
+            </button>
+          </div>
+        </div>
+      )}
       {status !== "connected" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white text-sm z-50">
           {status === "connecting" && (
@@ -1071,7 +1222,7 @@ export const registry: Record<AppId, AppDefinition> = {
   notes: {
     id: "notes",
     title: "Notes",
-    icon: "📝",
+    icon: <FileText />,
     component: Notes as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
@@ -1082,7 +1233,7 @@ export const registry: Record<AppId, AppDefinition> = {
   browser: {
     id: "browser",
     title: "Browser",
-    icon: "🌐",
+    icon: <Globe />,
     component: BrowserCanvas as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
@@ -1093,13 +1244,24 @@ export const registry: Record<AppId, AppDefinition> = {
   ssh: {
     id: "ssh",
     title: "SSH",
-    icon: "🖥",
+    icon: <Monitor />,
     component: SSHTerminal as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
     }>,
     defaultWidth: 800,
     defaultHeight: 600,
+  },
+  devBrowser: {
+    id: "devBrowser",
+    title: "Dev Browser",
+    icon: <Code2 />,
+    component: DevBrowser as React.ComponentType<{
+      connectionId?: number;
+      windowId?: string;
+    }>,
+    defaultWidth: 1024,
+    defaultHeight: 768,
   },
 };
 

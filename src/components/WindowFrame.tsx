@@ -126,26 +126,37 @@ export default function WindowFrame({
   );
 
   const handleDragStop = useCallback(
-    (_e: any, _d: any) => {
+    (_e: any, data: any) => {
       setIsDragging(false);
       isDraggingRef.current = false;
       if (isMaximized) return;
+      useWindowStore.getState().updateWindowPosition(id, { x: data.x, y: data.y });
       setTimeout(() => clearDragging(), 50);
       const inst = canvasTransform.current as any;
       if (inst?.setup?.panning) inst.setup.panning.disabled = false;
     },
-    [clearDragging, isMaximized],
+    [clearDragging, id, isMaximized],
   );
 
   const handleResizeStop = useCallback(
-    (_e: any, _dir: any, _ref: any, _d: any) => {
+    (_e: any, _dir: any, _ref: any, delta: { width: number; height: number }, position: { x: number; y: number }) => {
       setIsResizing(false);
+      const state = useWindowStore.getState();
+      const currentWin = state.windows.find((w) => w.id === id);
+      if (currentWin) {
+        state.updateWindowPosition(id, {
+          width: currentWin.width + delta.width,
+          height: currentWin.height + delta.height,
+          x: position.x,
+          y: position.y,
+        });
+      }
       setTimeout(() => clearDragging(), 50);
       // Re-enable canvas panning after resize
       const inst = canvasTransform.current as any;
       if (inst?.setup?.panning) inst.setup.panning.disabled = false;
     },
-    [clearDragging],
+    [clearDragging, id],
   );
 
   const handleResizeStart = useCallback(() => {

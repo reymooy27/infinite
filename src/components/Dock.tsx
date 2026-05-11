@@ -4,7 +4,7 @@ import registry from "@/apps/registry";
 import { useWindowStore } from "@/stores/useWindowStore";
 import type { AppId } from "@/types";
 
-const DOCK_APPS: AppId[] = ["notes", "browser", "ssh"];
+const DOCK_APPS: AppId[] = ["notes", "browser", "devBrowser", "ssh"];
 
 export default function Dock() {
   const windows = useWindowStore((s) => s.windows);
@@ -44,7 +44,7 @@ export default function Dock() {
                 }
               }}
               className={`flex flex-col items-center gap-0.5 sm:gap-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg transition-colors cursor-pointer group ${
-                isPlacing ? "bg-blue-600 text-white" : "hover:bg-neutral-800"
+                isPlacing ? "bg-blue-600 text-white" : "text-neutral-200 hover:bg-neutral-800 hover:text-white"
               }`}
               title={app.title}
             >
@@ -110,7 +110,7 @@ export default function Dock() {
               <button
                 key={win.id}
                 onClick={() => handleRestore(win.id)}
-                className="flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer group min-w-0"
+                className="flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer group min-w-0 text-neutral-200"
                 title={(win.metadata?.title as string) || app.title}
               >
                 <span className="text-sm leading-none">{app.icon}</span>

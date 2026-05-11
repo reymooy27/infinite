@@ -53,25 +53,8 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <div className="fixed top-4 left-4 sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 sm:top-auto z-[10000] flex items-start sm:items-end gap-0">
-      <div className="flex flex-col gap-1 bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl p-1.5 sm:hidden">
-        {MENU_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => togglePanel(item.id)}
-            className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
-              activePanel === item.id
-                ? "bg-blue-600 text-white"
-                : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
-            }`}
-            title={item.label}
-          >
-            {item.icon}
-          </button>
-        ))}
-      </div>
-
-      <div className="hidden sm:flex flex-col gap-1 bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl p-1.5">
+    <div className="fixed top-4 left-4 z-[10000] flex items-start gap-0">
+      <div className="flex flex-col gap-1 bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl p-1.5">
         {MENU_ITEMS.map((item) => (
           <button
             key={item.id}
@@ -89,34 +72,39 @@ export default function Sidebar() {
       </div>
 
       {activePanel === "ssh" && (
-<div
-          ref={sheetRef}
-          className="fixed bottom-0 sm:bottom-auto left-0 sm:left-auto right-0 sm:right-auto sm:ml-3 sm:mt-0 w-full sm:w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:max-h-[60vh] max-h-[70vh] flex flex-col transition-transform touch-none z-[10000]"
-          style={{ transform: "translateY(0)" }}
-        >
+        <>
           <div
-            className="sm:hidden w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
+            className="fixed inset-0 bg-black/50 z-[9999] sm:hidden"
+            onClick={() => setActivePanel(null)}
+          />
+          <div
+            ref={sheetRef}
+            className="fixed bottom-0 left-0 right-0 sm:top-4 sm:left-4 sm:bottom-auto sm:right-auto sm:ml-3 w-full sm:w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:max-h-[60vh] max-h-[70vh] flex flex-col transition-transform touch-none z-[10000] animate-[slideUp_0.3s_ease-out] sm:animate-none"
           >
-            <div className="w-10 h-1 bg-neutral-600 rounded-full" />
-          </div>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700 shrink-0">
-            <h2 className="text-sm font-semibold text-neutral-200">SSH Connections</h2>
-            <button
-              onClick={() => setActivePanel(null)}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 cursor-pointer transition-colors"
+            <div
+              className="sm:hidden w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
+              <div className="w-10 h-1 bg-neutral-600 rounded-full" />
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700 shrink-0">
+              <h2 className="text-sm font-semibold text-neutral-200">SSH Connections</h2>
+              <button
+                onClick={() => setActivePanel(null)}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 cursor-pointer transition-colors"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <SSHPanel />
+            </div>
           </div>
-          <div className="flex-1 overflow-hidden">
-            <SSHPanel />
-          </div>
-        </div>
+        </>
       )}
     </div>
   );

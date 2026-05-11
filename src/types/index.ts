@@ -1,4 +1,6 @@
-export type AppId = "code-editor" | "terminal" | "notes" | "ssh" | "browser";
+import type React from "react";
+
+export type AppId = "code-editor" | "terminal" | "notes" | "ssh" | "browser" | "devBrowser";
 
 export interface SSHConnection {
   id: number;
@@ -29,7 +31,7 @@ export interface WindowData {
 export interface AppDefinition {
   id: AppId;
   title: string;
-  icon: string;
+  icon: React.ReactNode;
   component: React.ComponentType<{ connectionId?: number; windowId?: string }>;
   defaultWidth: number;
   defaultHeight: number;
