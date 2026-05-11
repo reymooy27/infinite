@@ -334,6 +334,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
                 wrapperStyle={{
                   width: "100%",
                   height: "100%",
+                  background: bgColor,
                 }}
               >
                 <div
