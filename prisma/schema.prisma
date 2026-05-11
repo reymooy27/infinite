@@ -6,6 +6,60 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id            String       @id @default(cuid())
+  name          String?
+  email         String?      @unique
+  emailVerified DateTime?
+  image         String?
+  plan          String       @default("free")
+  accounts      Account[]
+  sessions      Session[]
+  connections   Connection[]
+  layouts       Layout[]
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
 model Connection {
   id                  Int      @id @default(autoincrement())
   name                String
@@ -16,14 +70,18 @@ model Connection {
   passwordEncrypted   String?  @map("password_encrypted")
   privateKeyEncrypted String?  @map("private_key_encrypted")
   createdAt           DateTime @default(now()) @map("created_at")
+  userId              String   @map("user_id")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("connections")
 }
 
 model Layout {
-  id        Int      @id @default(1)
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
   data      Json
   updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("layouts")
 }

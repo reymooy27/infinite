@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger, logApiRequest } from "@/lib/logger";
+import { auth } from "@/lib/auth";
 
 export async function DELETE(
   req: NextRequest,
@@ -11,6 +12,11 @@ export async function DELETE(
   const path = "/api/connections/[id]";
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { id } = await params;
     const connectionId = parseInt(id, 10);
 
@@ -23,6 +29,15 @@ export async function DELETE(
 
     logger.info(`[${method}] ${path} Deleting connection ${connectionId}`);
 
+    const existing = await prisma.connection.findUnique({
+      where: { id: connectionId },
+      select: { userId: true },
+    });
+
+    if (!existing || existing.userId !== session.user.id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     await prisma.connection.delete({ where: { id: connectionId } });
 
     const duration = Date.now() - start;
@@ -32,13 +47,8 @@ export async function DELETE(
   } catch (err) {
     const duration = Date.now() - start;
     const error = err instanceof Error ? err.message : "Unknown error";
-    logger.error(`[${method}] ${path} Error`, { error, stack: err instanceof Error ? err.stack : undefined });
+    logger.error(`[${method}] ${path} Error`, { error });
     logApiRequest(method, path, 500, duration, err);
-
-    if (err instanceof Error && err.message.includes("Record to delete does not exist")) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
-    }
-
     return NextResponse.json({ error: "Failed to delete connection" }, { status: 500 });
   }
 }

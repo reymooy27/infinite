@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect } from "react";
+import { useSession } from "next-auth/react";
 import Canvas from "@/components/Canvas";
 import WindowFrame from "@/components/WindowFrame";
 import Dock from "@/components/Dock";
 import Sidebar from "@/components/Sidebar";
+import SignIn from "@/components/SignIn";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 import registry from "@/apps/registry";
 
 export default function App() {
+  const { data: session, status } = useSession();
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
   const loadLayout = useWindowStore((s) => s.loadLayout);
@@ -22,8 +25,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadLayout();
-  }, [loadLayout]);
+    if (status === "authenticated") {
+      loadLayout();
+    }
+  }, [loadLayout, status]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -53,6 +58,18 @@ export default function App() {
       window.removeEventListener("popstate", handlePopState);
     };
   }, [windows.length, block, unblock]);
+
+  if (status === "loading") {
+    return (
+      <div className="h-[100dvh] flex items-center justify-center bg-neutral-950">
+        <div className="w-6 h-6 border-2 border-neutral-600 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated") {
+    return <SignIn />;
+  }
 
   return (
     <div className="h-[100dvh] bg-neutral-950 overflow-hidden relative select-none touch-none">

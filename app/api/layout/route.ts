@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger, logApiRequest } from "@/lib/logger";
+import { auth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const start = Date.now();
@@ -8,10 +9,16 @@ export async function GET(req: NextRequest) {
   const path = "/api/layout";
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     logger.info(`[${method}] ${path} Start`);
 
-    const layout = await prisma.layout.findUnique({
-      where: { id: 1 },
+    const layout = await prisma.layout.findFirst({
+      where: { userId: session.user.id },
+      orderBy: { updatedAt: "desc" },
     });
 
     const duration = Date.now() - start;
@@ -32,18 +39,35 @@ export async function POST(req: NextRequest) {
   const path = "/api/layout";
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     logger.info(`[${method}] ${path} Start`);
 
     const body = await req.json();
-    
-    const layout = await prisma.layout.upsert({
-      where: { id: 1 },
-      update: { data: body },
-      create: { id: 1, data: body },
+
+    const existing = await prisma.layout.findFirst({
+      where: { userId: session.user.id },
     });
 
+    let layout;
+    if (existing) {
+      layout = await prisma.layout.update({
+        where: { id: existing.id },
+        data: { data: body },
+      });
+    } else {
+      layout = await prisma.layout.create({
+        data: {
+          userId: session.user.id,
+          data: body,
+        },
+      });
+    }
+
     const duration = Date.now() - start;
-    logger.info(`[${method}] ${path} Saved layout`);
     logApiRequest(method, path, 200, duration);
     return NextResponse.json(layout.data);
   } catch (err) {

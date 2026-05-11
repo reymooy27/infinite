@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { encrypt } from "@/lib/crypto";
 import { logger, logApiRequest } from "@/lib/logger";
+import { auth } from "@/lib/auth";
+
+async function getUserId() {
+  const session = await auth();
+  return session?.user?.id;
+}
 
 export async function GET(req: NextRequest) {
   const start = Date.now();
@@ -9,9 +15,15 @@ export async function GET(req: NextRequest) {
   const path = "/api/connections";
 
   try {
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     logger.info(`[${method}] ${path} Start`);
 
     const connections = await prisma.connection.findMany({
+      where: { userId },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -30,7 +42,7 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const duration = Date.now() - start;
     const error = err instanceof Error ? err.message : "Unknown error";
-    logger.error(`[${method}] ${path} Error`, { error, stack: err instanceof Error ? err.stack : undefined });
+    logger.error(`[${method}] ${path} Error`, { error });
     logApiRequest(method, path, 500, duration, err);
     return NextResponse.json({ error: "Failed to fetch connections" }, { status: 500 });
   }
@@ -42,6 +54,11 @@ export async function POST(req: NextRequest) {
   const path = "/api/connections";
 
   try {
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     logger.info(`[${method}] ${path} Start`);
 
     const body = await req.json();
@@ -71,6 +88,7 @@ export async function POST(req: NextRequest) {
         authType: authType || "password",
         passwordEncrypted: password ? encrypt(password, secret) : null,
         privateKeyEncrypted: privateKey ? encrypt(privateKey, secret) : null,
+        userId,
       },
       select: {
         id: true,
@@ -90,7 +108,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const duration = Date.now() - start;
     const error = err instanceof Error ? err.message : "Unknown error";
-    logger.error(`[${method}] ${path} Error`, { error, stack: err instanceof Error ? err.stack : undefined });
+    logger.error(`[${method}] ${path} Error`, { error });
     logApiRequest(method, path, 500, duration, err);
     return NextResponse.json({ error: "Failed to create connection" }, { status: 500 });
   }

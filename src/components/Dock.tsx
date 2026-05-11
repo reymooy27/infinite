@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { useSession, signOut } from "next-auth/react";
 import registry from "@/apps/registry";
 import { useWindowStore } from "@/stores/useWindowStore";
 import type { AppId } from "@/types";
@@ -19,6 +21,10 @@ export default function Dock() {
 
   const minimized = windows.filter((w) => w.minimized);
   const hasWindows = windows.length > 0;
+  const { data: session } = useSession();
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  const userInitial = session?.user?.name?.charAt(0) || session?.user?.email?.charAt(0) || "?";
 
   const handleRestore = (winId: string) => {
     restoreWindow(winId);
@@ -99,6 +105,44 @@ export default function Dock() {
             </button>
           </>
         )}
+          <div className="w-px h-6 sm:h-8 bg-neutral-700 mx-0.5 sm:mx-1" />
+          <div className="relative">
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex flex-col items-center gap-0.5 sm:gap-1 px-2 sm:px-3 py-2 sm:py-2 rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer group"
+              title={session?.user?.name || session?.user?.email || "Account"}
+            >
+              {session?.user?.image ? (
+                <img
+                  src={session.user.image}
+                  alt=""
+                  className="w-6 h-6 sm:w-7 sm:h-7 rounded-full"
+                />
+              ) : (
+                <span className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-neutral-600 flex items-center justify-center text-xs sm:text-sm font-medium text-white">
+                  {userInitial}
+                </span>
+              )}
+            </button>
+            {showUserMenu && (
+              <div className="absolute bottom-full right-0 mb-2 w-48 bg-neutral-900 border border-neutral-700 rounded-lg shadow-2xl overflow-hidden">
+                <div className="px-3 py-2 border-b border-neutral-700">
+                  <p className="text-sm text-neutral-200 font-medium truncate">
+                    {session?.user?.name || "User"}
+                  </p>
+                  <p className="text-[11px] text-neutral-500 truncate">
+                    {session?.user?.email}
+                  </p>
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  className="w-full text-left px-3 py-2 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-red-400 transition-colors cursor-pointer"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
       </div>
 
 {minimized.length > 0 && (

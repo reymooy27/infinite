@@ -30,6 +30,37 @@ interface ConnectionRow {
   authType: string;
   passwordEncrypted: string | null;
   privateKeyEncrypted: string | null;
+  userId: string;
+}
+
+function parseCookies(cookieHeader: string): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  cookieHeader.split(";").forEach((cookie) => {
+    const [name, ...rest] = cookie.split("=");
+    if (name && rest.length > 0) {
+      cookies[name.trim()] = rest.join("=").trim();
+    }
+  });
+  return cookies;
+}
+
+async function getUserIdFromSession(req: IncomingMessage): Promise<string | null> {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return null;
+
+  const cookies = parseCookies(cookieHeader);
+  const sessionToken = cookies["next-auth.session-token"];
+  if (!sessionToken) return null;
+
+  try {
+    const session = await prisma.session.findUnique({
+      where: { sessionToken },
+      select: { userId: true },
+    });
+    return session?.userId || null;
+  } catch {
+    return null;
+  }
 }
 
 server.on("upgrade", (req: IncomingMessage, socket, head) => {
@@ -51,9 +82,17 @@ wss.on("connection", async (ws, req) => {
   const u = new URL(rawUrl, "http://localhost");
   const pathname = u.pathname;
 
+  const userId = await getUserIdFromSession(req);
+  if (!userId) {
+    logger.warn(`[WS] Connection rejected: no valid session`);
+    ws.send(JSON.stringify({ type: "error", message: "Authentication required" }));
+    ws.close(4001, "Unauthorized");
+    return;
+  }
+
   if (pathname === "/ws/browser") {
     const windowId = u.searchParams.get("windowId") || "";
-    logger.info(`[WS] New browser session, windowId: ${windowId}`);
+    logger.info(`[WS] New browser session, windowId: ${windowId}, userId: ${userId}`);
     const viewportW = parseInt(u.searchParams.get("width") || "1024", 10);
     const viewportH = parseInt(u.searchParams.get("height") || "768", 10);
     createBrowserSession(ws, viewportW, viewportH, windowId).catch((err) => {
@@ -65,7 +104,7 @@ wss.on("connection", async (ws, req) => {
   const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
   const windowId = u.searchParams.get("windowId") || "";
 
-  logger.info(`[WS] New SSH connection attempt, connectionId: ${connId}, windowId: ${windowId}`);
+  logger.info(`[WS] New SSH connection attempt, connectionId: ${connId}, windowId: ${windowId}, userId: ${userId}`);
 
   if (!connId) {
     logger.warn(`[WS] Connection rejected: missing connectionId`);
@@ -76,8 +115,8 @@ wss.on("connection", async (ws, req) => {
 
   let row: ConnectionRow | null;
   try {
-    row = await prisma.connection.findUnique({
-      where: { id: connId },
+    row = await prisma.connection.findFirst({
+      where: { id: connId, userId },
     }) as ConnectionRow | null;
   } catch (err) {
     logger.error(`[WS] Database error fetching connection ${connId}`, {
@@ -89,7 +128,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   if (!row) {
-    logger.warn(`[WS] Connection rejected: connection ${connId} not found`);
+    logger.warn(`[WS] Connection rejected: connection ${connId} not found or not owned by user`);
     ws.send(JSON.stringify({ type: "error", message: "Connection not found" }));
     ws.close();
     return;
