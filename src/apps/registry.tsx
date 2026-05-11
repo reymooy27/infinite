@@ -1,148 +1,11 @@
-import { useRef, useState, useEffect, useMemo, useCallback } from "react";
-import { FileText, Globe, Monitor, Code2 } from "lucide-react";
-import { Terminal as XTerminal } from "@xterm/xterm";
+import type { AppDefinition, AppId } from "@/types";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import type { AppDefinition, AppId } from "@/types";
+import { Terminal as XTerminal } from "@xterm/xterm";
+import { Code2, FileText, Globe, Monitor } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DevBrowser from "./DevBrowser";
-
-const CodeEditor = () => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [content, setContent] = useState("# Start coding...\n");
-
-  const lines = content.split("n").length;
-
-  return (
-    <div className="flex h-full bg-neutral-900 text-xs font-mono">
-      <div className="flex flex-col items-end pr-2 pl-2 pt-2 text-neutral-600 select-none border-r border-neutral-800 bg-neutral-900">
-        {Array.from({ length: lines }, (_, i) => (
-          <div key={i} className="leading-5">
-            {i + 1}
-          </div>
-        ))}
-      </div>
-      <textarea
-        ref={textareaRef}
-        className="flex-1 p-2 bg-neutral-900 text-neutral-200 resize-none outline-none leading-5"
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        spellCheck={false}
-      />
-    </div>
-  );
-};
-
-const SimTerminal = ({ windowId }: { windowId?: string }) => {
-  const [history, setHistory] = useState<string[]>([
-    "$ neofetch",
-    "   ┌──────────────────────────┐",
-    "   │  Hello from Infinite OS  │",
-    "   └──────────────────────────┘",
-    "",
-    "$ date",
-  ]);
-  const [input, setInput] = useState("");
-  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
-  const [histIdx, setHistIdx] = useState(-1);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [history]);
-
-  useEffect(() => {
-    const handleScrollEvent = (e: any) => {
-      const container = endRef.current?.parentElement;
-      if (container) {
-        const { amount } = e.detail;
-        container.scrollBy({ top: amount, behavior: "smooth" });
-      }
-    };
-
-    window.addEventListener(`app-scroll-${windowId}`, handleScrollEvent);
-    return () => window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
-  }, [windowId]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      const cmd = input.trim();
-      if (cmd) {
-        setCmdHistory((prev) => [...prev, cmd]);
-        setHistIdx(-1);
-        let output = "";
-        if (cmd === "clear") {
-          setHistory([]);
-        } else if (cmd === "date") {
-          output = new Date().toString();
-          setHistory((prev) => [...prev, `$ ${cmd}`, output]);
-        } else if (cmd === "whoami") {
-          output = "user@infinite";
-          setHistory((prev) => [...prev, `$ ${cmd}`, output]);
-        } else if (cmd === "ls") {
-          output = ["apps/", "data/", "config/", "README.md"].join("n");
-          setHistory((prev) => [...prev, `$ ${cmd}`, output]);
-        } else if (cmd === "neofetch") {
-          output = [
-            "   ┌──────────────────────────┐",
-            "   │  Hello from Infinite OS  │",
-            "   └──────────────────────────┘",
-          ].join("n");
-          setHistory((prev) => [...prev, `$ ${cmd}`, output]);
-        } else if (cmd === "help") {
-          output = "Available: date, whoami, ls, neofetch, clear";
-          setHistory((prev) => [...prev, `$ ${cmd}`, output]);
-        } else {
-          output = `${cmd}: command not found. Try 'help'`;
-          setHistory((prev) => [...prev, `$ ${cmd}`, output]);
-        }
-      }
-      setInput("");
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      const newIdx = histIdx < cmdHistory.length - 1 ? histIdx + 1 : histIdx;
-      setHistIdx(newIdx);
-      if (cmdHistory.length > 0 && newIdx >= 0) {
-        setInput(cmdHistory[cmdHistory.length - 1 - newIdx]);
-      }
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      const newIdx = histIdx > 0 ? histIdx - 1 : -1;
-      setHistIdx(newIdx);
-      setInput(
-        newIdx === -1 ? "" : cmdHistory[cmdHistory.length - 1 - newIdx] || "",
-      );
-    }
-  };
-
-  return (
-    <div
-      className="flex flex-col h-full bg-black text-green-400 pt-3 px-3 pb-12 font-mono text-sm cursor-text"
-      onClick={() => inputRef.current?.focus()}
-    >
-      <div className="flex-1 overflow-auto">
-        {history.map((line, i) => (
-          <div key={i} className="whitespace-pre-wrap">
-            {line}
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center">
-        <span className="mr-1">$</span>
-        <input
-          ref={inputRef}
-          className="flex-1 bg-transparent outline-none border-none text-green-400 caret-green-400"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          autoFocus
-        />
-      </div>
-      <div ref={endRef} />
-    </div>
-  );
-};
 
 const Notes = () => {
   const [content, setContent] = useState("");
@@ -164,9 +27,15 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const wsRef = useRef<WebSocket | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
-  const lastClickRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
+  const lastClickRef = useRef<{ x: number; y: number; time: number }>({
+    x: 0,
+    y: 0,
+    time: 0,
+  });
   const frameCountRef = useRef(0);
-  const clickRippleRef = useRef<{ x: number; y: number; id: number } | null>(null);
+  const clickRippleRef = useRef<{ x: number; y: number; id: number } | null>(
+    null,
+  );
   const rippleIdRef = useRef(0);
 
   const [url, setUrl] = useState("");
@@ -238,114 +107,108 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     }
   }, [wsUrl, retryKey]);
 
-  const connect = useCallback(
-    () => {
-      disconnect();
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
+  const connect = useCallback(() => {
+    disconnect();
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
 
-      ws.onopen = () => {
-        setIsConnected(true);
-        setWsStatus("connected");
-        setIsLoading(true);
-        setError(null);
-        frameCountRef.current = 0;
-        if (url) {
-          ws.send(JSON.stringify({ type: "navigate", url }));
-        }
-      };
-
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          switch (msg.type) {
-            case "frame":
-              frameCountRef.current++;
-              if (imgRef.current) {
-                imgRef.current.src = `data:image/jpeg;base64,${msg.data}`;
-              }
-              setIsLoading(false);
-              break;
-            case "loading":
-              setIsLoading(msg.loading);
-              break;
-            case "url":
-              if (
-                msg.url &&
-                msg.url !== "about:blank" &&
-                !msg.url.startsWith("chrome://") &&
-                !msg.url.startsWith("chrome-error://")
-              ) {
-                setPageUrl(msg.url);
-                setInputUrl(msg.url);
-
-                if (isMovingRef.current) {
-                  isMovingRef.current = false;
-                } else {
-                  setNavHistory((prev) => {
-                    const next = prev.slice(0, histIdx + 1);
-                    if (next[next.length - 1] !== msg.url) {
-                      next.push(msg.url);
-                      setHistIdx(next.length - 1);
-                    }
-                    return next;
-                  });
-                }
-              }
-              break;
-            case "title":
-              setPageTitle(msg.title);
-              break;
-            case "focus":
-              if (msg.isInput) {
-                setShowMobileKeyboard(true);
-              }
-              break;
-            case "error":
-              setError(msg.message);
-              setIsLoading(false);
-              break;
-          }
-        } catch {
-          // ignore malformed
-        }
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        setWsStatus("disconnected");
-      };
-
-      ws.onerror = () => {
-        setError("WebSocket connection failed");
-        setIsConnected(false);
-        setWsStatus("error");
-        setIsLoading(false);
-      };
-    },
-    [disconnect, wsUrl, width, height],
-  );
-
-  const navigate = useCallback(
-    (target: string) => {
-      const trimmed = target.trim();
-      if (!trimmed) return;
-
-      let formatted: string;
-      if (/^https?:\/\//i.test(trimmed)) {
-        formatted = trimmed;
-      } else if (/^[\w-]+\.[\w-]+/.test(trimmed) && !/\s/.test(trimmed)) {
-        formatted = `https://${trimmed}`;
-      } else {
-        formatted = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-      }
-
-      setUrl(formatted);
-      setInputUrl(formatted);
+    ws.onopen = () => {
+      setIsConnected(true);
+      setWsStatus("connected");
+      setIsLoading(true);
       setError(null);
-    },
-    [],
-  );
+      frameCountRef.current = 0;
+      if (url) {
+        ws.send(JSON.stringify({ type: "navigate", url }));
+      }
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        switch (msg.type) {
+          case "frame":
+            frameCountRef.current++;
+            if (imgRef.current) {
+              imgRef.current.src = `data:image/jpeg;base64,${msg.data}`;
+            }
+            setIsLoading(false);
+            break;
+          case "loading":
+            setIsLoading(msg.loading);
+            break;
+          case "url":
+            if (
+              msg.url &&
+              msg.url !== "about:blank" &&
+              !msg.url.startsWith("chrome://") &&
+              !msg.url.startsWith("chrome-error://")
+            ) {
+              setPageUrl(msg.url);
+              setInputUrl(msg.url);
+
+              if (isMovingRef.current) {
+                isMovingRef.current = false;
+              } else {
+                setNavHistory((prev) => {
+                  const next = prev.slice(0, histIdx + 1);
+                  if (next[next.length - 1] !== msg.url) {
+                    next.push(msg.url);
+                    setHistIdx(next.length - 1);
+                  }
+                  return next;
+                });
+              }
+            }
+            break;
+          case "title":
+            setPageTitle(msg.title);
+            break;
+          case "focus":
+            if (msg.isInput) {
+              setShowMobileKeyboard(true);
+            }
+            break;
+          case "error":
+            setError(msg.message);
+            setIsLoading(false);
+            break;
+        }
+      } catch {
+        // ignore malformed
+      }
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+      setWsStatus("disconnected");
+    };
+
+    ws.onerror = () => {
+      setError("WebSocket connection failed");
+      setIsConnected(false);
+      setWsStatus("error");
+      setIsLoading(false);
+    };
+  }, [disconnect, wsUrl, width, height]);
+
+  const navigate = useCallback((target: string) => {
+    const trimmed = target.trim();
+    if (!trimmed) return;
+
+    let formatted: string;
+    if (/^https?:\/\//i.test(trimmed)) {
+      formatted = trimmed;
+    } else if (/^[\w-]+\.[\w-]+/.test(trimmed) && !/\s/.test(trimmed)) {
+      formatted = `https://${trimmed}`;
+    } else {
+      formatted = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+    }
+
+    setUrl(formatted);
+    setInputUrl(formatted);
+    setError(null);
+  }, []);
 
   const goBack = useCallback(() => {
     if (!wsRef.current || histIdx <= 0) return;
@@ -363,14 +226,17 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     setHistIdx((prev) => prev + 1);
   }, [histIdx, navHistory]);
 
-  const handleHiddenInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!wsRef.current) return;
-    const text = e.target.value;
-    if (text) {
-      wsRef.current.send(JSON.stringify({ type: "text", key: text }));
-      e.target.value = ""; // Clear for next input
-    }
-  }, []);
+  const handleHiddenInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!wsRef.current) return;
+      const text = e.target.value;
+      if (text) {
+        wsRef.current.send(JSON.stringify({ type: "text", key: text }));
+        e.target.value = ""; // Clear for next input
+      }
+    },
+    [],
+  );
 
   const handleMobileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -394,17 +260,14 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     [inputUrl, navigate],
   );
 
-  const getCoords = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return { x: 0, y: 0 };
-      return {
-        x: Math.round(e.clientX - rect.left),
-        y: Math.round(e.clientY - rect.top),
-      };
-    },
-    [],
-  );
+  const getCoords = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: Math.round(e.clientX - rect.left),
+      y: Math.round(e.clientY - rect.top),
+    };
+  }, []);
 
   const getViewportCoords = useCallback(
     (containerX: number, containerY: number) => {
@@ -438,11 +301,11 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     const handleScrollEvent = (e: any) => {
       if (!wsRef.current) return;
       const { amount } = e.detail;
-      
+
       // Use center of viewport for scrolling
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      
+
       const centerX = rect.width / 2;
       const centerY = rect.height / 2;
       const { x, y } = getViewportCoords(centerX, centerY);
@@ -459,7 +322,8 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     };
 
     window.addEventListener(`app-scroll-${windowId}`, handleScrollEvent);
-    return () => window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+    return () =>
+      window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
   }, [windowId, getViewportCoords]);
 
   const handleMouseDown = useCallback(
@@ -495,7 +359,9 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     (e: React.WheelEvent<HTMLDivElement>) => {
       if (!wsRef.current) return;
       e.preventDefault();
-      const containerCoords = getCoords(e as unknown as React.MouseEvent<HTMLDivElement>);
+      const containerCoords = getCoords(
+        e as unknown as React.MouseEvent<HTMLDivElement>,
+      );
       const { x, y } = getViewportCoords(containerCoords.x, containerCoords.y);
       wsRef.current.send(
         JSON.stringify({
@@ -540,34 +406,31 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     [],
   );
 
-  const handleKeyUp = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (!wsRef.current) return;
-      if (
-        e.key === "Control" ||
-        e.key === "Shift" ||
-        e.key === "Alt" ||
-        e.key === "Meta" ||
-        e.target === inputRef.current ||
-        e.target === hiddenInputRef.current
-      )
-        return;
+  const handleKeyUp = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!wsRef.current) return;
+    if (
+      e.key === "Control" ||
+      e.key === "Shift" ||
+      e.key === "Alt" ||
+      e.key === "Meta" ||
+      e.target === inputRef.current ||
+      e.target === hiddenInputRef.current
+    )
+      return;
 
-      e.preventDefault();
-      wsRef.current.send(
-        JSON.stringify({
-          type: "keyup",
-          key: e.key,
-          code: e.code,
-          ctrlKey: e.ctrlKey,
-          shiftKey: e.shiftKey,
-          altKey: e.altKey,
-          metaKey: e.metaKey,
-        }),
-      );
-    },
-    [],
-  );
+    e.preventDefault();
+    wsRef.current.send(
+      JSON.stringify({
+        type: "keyup",
+        key: e.key,
+        code: e.code,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        metaKey: e.metaKey,
+      }),
+    );
+  }, []);
 
   const showRipple = useCallback((cx: number, cy: number) => {
     const id = ++rippleIdRef.current;
@@ -579,19 +442,14 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     }, 400);
   }, []);
 
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent<HTMLDivElement>) => {
-      if (!wsRef.current) return;
-      const text = e.clipboardData.getData("text");
-      if (text) {
-        e.preventDefault();
-        wsRef.current.send(
-          JSON.stringify({ type: "text", key: text }),
-        );
-      }
-    },
-    [],
-  );
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!wsRef.current) return;
+    const text = e.clipboardData.getData("text");
+    if (text) {
+      e.preventDefault();
+      wsRef.current.send(JSON.stringify({ type: "text", key: text }));
+    }
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-neutral-900">
@@ -606,7 +464,16 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
           }`}
           title="Back"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="15,18 9,12 15,6" />
           </svg>
         </button>
@@ -620,7 +487,16 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
           }`}
           title="Forward"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="9,18 15,12 9,6" />
           </svg>
         </button>
@@ -629,7 +505,16 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
           className="w-7 h-7 flex items-center justify-center rounded text-neutral-300 hover:bg-neutral-700 cursor-pointer transition-colors text-sm"
           title="Refresh"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="1,4 1,10 7,10" />
             <polyline points="23,20 23,14 17,14" />
             <path d="M20.49,9A9,9,0,0,0,5.64,5.64L1,10" />
@@ -639,11 +524,22 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
         <button
           onClick={() => setShowMobileKeyboard(!showMobileKeyboard)}
           className={`w-7 h-7 flex items-center justify-center rounded transition-colors text-sm cursor-pointer ${
-            showMobileKeyboard ? "bg-blue-600 text-white" : "text-neutral-300 hover:bg-neutral-700"
+            showMobileKeyboard
+              ? "bg-blue-600 text-white"
+              : "text-neutral-300 hover:bg-neutral-700"
           }`}
           title="Toggle Mobile Keyboard"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
             <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
           </svg>
@@ -668,7 +564,16 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
             className="w-7 h-7 flex items-center justify-center rounded text-neutral-300 hover:bg-neutral-700 cursor-pointer transition-colors"
             title="Open in new tab"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M18,13v6a2,2,0,0,1-2,2H5a2,2,0,0,1-2-2V8A2,2,0,0,1,5,6h6" />
               <polyline points="15,3 21,3 21,9" />
               <line x1="10" y1="14" x2="21" y2="3" />
@@ -718,7 +623,16 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
                 onClick={() => setShowMobileKeyboard(false)}
                 className="w-10 h-10 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 text-neutral-400 rounded-lg transition-colors cursor-pointer"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
@@ -749,8 +663,8 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
                 Enter a URL above to start browsing
               </p>
               {windowId && wsStatus === "disconnected" && (
-                <button 
-                  onClick={() => setRetryKey(k => k + 1)}
+                <button
+                  onClick={() => setRetryKey((k) => k + 1)}
                   className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-white text-xs rounded transition-colors"
                 >
                   Reconnect Session
@@ -776,7 +690,9 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
-              <p className="text-neutral-300 text-sm mb-1">Failed to load page</p>
+              <p className="text-neutral-300 text-sm mb-1">
+                Failed to load page
+              </p>
               <p className="text-neutral-500 text-xs mb-3">{error}</p>
               <div className="flex items-center justify-center gap-2">
                 <a
@@ -787,8 +703,8 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
                 >
                   Open in new tab
                 </a>
-                <button 
-                  onClick={() => setRetryKey(k => k + 1)}
+                <button
+                  onClick={() => setRetryKey((k) => k + 1)}
                   className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-white text-xs rounded transition-colors"
                 >
                   Reconnect
@@ -805,8 +721,20 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
                   viewBox="0 0 24 24"
                   fill="none"
                 >
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.2" />
-                  <path d="M12,2a10,10,0,1,0,10,10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    opacity="0.2"
+                  />
+                  <path
+                    d="M12,2a10,10,0,1,0,10,10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
                 </svg>
               </div>
             )}
@@ -833,7 +761,15 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
                   className="animate-ping text-blue-400"
                   style={{ animationDuration: "400ms" }}
                 >
-                  <circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.8" />
+                  <circle
+                    cx="10"
+                    cy="10"
+                    r="5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    opacity="0.8"
+                  />
                 </svg>
               </div>
             )}
@@ -843,14 +779,21 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
       {isConnected && (
         <div className="flex items-center gap-3 px-3 py-1 border-t border-neutral-800 bg-neutral-900 text-[10px] font-mono">
           <span className="flex items-center gap-1">
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              wsStatus === "connected" ? "bg-green-500" : wsStatus === "error" ? "bg-red-500" : "bg-yellow-500"
-            }`} />
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                wsStatus === "connected"
+                  ? "bg-green-500"
+                  : wsStatus === "error"
+                    ? "bg-red-500"
+                    : "bg-yellow-500"
+              }`}
+            />
             <span className="text-neutral-400">{wsStatus}</span>
           </span>
           <span className="text-neutral-600">|</span>
           <span className="text-neutral-500">
-            frames: <span className="text-neutral-300">{frameCountRef.current}</span>
+            frames:{" "}
+            <span className="text-neutral-300">{frameCountRef.current}</span>
           </span>
           <span className="text-neutral-600">|</span>
           <span className="text-neutral-500 truncate">
@@ -862,7 +805,13 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   );
 };
 
-const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; windowId?: string }) => {
+const SSHTerminal = ({
+  connectionId,
+  windowId,
+}: {
+  connectionId?: number;
+  windowId?: string;
+}) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -900,17 +849,22 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
     };
 
     window.addEventListener(`app-scroll-${windowId}`, handleScrollEvent);
-    return () => window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+    return () =>
+      window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
   }, [windowId]);
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (!document.hidden && (statusRef.current === "disconnected" || statusRef.current === "error")) {
-        setRetryKey(k => k + 1);
+      if (
+        !document.hidden &&
+        (statusRef.current === "disconnected" || statusRef.current === "error")
+      ) {
+        setRetryKey((k) => k + 1);
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
   useEffect(() => {
@@ -976,11 +930,13 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
     ws.onopen = () => {
       if (fit && term) {
         fit.fit();
-        ws.send(JSON.stringify({
-          type: "resize",
-          cols: term.cols,
-          rows: term.rows,
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "resize",
+            cols: term.cols,
+            rows: term.rows,
+          }),
+        );
       }
       setStatus("connected");
     };
@@ -1075,14 +1031,36 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
               className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-sm text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer"
               title="Arrow Up"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="18 15 12 9 6 15" />
+              </svg>
             </button>
             <button
               onClick={() => sendShortcut("\x1b[B")}
               className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-sm text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer"
               title="Arrow Down"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             </button>
             <div className="w-px h-4 bg-neutral-700" />
             <button
@@ -1101,7 +1079,9 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
             </button>
           </div>
           <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-600 rounded-lg">
-              <span className="text-[9px] text-neutral-600 font-mono shrink-0 mr-0.5">tmux</span>
+            <span className="text-[9px] text-neutral-600 font-mono shrink-0 mr-0.5">
+              tmux
+            </span>
             <button
               onClick={() => sendTmux("n")}
               className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
@@ -1171,8 +1151,8 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
           {status === "error" && (
             <div className="text-center">
               <p className="text-red-400 mb-4">Connection error</p>
-              <button 
-                onClick={() => setRetryKey(k => k + 1)}
+              <button
+                onClick={() => setRetryKey((k) => k + 1)}
                 className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md transition-colors text-xs"
               >
                 Reconnect
@@ -1182,8 +1162,8 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
           {status === "disconnected" && (
             <div className="text-center">
               <p className="text-neutral-400 mb-4">Disconnected</p>
-              <button 
-                onClick={() => setRetryKey(k => k + 1)}
+              <button
+                onClick={() => setRetryKey((k) => k + 1)}
                 className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md transition-colors text-xs"
               >
                 Reconnect
@@ -1197,28 +1177,6 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
 };
 
 export const registry: Record<AppId, AppDefinition> = {
-  "code-editor": {
-    id: "code-editor",
-    title: "Code Editor",
-    icon: "{ }",
-    component: CodeEditor as React.ComponentType<{
-      connectionId?: number;
-      windowId?: string;
-    }>,
-    defaultWidth: 550,
-    defaultHeight: 400,
-  },
-  terminal: {
-    id: "terminal",
-    title: "Terminal",
-    icon: "> $",
-    component: SimTerminal as React.ComponentType<{
-      connectionId?: number;
-      windowId?: string;
-    }>,
-    defaultWidth: 500,
-    defaultHeight: 320,
-  },
   notes: {
     id: "notes",
     title: "Notes",

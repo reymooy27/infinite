@@ -18,10 +18,14 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   } | null>(null);
   const isMiddlePanning = useRef(false);
   const middlePanStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+  const scaleRef = useRef(1);
+  const lastScale = useRef(1);
+  const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const percentRef = useRef<HTMLButtonElement>(null);
   const [pendingSSH, setPendingSSH] = useState<{ x: number; y: number } | null>(
     null,
   );
-  const [zoomScale, setZoomScale] = useState(1);
+  const [isZooming, setIsZooming] = useState(false);
   const draggingId = useWindowStore((s) => s.draggingId);
   const focusTargetId = useWindowStore((s) => s.focusTargetId);
   const windows = useWindowStore((s) => s.windows);
@@ -58,6 +62,45 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     const prevent = (e: Event) => e.preventDefault();
     el.addEventListener("dblclick", prevent);
     return () => el.removeEventListener("dblclick", prevent);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const inst = canvasTransform.current as any;
+      if (!inst?.state) return;
+      const wrapper = inst.wrapperComponent as HTMLElement | undefined;
+      if (!wrapper) return;
+      const rect = wrapper.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const { scale, positionX, positionY } = inst.state;
+      const delta = -e.deltaY * 0.005;
+      const newScale = scale * Math.exp(delta);
+      const clamped = Math.min(20, Math.max(0.1, newScale));
+      const ratio = clamped / scale;
+      const newPosX = mouseX - (mouseX - positionX) * ratio;
+      const newPosY = mouseY - (mouseY - positionY) * ratio;
+      (inst.setState ?? inst.instance?.setState)?.call(inst, clamped, newPosX, newPosY);
+    };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  useEffect(() => {
+    let frame: number;
+    const tick = () => {
+      if (percentRef.current) {
+        percentRef.current.textContent = `${Math.round(scaleRef.current * 100)}%`;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const handleCanvasClick = useCallback(
@@ -170,27 +213,6 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       if (twAny.setup?.wheel) twAny.setup.wheel.disabled = false;
     }
   }, [placingAppId, draggingId, focusTargetId]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const z = zoomRef.current;
-        if (!z) return;
-        if (e.deltaY < 0) {
-          z.zoomIn();
-        } else {
-          z.zoomOut();
-        }
-      }
-    };
-
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheel);
-  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -310,14 +332,21 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           animationType: "easeOut",
         }}
         pinch={{
-          step: 5,
+          step: 2,
         }}
         doubleClick={{ disabled: true }}
         trackPadPanning={{
           disabled: false,
         }}
         onTransform={({ state }) => {
-          setZoomScale(state.scale);
+          const newScale = state.scale;
+          scaleRef.current = newScale;
+          if (newScale !== lastScale.current) {
+            setIsZooming(true);
+            lastScale.current = newScale;
+            clearTimeout(zoomTimer.current);
+            zoomTimer.current = setTimeout(() => setIsZooming(false), 150);
+          }
         }}
         panning={{
           disabled: false,
@@ -342,6 +371,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
                   className="relative"
                   style={{
                     willChange: "transform",
+                    transform: "translateZ(0)",
                     width: "10000px",
                     height: "10000px",
                     backgroundSize: "40px 40px",
@@ -350,7 +380,9 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
                   }}
                   onClick={handleBackgroundClick}
                 >
-                  {children}
+                  <div style={{ pointerEvents: isZooming ? "none" : "auto" }}>
+                    {children}
+                  </div>
                 </div>
               </TransformComponent>
               <div className="absolute bottom-4 left-4 hidden sm:flex z-[9999] items-center gap-1 px-1 py-1 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg shadow-xl text-xs">
@@ -373,11 +405,12 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
                   </svg>
                 </button>
                 <button
+                  ref={percentRef}
                   onClick={() => resetTransform()}
                   className="min-w-6 h-6 flex items-center justify-center px-1.5 rounded hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-[11px] transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
                   title="Reset zoom"
                 >
-                  {Math.round(zoomScale * 100)}%
+                  100%
                 </button>
                 <button
                   onClick={() => zoomIn()}

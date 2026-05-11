@@ -385,7 +385,7 @@ export default function WindowFrame({
       }}
       minWidth={MIN_WIDTH}
       minHeight={MIN_HEIGHT}
-      style={{ zIndex: z, display: "flex" }}
+      style={{ zIndex: z, display: "flex", willChange: "transform" }}
       scale={scale}
       dragHandleClassName="window-drag-handle"
       disableDragging={false}

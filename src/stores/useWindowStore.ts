@@ -33,8 +33,6 @@ interface WindowState {
 }
 
 const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
-  "code-editor": { width: 400, height: 300 },
-  terminal: { width: 500, height: 320 },
   notes: { width: 320, height: 300 },
   ssh: { width: 400, height: 350 },
   browser: { width: 800, height: 600 },
