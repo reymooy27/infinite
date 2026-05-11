@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
-import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
-import { canvasTransform } from "@/lib/canvasTransform";
-import { useWindowStore } from "@/stores/useWindowStore";
-import { useSSHStore } from "@/stores/useSSHStore";
 import registry from "@/apps/registry";
+import { canvasTransform } from "@/lib/canvasTransform";
+import { useSSHStore } from "@/stores/useSSHStore";
+import { useWindowStore } from "@/stores/useWindowStore";
 import type { AppId } from "@/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 
 export default function Canvas({ children }: { children: React.ReactNode }) {
   const wrapperRef = useRef<React.ComponentRef<typeof TransformWrapper>>(null);
@@ -204,7 +204,9 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
       const tw = wrapperRef.current;
       if (!tw) return;
-      const state = (tw as unknown as { state?: { positionX: number; positionY: number } }).state;
+      const state = (
+        tw as unknown as { state?: { positionX: number; positionY: number } }
+      ).state;
       isMiddlePanning.current = true;
       middlePanStart.current = {
         x: e.clientX,
@@ -327,83 +329,83 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         {({ zoomIn, zoomOut, resetTransform }) => {
           zoomRef.current = { zoomIn, zoomOut };
           return (
-          <>
-            <TransformComponent
-              wrapperStyle={{
-                width: "100%",
-                height: "100%",
-              }}
-            >
-              <div
-                ref={contentRef}
-                className="relative"
-                style={{
-                  willChange: "transform",
-                  width: "10000px",
-                  height: "10000px",
-                  backgroundSize: "40px 40px",
-                  backgroundColor: bgColor,
-                  transition: "background-color 0.2s ease",
+            <>
+              <TransformComponent
+                wrapperStyle={{
+                  width: "100%",
+                  height: "100%",
                 }}
-                onClick={handleBackgroundClick}
               >
-                {children}
+                <div
+                  ref={contentRef}
+                  className="relative"
+                  style={{
+                    willChange: "transform",
+                    width: "10000px",
+                    height: "10000px",
+                    backgroundSize: "40px 40px",
+                    backgroundColor: bgColor,
+                    transition: "background-color 0.2s ease",
+                  }}
+                  onClick={handleBackgroundClick}
+                >
+                  {children}
+                </div>
+              </TransformComponent>
+              <div className="absolute bottom-4 left-4 hidden sm:flex z-[9999] items-center gap-1 px-1 py-1 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg shadow-xl text-xs">
+                <button
+                  onClick={() => zoomOut()}
+                  className="w-6 h-6 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
+                  title="Zoom out"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => resetTransform()}
+                  className="min-w-6 h-6 flex items-center justify-center px-1.5 rounded hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-[11px] transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
+                  title="Reset zoom"
+                >
+                  {Math.round(zoomScale * 100)}%
+                </button>
+                <button
+                  onClick={() => zoomIn()}
+                  className="w-6 h-6 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
+                  title="Zoom in"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
               </div>
-            </TransformComponent>
-            <div className="absolute bottom-4 left-4 hidden sm:flex z-[9999] items-center gap-1 px-2 py-1.5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg shadow-xl text-xs">
-              <button
-                onClick={() => zoomOut()}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
-                title="Zoom out"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-              <button
-                onClick={() => resetTransform()}
-                className="min-w-[52px] h-8 flex items-center justify-center px-1.5 rounded hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-[11px] transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
-                title="Reset zoom"
-              >
-                {Math.round(zoomScale * 100)}%
-              </button>
-              <button
-                onClick={() => zoomIn()}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
-                title="Zoom in"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-            </div>
-          </>
+            </>
           );
         }}
       </TransformWrapper>
       {placingApp && !pendingSSH && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-3 px-5 py-3 bg-blue-900/90 backdrop-blur-md border border-blue-500 text-blue-100 rounded-lg shadow-lg text-sm">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[9998] flex flex-col md:flex-row md:justify-center items-center gap-3 px-5 py-3 bg-blue-900/90 backdrop-blur-md border border-blue-500 text-blue-100 rounded-lg shadow-lg text-xs md:text-sm">
           <span className="text-lg">{placingApp.icon}</span>
-          <span>
+          <span className="text-center">
             Click on canvas to place <strong>{placingApp.title}</strong>
           </span>
           <button
@@ -451,8 +453,12 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
             <div className="p-5 flex flex-col gap-2.5 max-h-[60vh] overflow-y-auto">
               {connections.length === 0 ? (
                 <div className="text-center py-8 px-4">
-                  <p className="text-neutral-500 text-sm mb-3">No SSH connections yet</p>
-                  <p className="text-neutral-600 text-xs mb-4">Add a connection in the SSH sidebar first</p>
+                  <p className="text-neutral-500 text-sm mb-3">
+                    No SSH connections yet
+                  </p>
+                  <p className="text-neutral-600 text-xs mb-4">
+                    Add a connection in the SSH sidebar first
+                  </p>
                   <button
                     onClick={handleNoConnection}
                     className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm rounded-md cursor-pointer transition-colors"

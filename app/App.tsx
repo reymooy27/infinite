@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
-import Canvas from "@/components/Canvas";
-import WindowFrame from "@/components/WindowFrame";
-import Dock from "@/components/Dock";
-import Sidebar from "@/components/Sidebar";
-import NavigationBlockModal from "@/components/NavigationBlockModal";
-import { useWindowStore } from "@/stores/useWindowStore";
-import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 import registry from "@/apps/registry";
+import Canvas from "@/components/Canvas";
+import Dock from "@/components/Dock";
+import NavigationBlockModal from "@/components/NavigationBlockModal";
+import Sidebar from "@/components/Sidebar";
+import WindowFrame from "@/components/WindowFrame";
+import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
+import { useWindowStore } from "@/stores/useWindowStore";
+import { useEffect } from "react";
 
 export default function App() {
   const { block, unblock } = useNavigationBlockStore();
@@ -36,10 +36,13 @@ export default function App() {
     const handlePopState = (e: PopStateEvent) => {
       if (windows.length > 0) {
         e.preventDefault();
-        block("You have open windows. Are you sure you want to go back?", () => {
-          unblock();
-          window.history.go(1);
-        });
+        block(
+          "You have open windows. Are you sure you want to go back?",
+          () => {
+            unblock();
+            window.history.go(1);
+          },
+        );
         window.history.pushState(null, "", window.location.href);
       }
     };
@@ -74,7 +77,10 @@ export default function App() {
                 defaultWidth={app.defaultWidth}
                 defaultHeight={app.defaultHeight}
               >
-                <AppComponent connectionId={win.metadata?.connectionId as number} windowId={win.id} />
+                <AppComponent
+                  connectionId={win.metadata?.connectionId as number}
+                  windowId={win.id}
+                />
               </WindowFrame>
             );
           })}
@@ -95,10 +101,10 @@ export default function App() {
               defaultWidth={app.defaultWidth}
               defaultHeight={app.defaultHeight}
             >
-              <AppComponent 
-                key={`${win.id}-${win.maximized}`} 
-                connectionId={win.metadata?.connectionId as number} 
-                windowId={win.id} 
+              <AppComponent
+                key={`${win.id}-${win.maximized}`}
+                connectionId={win.metadata?.connectionId as number}
+                windowId={win.id}
               />
             </WindowFrame>
           );
