@@ -46,19 +46,56 @@ function parseCookies(cookieHeader: string): Record<string, string> {
 
 async function getUserIdFromSession(req: IncomingMessage): Promise<string | null> {
   const cookieHeader = req.headers.cookie;
-  if (!cookieHeader) return null;
+  const url = req.url ? new URL(req.url, "http://localhost") : null;
+  const queryToken = url?.searchParams.get("token");
+  const path = url?.pathname || "unknown";
 
-  const cookies = parseCookies(cookieHeader);
-  const sessionToken = cookies["next-auth.session-token"];
-  if (!sessionToken) return null;
+  logger.debug(`[Auth] getUserIdFromSession called for ${path}`);
+  logger.debug(`[Auth] Cookie header present: ${!!cookieHeader}`);
+  logger.debug(`[Auth] Cookie header value: ${cookieHeader?.substring(0, 200)}`);
+  logger.debug(`[Auth] Query token present: ${!!queryToken}`);
+
+  let sessionToken: string | null = null;
+
+  if (cookieHeader) {
+    const cookies = parseCookies(cookieHeader);
+    const cookieKeys = Object.keys(cookies);
+    logger.debug(`[Auth] Cookies found: ${cookieKeys.join(", ")}`);
+    sessionToken = 
+      cookies["authjs.session-token"] || 
+      cookies["next-auth.session-token"] || 
+      cookies["__Secure-next-auth.session-token"] || 
+      cookies["__Host-next-auth.session-token"] || 
+      null;
+    logger.debug(`[Auth] Cookie session token found: ${!!sessionToken}`);
+  }
+
+  if (!sessionToken && queryToken) {
+    sessionToken = queryToken;
+    logger.debug(`[Auth] Using query token as fallback`);
+  }
+
+  if (!sessionToken) {
+    logger.warn(`[Auth] No session token found for ${path}`);
+    return null;
+  }
+
+  const tokenPreview = sessionToken.length > 20 ? sessionToken.substring(0, 20) + "..." : sessionToken;
+  logger.debug(`[Auth] Token preview: ${tokenPreview}`);
 
   try {
     const session = await prisma.session.findUnique({
       where: { sessionToken },
       select: { userId: true },
     });
-    return session?.userId || null;
-  } catch {
+    if (!session) {
+      logger.warn(`[Auth] Session not found in DB for token ${tokenPreview}`);
+      return null;
+    }
+    logger.info(`[Auth] Valid session found, userId: ${session.userId}`);
+    return session.userId;
+  } catch (err) {
+    logger.error(`[Auth] DB error: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }

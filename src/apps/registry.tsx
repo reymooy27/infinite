@@ -186,17 +186,22 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [retryKey, setRetryKey] = useState(0);
 
   const wsUrl = useMemo(() => {
+    const cookies = document.cookie.split("; ");
+    const sessionToken = 
+      cookies.find((c) => c.startsWith("authjs.session-token="))?.split("=")[1] ||
+      cookies.find((c) => c.startsWith("next-auth.session-token="))?.split("=")[1];
     const configured = process.env.NEXT_PUBLIC_WS_URL;
+    const tokenParam = sessionToken ? `&token=${sessionToken}` : "";
     if (configured) {
       if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
-        return `${configured}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}`;
+        return `${configured}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}${tokenParam}`;
       }
       const proto = configured.startsWith("https") ? "wss:" : "ws:";
       const base = configured.replace(/^https?:\/\//, "");
-      return `${proto}//${base}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}`;
+      return `${proto}//${base}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}${tokenParam}`;
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:3001/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}`;
+    return `${proto}//${window.location.hostname}:3001/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}${tokenParam}`;
   }, [width, height, windowId, retryKey]);
 
   useEffect(() => {
@@ -874,17 +879,21 @@ const SSHTerminal = ({ connectionId, windowId }: { connectionId?: number; window
 
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
+    const cookies = document.cookie.split("; ");
+    const sessionToken = 
+      cookies.find((c) => c.startsWith("authjs.session-token="))?.split("=")[1] ||
+      cookies.find((c) => c.startsWith("next-auth.session-token="))?.split("=")[1];
     const configured = process.env.NEXT_PUBLIC_WS_URL;
     if (configured) {
       if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
-        return `${configured}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
+        return `${configured}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}${sessionToken ? `&token=${sessionToken}` : ""}`;
       }
       const proto = configured.startsWith("https") ? "wss:" : "ws:";
       const base = configured.replace(/^https?:\/\//, "");
-      return `${proto}//${base}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
+      return `${proto}//${base}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}${sessionToken ? `&token=${sessionToken}` : ""}`;
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:3001/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
+    return `${proto}//${window.location.hostname}:3001/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}${sessionToken ? `&token=${sessionToken}` : ""}`;
   }, [connectionId, windowId, retryKey]);
 
   useEffect(() => {
