@@ -6,7 +6,7 @@ import cors from "cors";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
-import { createSSHSocket } from "./lib/ssh.js";
+import { createSSHSocket, ensureLocalTunnel } from "./lib/ssh.js";
 import { createBrowserSession } from "./lib/browser.js";
 import { logger } from "./lib/logger.js";
 
@@ -16,6 +16,36 @@ const wss = new WebSocketServer({ noServer: true, pingInterval: 15000, pingTimeo
 
 app.use(cors());
 app.use(express.json());
+
+app.post("/api/tunnels", async (req, res) => {
+  const connectionId = parseInt(String(req.body?.connectionId || "0"), 10);
+  const targetHost =
+    typeof req.body?.targetHost === "string" && req.body.targetHost
+      ? req.body.targetHost
+      : "127.0.0.1";
+  const targetPort = parseInt(String(req.body?.targetPort || "0"), 10);
+
+  if (!connectionId || !targetPort) {
+    res.status(400).json({ error: "Missing connectionId or targetPort" });
+    return;
+  }
+
+  try {
+    const connection = await loadConnection(connectionId);
+    const tunnel = await ensureLocalTunnel(connection, targetHost, targetPort);
+    res.json(tunnel);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to create tunnel";
+    logger.error("[Tunnel] Failed to create local tunnel", {
+      connectionId,
+      targetHost,
+      targetPort,
+      error: message,
+    });
+    res.status(500).json({ error: message });
+  }
+});
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -30,6 +60,63 @@ interface ConnectionRow {
   authType: string;
   passwordEncrypted: string | null;
   privateKeyEncrypted: string | null;
+}
+
+async function loadConnection(connId: number) {
+  let row: ConnectionRow | null;
+  try {
+    row = (await prisma.connection.findUnique({
+      where: { id: connId },
+    })) as ConnectionRow | null;
+  } catch (err) {
+    logger.error(`[WS] Database error fetching connection ${connId}`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw new Error("Database error");
+  }
+
+  if (!row) {
+    throw new Error("Connection not found");
+  }
+
+  const secret = process.env.ENCRYPTION_SECRET;
+  if (!secret) {
+    throw new Error("ENCRYPTION_SECRET not set");
+  }
+
+  const connection: {
+    id: number;
+    name: string;
+    host: string;
+    port: number;
+    username: string;
+    authType: "password" | "key";
+    password?: string;
+    privateKey?: string;
+  } = {
+    id: row.id,
+    name: row.name,
+    host: row.host,
+    port: row.port,
+    username: row.username,
+    authType: row.authType as "password" | "key",
+  };
+
+  try {
+    if (row.passwordEncrypted) {
+      connection.password = decrypt(row.passwordEncrypted, secret);
+    }
+    if (row.privateKeyEncrypted) {
+      connection.privateKey = decrypt(row.privateKeyEncrypted, secret);
+    }
+  } catch (err) {
+    logger.error(`[WS] Connection ${connId}: Failed to decrypt credentials`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw new Error("Failed to decrypt credentials");
+  }
+
+  return connection;
 }
 
 server.on("upgrade", (req: IncomingMessage, socket, head) => {
@@ -74,73 +161,25 @@ wss.on("connection", async (ws, req) => {
     return;
   }
 
-  let row: ConnectionRow | null;
   try {
-    row = await prisma.connection.findUnique({
-      where: { id: connId },
-    }) as ConnectionRow | null;
-  } catch (err) {
-    logger.error(`[WS] Database error fetching connection ${connId}`, {
-      error: err instanceof Error ? err.message : String(err)
-    });
-    ws.send(JSON.stringify({ type: "error", message: "Database error" }));
-    ws.close();
-    return;
-  }
-
-  if (!row) {
-    logger.warn(`[WS] Connection rejected: connection ${connId} not found`);
-    ws.send(JSON.stringify({ type: "error", message: "Connection not found" }));
-    ws.close();
-    return;
-  }
-
-  const secret = process.env.ENCRYPTION_SECRET;
-  if (!secret) {
-    logger.error(`[WS] Connection ${connId}: ENCRYPTION_SECRET not set`);
-    ws.send(
-      JSON.stringify({ type: "error", message: "ENCRYPTION_SECRET not set" }),
+    const connection = await loadConnection(connId);
+    logger.info(
+      `[WS] SSH connection established: ${connection.name} (${connection.host})`,
     );
-    ws.close();
-    return;
-  }
-
-  const connection: {
-    id: number;
-    name: string;
-    host: string;
-    port: number;
-    username: string;
-    authType: "password" | "key";
-    password?: string;
-    privateKey?: string;
-  } = {
-    id: row.id,
-    name: row.name,
-    host: row.host,
-    port: row.port,
-    username: row.username,
-    authType: row.authType as "password" | "key",
-  };
-
-  try {
-    if (row.passwordEncrypted) {
-      connection.password = decrypt(row.passwordEncrypted, secret);
-    }
-    if (row.privateKeyEncrypted) {
-      connection.privateKey = decrypt(row.privateKeyEncrypted, secret);
-    }
+    createSSHSocket(
+      connection,
+      ws as Parameters<typeof createSSHSocket>[1],
+      windowId,
+    );
   } catch (err) {
-    logger.error(`[WS] Connection ${connId}: Failed to decrypt credentials`, {
-      error: err instanceof Error ? err.message : String(err)
+    const message =
+      err instanceof Error ? err.message : "Failed to load SSH connection";
+    logger.error(`[WS] Connection ${connId}: setup failed`, {
+      error: message,
     });
-    ws.send(JSON.stringify({ type: "error", message: "Failed to decrypt credentials" }));
+    ws.send(JSON.stringify({ type: "error", message }));
     ws.close();
-    return;
   }
-
-  logger.info(`[WS] SSH connection established: ${connection.name} (${connection.host})`);
-  createSSHSocket(connection, ws as Parameters<typeof createSSHSocket>[1], windowId);
 });
 
 wss.on("error", (err) => {

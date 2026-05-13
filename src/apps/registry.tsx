@@ -6,6 +6,7 @@ import { Terminal as XTerminal } from "@xterm/xterm";
 import { Code2, FileText, Globe, Monitor } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DevBrowser from "./DevBrowser";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 
 const Notes = () => {
   const [content, setContent] = useState("");
@@ -21,7 +22,13 @@ const Notes = () => {
   );
 };
 
-const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
+const BrowserCanvas = ({
+  windowId,
+  connectionId,
+}: {
+  windowId?: string;
+  connectionId?: number;
+}) => {
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -46,6 +53,10 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [pageUrl, setPageUrl] = useState("");
   const [pageTitle, setPageTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [tunnelDebug, setTunnelDebug] = useState<{
+    requested: string;
+    localPort: number;
+  } | null>(null);
   const [navHistory, setNavHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
   const [showMobileKeyboard, setShowMobileKeyboard] = useState(false);
@@ -53,6 +64,23 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(700);
   const [retryKey, setRetryKey] = useState(0);
+
+  const apiBaseUrl = useMemo(() => {
+    const configured = process.env.NEXT_PUBLIC_WS_URL;
+    if (configured) {
+      if (
+        configured.startsWith("http://") ||
+        configured.startsWith("https://")
+      ) {
+        return configured;
+      }
+      if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
+        return configured.replace(/^ws/, "http");
+      }
+      return `${window.location.protocol}//${configured.replace(/^https?:\/\//, "")}`;
+    }
+    return `${window.location.protocol}//${window.location.hostname}:3001`;
+  }, []);
 
   const wsUrl = useMemo(() => {
     const configured = process.env.NEXT_PUBLIC_WS_URL;
@@ -192,23 +220,93 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     };
   }, [disconnect, wsUrl, width, height]);
 
-  const navigate = useCallback((target: string) => {
-    const trimmed = target.trim();
-    if (!trimmed) return;
+  const navigate = useCallback(
+    async (target: string) => {
+      const trimmed = target.trim();
+      if (!trimmed) return;
 
-    let formatted: string;
-    if (/^https?:\/\//i.test(trimmed)) {
-      formatted = trimmed;
-    } else if (/^[\w-]+\.[\w-]+/.test(trimmed) && !/\s/.test(trimmed)) {
-      formatted = `https://${trimmed}`;
-    } else {
-      formatted = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-    }
+      let formatted: string;
+      if (/^https?:\/\//i.test(trimmed)) {
+        formatted = trimmed;
+      } else if (
+        /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/.*)?$/i.test(trimmed)
+      ) {
+        formatted = `http://${trimmed}`;
+      } else if (/^[\w-]+\.[\w-]+/.test(trimmed) && !/\s/.test(trimmed)) {
+        formatted = `https://${trimmed}`;
+      } else {
+        formatted = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+      }
 
-    setUrl(formatted);
-    setInputUrl(formatted);
-    setError(null);
-  }, []);
+      try {
+        const parsed = new URL(formatted);
+        const isLocalHost =
+          parsed.hostname === "localhost" ||
+          parsed.hostname === "127.0.0.1" ||
+          parsed.hostname === "0.0.0.0";
+
+        if (isLocalHost) {
+          if (!connectionId) {
+            setError(
+              "This browser window is not attached to an SSH connection. Open Browser from SSH Manager to access remote localhost.",
+            );
+            return;
+          }
+
+          const targetPort = parsed.port
+            ? parseInt(parsed.port, 10)
+            : parsed.protocol === "https:"
+              ? 443
+              : 80;
+
+          const res = await fetch(`${apiBaseUrl}/api/tunnels`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              connectionId,
+              targetHost: "127.0.0.1",
+              targetPort,
+            }),
+          });
+
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || "Failed to create localhost tunnel");
+          }
+
+          const data = await res.json();
+          const tunneled = `${data.url}${parsed.pathname}${parsed.search}${parsed.hash}`;
+          setUrl(tunneled);
+          setInputUrl(trimmed);
+          setError(null);
+          setTunnelDebug({
+            requested: `${parsed.hostname}:${targetPort}`,
+            localPort: data.localPort,
+          });
+          setIsLoading(true);
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: "navigate", url: tunneled }));
+          }
+          return;
+        }
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err.message);
+          return;
+        }
+      }
+
+      setUrl(formatted);
+      setInputUrl(formatted);
+      setError(null);
+      setTunnelDebug(null);
+      setIsLoading(true);
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "navigate", url: formatted }));
+      }
+    },
+    [apiBaseUrl, connectionId],
+  );
 
   const goBack = useCallback(() => {
     if (!wsRef.current || histIdx <= 0) return;
@@ -254,7 +352,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     (e: React.FormEvent) => {
       e.preventDefault();
       if (inputUrl.trim()) {
-        navigate(inputUrl.trim());
+        void navigate(inputUrl.trim());
       }
     },
     [inputUrl, navigate],
@@ -556,6 +654,17 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
             spellCheck={false}
           />
         </form>
+        {tunnelDebug && (
+          <div
+            className="hidden md:flex shrink-0 items-center gap-1 rounded-md border border-emerald-800 bg-emerald-950/60 px-2 py-1 text-[10px] font-mono text-emerald-300"
+            title={`SSH tunnel active: ${tunnelDebug.requested} -> 127.0.0.1:${tunnelDebug.localPort}`}
+          >
+            <span className="text-emerald-400">ssh</span>
+            <span>{tunnelDebug.requested}</span>
+            <span className="text-emerald-500">{"->"}</span>
+            <span>127.0.0.1:{tunnelDebug.localPort}</span>
+          </div>
+        )}
         {pageUrl && (
           <a
             href={pageUrl}
@@ -818,6 +927,10 @@ const SSHTerminal = ({
   const fitRef = useRef<FitAddon | null>(null);
   const [status, setStatus] = useState<string>("connecting");
   const [retryKey, setRetryKey] = useState(0);
+  const showTerminalShortcuts = useSettingsStore(
+    (s) => s.showTerminalShortcuts,
+  );
+  const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
   const statusRef = useRef(status);
   statusRef.current = status;
 
@@ -985,9 +1098,17 @@ const SSHTerminal = ({
   }, []);
 
   return (
-    <div className="relative w-full h-full pt-2 px-2 pb-28 bg-[#0a0a0a]">
+    <div
+      className={`relative w-full h-full px-2 bg-[#0a0a0a] ${
+        showTerminalShortcuts
+          ? showTmuxShortcuts
+            ? "pt-2 pb-28"
+            : "pt-2 pb-16"
+          : "py-2"
+      }`}
+    >
       <div ref={terminalRef} className="w-full h-full" />
-      {status === "connected" && (
+      {status === "connected" && showTerminalShortcuts && (
         <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
           <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
             <button
@@ -1078,69 +1199,71 @@ const SSHTerminal = ({
               ↵
             </button>
           </div>
-          <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-600 rounded-lg">
-            <span className="text-[9px] text-neutral-600 font-mono shrink-0 mr-0.5">
-              tmux
-            </span>
-            <button
-              onClick={() => sendTmux("n")}
-              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-              title="Next window"
-            >
-              next
-            </button>
-            <button
-              onClick={() => sendTmux("p")}
-              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-              title="Previous window"
-            >
-              prev
-            </button>
-            <button
-              onClick={() => sendTmux("c")}
-              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-              title="New window"
-            >
-              new
-            </button>
-            <div className="w-px h-4 bg-neutral-700" />
-            <button
-              onClick={() => sendTmux("%")}
-              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-              title="Split vertical"
-            >
-              vsplt
-            </button>
-            <button
-              onClick={() => sendTmux('"')}
-              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-              title="Split horizontal"
-            >
-              hsplt
-            </button>
-            <div className="w-px h-4 bg-neutral-700" />
-            <button
-              onClick={() => sendTmux("z")}
-              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-              title="Zoom pane"
-            >
-              zoom
-            </button>
-            <button
-              onClick={() => sendTmux("x")}
-              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-              title="Kill pane"
-            >
-              kill
-            </button>
-            <button
-              onClick={() => sendTmux("d")}
-              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-              title="Detach"
-            >
-              detach
-            </button>
-          </div>
+          {showTmuxShortcuts && (
+            <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-600 rounded-lg">
+              <span className="text-[9px] text-neutral-600 font-mono shrink-0 mr-0.5">
+                tmux
+              </span>
+              <button
+                onClick={() => sendTmux("n")}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="Next window"
+              >
+                next
+              </button>
+              <button
+                onClick={() => sendTmux("p")}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="Previous window"
+              >
+                prev
+              </button>
+              <button
+                onClick={() => sendTmux("c")}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="New window"
+              >
+                new
+              </button>
+              <div className="w-px h-4 bg-neutral-700" />
+              <button
+                onClick={() => sendTmux("%")}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="Split vertical"
+              >
+                vsplt
+              </button>
+              <button
+                onClick={() => sendTmux('"')}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="Split horizontal"
+              >
+                hsplt
+              </button>
+              <div className="w-px h-4 bg-neutral-700" />
+              <button
+                onClick={() => sendTmux("z")}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="Zoom pane"
+              >
+                zoom
+              </button>
+              <button
+                onClick={() => sendTmux("x")}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="Kill pane"
+              >
+                kill
+              </button>
+              <button
+                onClick={() => sendTmux("d")}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="Detach"
+              >
+                detach
+              </button>
+            </div>
+          )}
         </div>
       )}
       {status !== "connected" && (

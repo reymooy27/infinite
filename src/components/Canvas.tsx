@@ -22,9 +22,11 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   const lastScale = useRef(1);
   const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const percentRef = useRef<HTMLButtonElement>(null);
-  const [pendingSSH, setPendingSSH] = useState<{ x: number; y: number } | null>(
-    null,
-  );
+  const [pendingConnectionApp, setPendingConnectionApp] = useState<{
+    appId: AppId;
+    x: number;
+    y: number;
+  } | null>(null);
   const [isZooming, setIsZooming] = useState(false);
   const draggingId = useWindowStore((s) => s.draggingId);
   const focusTargetId = useWindowStore((s) => s.focusTargetId);
@@ -133,8 +135,12 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       const x = canvasX - app.defaultWidth / 2;
       const y = canvasY - app.defaultHeight / 2;
 
-      if (placingAppId === "ssh") {
-        setPendingSSH({ x, y });
+      if (
+        placingAppId === "ssh" ||
+        placingAppId === "browser" ||
+        placingAppId === "devBrowser"
+      ) {
+        setPendingConnectionApp({ appId: placingAppId, x, y });
         fetchConnections();
         return;
       }
@@ -282,29 +288,39 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   );
 
   const handleSelectConnection = (conn: { id: number; name: string }) => {
-    if (!pendingSSH) return;
-    openApp("ssh" as AppId, pendingSSH.x, pendingSSH.y, {
+    if (!pendingConnectionApp) return;
+    openApp(pendingConnectionApp.appId, pendingConnectionApp.x, pendingConnectionApp.y, {
       connectionId: conn.id,
-      title: conn.name,
+      title:
+        pendingConnectionApp.appId === "ssh"
+          ? conn.name
+          : `${conn.name} ${registry[pendingConnectionApp.appId].title}`,
     });
-    setPendingSSH(null);
+    setPendingConnectionApp(null);
   };
 
-  const handleCancelSSH = () => {
-    setPendingSSH(null);
+  const handleCancelConnectionPick = () => {
+    setPendingConnectionApp(null);
     clearPlacing();
   };
 
   const handleNoConnection = () => {
-    if (!pendingSSH) return;
-    openApp("ssh" as AppId, pendingSSH.x, pendingSSH.y);
-    setPendingSSH(null);
+    if (!pendingConnectionApp) return;
+    openApp(
+      pendingConnectionApp.appId,
+      pendingConnectionApp.x,
+      pendingConnectionApp.y,
+    );
+    setPendingConnectionApp(null);
   };
 
   const isDragging = draggingId !== null;
   const gridColor = isDragging ? "#444" : "#333";
   const bgColor = isDragging ? "#1e1e2e" : "#1a1a1a";
   const placingApp = placingAppId ? registry[placingAppId] : null;
+  const pendingAppDefinition = pendingConnectionApp
+    ? registry[pendingConnectionApp.appId]
+    : null;
 
   return (
     <div
@@ -436,7 +452,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           );
         }}
       </TransformWrapper>
-      {placingApp && !pendingSSH && (
+      {placingApp && !pendingConnectionApp && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[9998] flex flex-col md:flex-row md:justify-center items-center gap-3 px-5 py-3 bg-blue-900/90 backdrop-blur-md border border-blue-500 text-blue-100 rounded-lg shadow-lg text-xs md:text-sm">
           <span className="text-lg">{placingApp.icon}</span>
           <span className="text-center">
@@ -453,7 +469,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       )}
-      {pendingSSH && (
+      {pendingConnectionApp && pendingAppDefinition && (
         <div
           className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={(e) => e.stopPropagation()}
@@ -464,10 +480,10 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700">
               <h2 className="text-sm font-semibold text-neutral-200">
-                Select SSH Connection
+                Select SSH Session for {pendingAppDefinition.title}
               </h2>
               <button
-                onClick={handleCancelSSH}
+                onClick={handleCancelConnectionPick}
                 className="w-6 h-6 flex items-center justify-center rounded hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 cursor-pointer transition-colors"
               >
                 <svg
@@ -497,7 +513,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
                     onClick={handleNoConnection}
                     className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm rounded-md cursor-pointer transition-colors"
                   >
-                    Open without connection
+                    Open without SSH
                   </button>
                 </div>
               ) : (

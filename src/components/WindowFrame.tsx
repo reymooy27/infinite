@@ -10,6 +10,8 @@ const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
 const LONG_PRESS_DURATION = 200;
 const DRAG_THRESHOLD = 5;
+const EDGE_RESIZE_HIT_SIZE = 28;
+const CORNER_RESIZE_HIT_SIZE = 76;
 
 const RESIZE_CONFIG = {
   bottomRight: true,
@@ -321,7 +323,10 @@ export default function WindowFrame({
           onDoubleClick={handleContentDoubleClick}
           onClick={(e: any) => e.stopPropagation()}
         >
-          {cloneElement(children as any, { windowId: id })}
+          {cloneElement(children as any, {
+            windowId: id,
+            connectionId: win?.metadata?.connectionId,
+          })}
         </div>
 
         {/* Floating scroll buttons for mobile - Right edge */}
@@ -391,12 +396,32 @@ export default function WindowFrame({
       disableDragging={false}
       enableResizing={RESIZE_CONFIG}
       resizeHandleStyles={{
-        bottom: { height: "20px", bottom: 0 },
-        right: { width: "20px", right: 0 },
-        bottomRight: { width: "40px", height: "40px", right: 0, bottom: 0 },
-        bottomLeft: { width: "40px", height: "40px", left: 0, bottom: 0 },
-        topRight: { width: "40px", height: "40px", right: 0, top: 0 },
-        topLeft: { width: "40px", height: "40px", left: 0, top: 0 },
+        bottom: { height: `${EDGE_RESIZE_HIT_SIZE}px`, bottom: 0 },
+        right: { width: `${EDGE_RESIZE_HIT_SIZE}px`, right: 0 },
+        bottomRight: {
+          width: `${CORNER_RESIZE_HIT_SIZE}px`,
+          height: `${CORNER_RESIZE_HIT_SIZE}px`,
+          right: 0,
+          bottom: 0,
+        },
+        bottomLeft: {
+          width: `${CORNER_RESIZE_HIT_SIZE}px`,
+          height: `${CORNER_RESIZE_HIT_SIZE}px`,
+          left: 0,
+          bottom: 0,
+        },
+        topRight: {
+          width: `${CORNER_RESIZE_HIT_SIZE}px`,
+          height: `${CORNER_RESIZE_HIT_SIZE}px`,
+          right: 0,
+          top: 0,
+        },
+        topLeft: {
+          width: `${CORNER_RESIZE_HIT_SIZE}px`,
+          height: `${CORNER_RESIZE_HIT_SIZE}px`,
+          left: 0,
+          top: 0,
+        },
       }}
       onDragStart={handleDragStart}
       onDragStop={handleDragStop}
@@ -437,10 +462,13 @@ export default function WindowFrame({
         onDoubleClick={handleContentDoubleClick}
         onClick={(e: any) => e.stopPropagation()}
       >
-        {cloneElement(children as any, { windowId: id })}
+        {cloneElement(children as any, {
+          windowId: id,
+          connectionId: win?.metadata?.connectionId,
+        })}
       </div>
       {/* Visual resize handle for mobile */}
-      <div className="absolute bottom-1 right-1 w-5 h-5 pointer-events-none opacity-60 text-blue-500/80">
+      <div className="absolute bottom-0.5 right-0.5 h-8 w-8 pointer-events-none text-blue-400/90 opacity-80 md:h-5 md:w-5 md:text-blue-500/80 md:opacity-60">
         <svg
           viewBox="0 0 24 24"
           fill="none"

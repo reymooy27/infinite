@@ -8,9 +8,13 @@ interface ConsoleEntry {
 
 interface DevBrowserProps {
   windowId?: string;
+  connectionId?: number;
 }
 
-export default function DevBrowser({ windowId }: DevBrowserProps) {
+export default function DevBrowser({
+  windowId,
+  connectionId,
+}: DevBrowserProps) {
   const [url, setUrl] = useState("about:blank");
   const [inputUrl, setInputUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +25,29 @@ export default function DevBrowser({ windowId }: DevBrowserProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
+
+  const apiBaseUrl = useRef<string>("");
+
+  if (!apiBaseUrl.current && typeof window !== "undefined") {
+    const configured = process.env.NEXT_PUBLIC_WS_URL;
+    if (configured) {
+      if (
+        configured.startsWith("http://") ||
+        configured.startsWith("https://")
+      ) {
+        apiBaseUrl.current = configured;
+      } else if (
+        configured.startsWith("ws://") ||
+        configured.startsWith("wss://")
+      ) {
+        apiBaseUrl.current = configured.replace(/^ws/, "http");
+      } else {
+        apiBaseUrl.current = `${window.location.protocol}//${configured.replace(/^https?:\/\//, "")}`;
+      }
+    } else {
+      apiBaseUrl.current = `${window.location.protocol}//${window.location.hostname}:3001`;
+    }
+  }
 
   useEffect(() => {
     consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -132,13 +159,68 @@ export default function DevBrowser({ windowId }: DevBrowserProps) {
     }, 500);
   }, []);
 
-  const handleNavigate = (e: React.FormEvent) => {
+  const handleNavigate = async (e: React.FormEvent) => {
     e.preventDefault();
     let targetUrl = inputUrl.trim();
     if (!targetUrl) return;
 
-    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+    if (
+      /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/.*)?$/i.test(targetUrl)
+    ) {
+      targetUrl = `http://${targetUrl}`;
+    } else if (
+      !targetUrl.startsWith("http://") &&
+      !targetUrl.startsWith("https://")
+    ) {
       targetUrl = "http://" + targetUrl;
+    }
+
+    try {
+      const parsed = new URL(targetUrl);
+      const isLocalHost =
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "0.0.0.0";
+
+      if (isLocalHost) {
+        if (!connectionId) {
+          setError(
+            "This Dev Browser window is not attached to an SSH connection. Open it from SSH Manager to access remote localhost.",
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        const targetPort = parsed.port
+          ? parseInt(parsed.port, 10)
+          : parsed.protocol === "https:"
+            ? 443
+            : 80;
+
+        const res = await fetch(`${apiBaseUrl.current}/api/tunnels`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connectionId,
+            targetHost: "127.0.0.1",
+            targetPort,
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to create localhost tunnel");
+        }
+
+        const data = await res.json();
+        targetUrl = `${data.url}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+        setIsLoading(false);
+        return;
+      }
     }
 
     setUrl(targetUrl);
