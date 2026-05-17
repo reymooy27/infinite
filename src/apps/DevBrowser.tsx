@@ -17,6 +17,7 @@ interface HistoryEntry {
 }
 
 const LAST_URL_STORAGE_KEY = "dev-browser-last-url";
+const QUICK_LINKS_KEY = "dev-browser-quick-links";
 
 export default function DevBrowser({
   windowId,
@@ -33,11 +34,17 @@ export default function DevBrowser({
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<ConsoleEntry[]>([]);
-  const [showConsole, setShowConsole] = useState(true);
+  const [showConsole, setShowConsole] = useState(false);
   const [consoleAvailable, setConsoleAvailable] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [iframeKey, setIframeKey] = useState(0);
+  const [quickLinks, setQuickLinks] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(window.localStorage.getItem(QUICK_LINKS_KEY) ?? "[]");
+    } catch { return []; }
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
@@ -75,6 +82,11 @@ export default function DevBrowser({
     if (!currentEntry?.displayUrl) return;
     window.localStorage.setItem(storageKey, currentEntry.displayUrl);
   }, [history, historyIndex, storageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(QUICK_LINKS_KEY, JSON.stringify(quickLinks));
+  }, [quickLinks]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -257,16 +269,16 @@ export default function DevBrowser({
     setUrl(entry.targetUrl);
   }, [url]);
 
-  const handleNavigate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const rawUrl = inputUrl.trim();
-    if (!rawUrl) return;
+  const navigateToUrl = useCallback(async (rawUrl: string) => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return;
 
     setError(null);
     setIsLoading(true);
+    setInputUrl(trimmed);
 
     try {
-      const entry = await resolveTargetUrl(rawUrl);
+      const entry = await resolveTargetUrl(trimmed);
       if (!entry) {
         setIsLoading(false);
         return;
@@ -290,9 +302,30 @@ export default function DevBrowser({
       if (err instanceof Error) {
         setError(err.message);
         setIsLoading(false);
-        return;
       }
     }
+  }, [resolveTargetUrl, historyIndex, history, loadEntry]);
+
+  const handleNavigate = (e: React.FormEvent) => {
+    e.preventDefault();
+    navigateToUrl(inputUrl);
+  };
+
+  const pinUrl = historyIndex >= 0
+    ? history[historyIndex]?.displayUrl
+    : inputUrl.trim() || null;
+
+  const isPinned = pinUrl ? quickLinks.includes(pinUrl) : false;
+
+  const togglePin = () => {
+    if (!pinUrl) return;
+    setQuickLinks((prev) =>
+      isPinned ? prev.filter((l) => l !== pinUrl) : [...prev, pinUrl]
+    );
+  };
+
+  const removeQuickLink = (index: number) => {
+    setQuickLinks((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleRefresh = () => {
@@ -397,6 +430,19 @@ export default function DevBrowser({
         </button>
         <button
           type="button"
+          onClick={togglePin}
+          disabled={!pinUrl}
+          className={`px-2 py-1.5 text-xs rounded-md border transition-colors ${
+            isPinned
+              ? "bg-yellow-600/20 border-yellow-500 text-yellow-400"
+              : "border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
+          }`}
+          title={isPinned ? "Unpin" : "Pin"}
+        >
+          {isPinned ? "★" : "☆"}
+        </button>
+        <button
+          type="button"
           onClick={() => window.open(url, "_blank")}
           className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm rounded-md border border-neutral-700 transition-colors"
         >
@@ -428,6 +474,34 @@ export default function DevBrowser({
               </div>
             </div>
           ) : null}
+
+          {historyIndex < 0 && quickLinks.length > 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-950/90 z-5">
+              <p className="text-neutral-600 text-xs mb-3 font-medium tracking-wide uppercase">Quick Access</p>
+              <div className="flex flex-wrap gap-2 justify-center max-w-lg px-4">
+                {quickLinks.map((link, i) => (
+                  <div key={i} className="group relative">
+                    <button
+                      onClick={() => navigateToUrl(link)}
+                      className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-blue-500/50 rounded-lg text-neutral-300 text-sm transition-colors font-mono"
+                    >
+                      {link}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeQuickLink(i);
+                      }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-neutral-800 border border-neutral-700 hover:bg-red-600 hover:border-red-500 text-neutral-500 hover:text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                      title="Remove"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <iframe
             key={iframeKey}
