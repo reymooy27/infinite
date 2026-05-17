@@ -7,7 +7,6 @@ import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
 import { createSSHSocket, ensureLocalTunnel } from "./lib/ssh.js";
-import { createBrowserSession } from "./lib/browser.js";
 import { logger } from "./lib/logger.js";
 
 const app = express();
@@ -123,7 +122,7 @@ server.on("upgrade", (req: IncomingMessage, socket, head) => {
   const pathname = req.url ? new URL(req.url, "http://localhost").pathname : "";
   logger.info(`[WS] Upgrade request for ${pathname}`);
 
-  if (pathname === "/ws/ssh" || pathname === "/ws/browser") {
+  if (pathname === "/ws/ssh") {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });
@@ -137,17 +136,6 @@ wss.on("connection", async (ws, req) => {
   const rawUrl = req.url || "";
   const u = new URL(rawUrl, "http://localhost");
   const pathname = u.pathname;
-
-  if (pathname === "/ws/browser") {
-    const windowId = u.searchParams.get("windowId") || "";
-    logger.info(`[WS] New browser session, windowId: ${windowId}`);
-    const viewportW = parseInt(u.searchParams.get("width") || "1024", 10);
-    const viewportH = parseInt(u.searchParams.get("height") || "768", 10);
-    createBrowserSession(ws, viewportW, viewportH, windowId).catch((err) => {
-      logger.error(`[WS] Failed to create browser session`, { error: err.message });
-    });
-    return;
-  }
 
   const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
   const windowId = u.searchParams.get("windowId") || "";

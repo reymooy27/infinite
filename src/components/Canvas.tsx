@@ -137,7 +137,6 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
       if (
         placingAppId === "ssh" ||
-        placingAppId === "browser" ||
         placingAppId === "devBrowser"
       ) {
         setPendingConnectionApp({ appId: placingAppId, x, y });

@@ -11,17 +11,33 @@ interface DevBrowserProps {
   connectionId?: number;
 }
 
+interface HistoryEntry {
+  displayUrl: string;
+  targetUrl: string;
+}
+
+const LAST_URL_STORAGE_KEY = "dev-browser-last-url";
+
 export default function DevBrowser({
   windowId,
   connectionId,
 }: DevBrowserProps) {
+  const storageKey = windowId
+    ? `${LAST_URL_STORAGE_KEY}:${windowId}`
+    : LAST_URL_STORAGE_KEY;
   const [url, setUrl] = useState("about:blank");
-  const [inputUrl, setInputUrl] = useState("");
+  const [inputUrl, setInputUrl] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(storageKey) ?? "";
+  });
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<ConsoleEntry[]>([]);
   const [showConsole, setShowConsole] = useState(true);
   const [consoleAvailable, setConsoleAvailable] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [iframeKey, setIframeKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
@@ -52,6 +68,13 @@ export default function DevBrowser({
   useEffect(() => {
     consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [consoleLogs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const currentEntry = history[historyIndex];
+    if (!currentEntry?.displayUrl) return;
+    window.localStorage.setItem(storageKey, currentEntry.displayUrl);
+  }, [history, historyIndex, storageKey]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -159,23 +182,24 @@ export default function DevBrowser({
     }, 500);
   }, []);
 
-  const handleNavigate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    let targetUrl = inputUrl.trim();
-    if (!targetUrl) return;
+  const resolveTargetUrl = useCallback(
+    async (rawUrl: string) => {
+      let targetUrl = rawUrl.trim();
+      if (!targetUrl) return null;
 
-    if (
-      /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/.*)?$/i.test(targetUrl)
-    ) {
-      targetUrl = `http://${targetUrl}`;
-    } else if (
-      !targetUrl.startsWith("http://") &&
-      !targetUrl.startsWith("https://")
-    ) {
-      targetUrl = "http://" + targetUrl;
-    }
+      if (
+        /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/.*)?$/i.test(targetUrl)
+      ) {
+        targetUrl = `http://${targetUrl}`;
+      } else if (
+        !targetUrl.startsWith("http://") &&
+        !targetUrl.startsWith("https://")
+      ) {
+        targetUrl = "http://" + targetUrl;
+      }
 
-    try {
+      const displayUrl = targetUrl;
+
       const parsed = new URL(targetUrl);
       const isLocalHost =
         parsed.hostname === "localhost" ||
@@ -184,11 +208,9 @@ export default function DevBrowser({
 
       if (isLocalHost) {
         if (!connectionId) {
-          setError(
+          throw new Error(
             "This Dev Browser window is not attached to an SSH connection. Open it from SSH Manager to access remote localhost.",
           );
-          setIsLoading(false);
-          return;
         }
 
         const targetPort = parsed.port
@@ -215,6 +237,55 @@ export default function DevBrowser({
         const data = await res.json();
         targetUrl = `${data.url}${parsed.pathname}${parsed.search}${parsed.hash}`;
       }
+
+      return { displayUrl, targetUrl };
+    },
+    [connectionId],
+  );
+
+  const loadEntry = useCallback((entry: HistoryEntry, forceReload = false) => {
+    setError(null);
+    setIsLoading(true);
+    setConsoleLogs([]);
+    setConsoleAvailable(false);
+    setInputUrl(entry.displayUrl);
+
+    if (forceReload || entry.targetUrl === url) {
+      setIframeKey((prev) => prev + 1);
+    }
+
+    setUrl(entry.targetUrl);
+  }, [url]);
+
+  const handleNavigate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const rawUrl = inputUrl.trim();
+    if (!rawUrl) return;
+
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      const entry = await resolveTargetUrl(rawUrl);
+      if (!entry) {
+        setIsLoading(false);
+        return;
+      }
+
+      const isRefresh =
+        historyIndex >= 0 &&
+        history[historyIndex]?.displayUrl === entry.displayUrl &&
+        history[historyIndex]?.targetUrl === entry.targetUrl;
+
+      if (isRefresh) {
+        loadEntry(entry, true);
+        return;
+      }
+
+      const nextHistory = history.slice(0, historyIndex + 1).concat(entry);
+      setHistory(nextHistory);
+      setHistoryIndex(nextHistory.length - 1);
+      loadEntry(entry);
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -222,12 +293,25 @@ export default function DevBrowser({
         return;
       }
     }
+  };
 
-    setUrl(targetUrl);
-    setError(null);
-    setIsLoading(true);
-    setConsoleLogs([]);
-    setConsoleAvailable(false);
+  const handleRefresh = () => {
+    if (historyIndex < 0 || !history[historyIndex]) return;
+    loadEntry(history[historyIndex], true);
+  };
+
+  const handleBack = () => {
+    if (historyIndex <= 0) return;
+    const nextIndex = historyIndex - 1;
+    setHistoryIndex(nextIndex);
+    loadEntry(history[nextIndex]);
+  };
+
+  const handleForward = () => {
+    if (historyIndex < 0 || historyIndex >= history.length - 1) return;
+    const nextIndex = historyIndex + 1;
+    setHistoryIndex(nextIndex);
+    loadEntry(history[nextIndex]);
   };
 
   const handleLoad = () => {
@@ -259,6 +343,33 @@ export default function DevBrowser({
         onSubmit={handleNavigate}
         className="flex items-center gap-2 px-3 py-2 bg-neutral-950 border-b border-neutral-800"
       >
+        <button
+          type="button"
+          onClick={handleBack}
+          disabled={historyIndex <= 0}
+          className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600 disabled:border-neutral-800 text-neutral-300 text-sm rounded-md border border-neutral-700 transition-colors"
+          title="Back"
+        >
+          ←
+        </button>
+        <button
+          type="button"
+          onClick={handleForward}
+          disabled={historyIndex < 0 || historyIndex >= history.length - 1}
+          className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600 disabled:border-neutral-800 text-neutral-300 text-sm rounded-md border border-neutral-700 transition-colors"
+          title="Forward"
+        >
+          →
+        </button>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={historyIndex < 0}
+          className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600 disabled:border-neutral-800 text-neutral-300 text-sm rounded-md border border-neutral-700 transition-colors"
+          title="Refresh"
+        >
+          ↻
+        </button>
         <input
           type="text"
           value={inputUrl}
@@ -319,6 +430,7 @@ export default function DevBrowser({
           ) : null}
 
           <iframe
+            key={iframeKey}
             ref={iframeRef}
             src={url}
             className="w-full h-full border-0"
@@ -371,7 +483,9 @@ export default function DevBrowser({
           <span className={`w-2 h-2 rounded-full ${error ? "bg-red-500" : "bg-green-500"}`} />
           {error ? "Blocked" : "Ready"}
         </span>
-        <span className="truncate max-w-[200px]">{url}</span>
+        <span className="truncate max-w-[200px]">
+          {historyIndex >= 0 ? history[historyIndex]?.displayUrl : (inputUrl.trim() || "about:blank")}
+        </span>
       </div>
     </div>
   );

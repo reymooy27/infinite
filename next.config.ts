@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["ssh2", "prisma", "puppeteer"],
+  serverExternalPackages: ["ssh2", "prisma"],
   // @ts-ignore
   allowedDevOrigins: ["100.101.46.57"],
 };

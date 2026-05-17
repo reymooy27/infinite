@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useRef, useState, cloneElement } from "react";
+import { useCallback, useEffect, useRef, useState, cloneElement } from "react";
 import { Rnd } from "react-rnd";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { canvasTransform } from "@/lib/canvasTransform";
@@ -22,6 +22,17 @@ const RESIZE_CONFIG = {
   left: true,
   bottom: true,
   top: true,
+};
+
+const MOBILE_RESIZE_CONFIG = {
+  bottomRight: true,
+  bottomLeft: false,
+  topRight: false,
+  topLeft: false,
+  right: false,
+  left: false,
+  bottom: false,
+  top: false,
 };
 
 interface WindowFrameProps {
@@ -54,6 +65,7 @@ export default function WindowFrame({
 
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const frameRef = useRef<any>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const pointerDownTime = useRef<number>(0);
@@ -88,6 +100,21 @@ export default function WindowFrame({
   const isMaximized = win?.maximized;
   const isMinimized = win?.minimized;
   const maxZ = useWindowStore((s) => Math.max(...s.windows.map((w) => w.z), 0));
+  const resizeConfig = isMobile ? MOBILE_RESIZE_CONFIG : RESIZE_CONFIG;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateIsMobile = (event?: MediaQueryList | MediaQueryListEvent) => {
+      setIsMobile(event?.matches ?? mediaQuery.matches);
+    };
+
+    updateIsMobile(mediaQuery);
+    mediaQuery.addEventListener("change", updateIsMobile);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateIsMobile);
+    };
+  }, []);
 
   const getViewBounds = useCallback(() => {
     const inst = canvasTransform.current as any;
@@ -394,7 +421,7 @@ export default function WindowFrame({
       scale={scale}
       dragHandleClassName="window-drag-handle"
       disableDragging={false}
-      enableResizing={RESIZE_CONFIG}
+      enableResizing={resizeConfig}
       resizeHandleStyles={{
         bottom: { height: `${EDGE_RESIZE_HIT_SIZE}px`, bottom: 0 },
         right: { width: `${EDGE_RESIZE_HIT_SIZE}px`, right: 0 },
@@ -468,7 +495,7 @@ export default function WindowFrame({
         })}
       </div>
       {/* Visual resize handle for mobile */}
-      <div className="absolute bottom-0.5 right-0.5 h-8 w-8 pointer-events-none text-blue-400/90 opacity-80 md:h-5 md:w-5 md:text-blue-500/80 md:opacity-60">
+      <div className="absolute bottom-0.5 right-0.5 h-8 w-8 pointer-events-none text-blue-400/90 opacity-80 md:hidden">
         <svg
           viewBox="0 0 24 24"
           fill="none"
