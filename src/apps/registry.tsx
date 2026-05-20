@@ -50,13 +50,19 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [height, setHeight] = useState(700);
   const [retryKey, setRetryKey] = useState(0);
 
+  const [wsToken, setWsToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/ws-token")
+      .then((r) => r.json())
+      .then((d) => { if (d.token) setWsToken(d.token); })
+      .catch(() => {});
+  }, []);
+
   const wsUrl = useMemo(() => {
-    const cookies = document.cookie.split("; ");
-    const sessionToken = 
-      cookies.find((c) => c.startsWith("authjs.session-token="))?.split("=")[1] ||
-      cookies.find((c) => c.startsWith("next-auth.session-token="))?.split("=")[1];
+    if (!wsToken) return null;
+    const tokenParam = `&token=${wsToken}`;
     const configured = process.env.NEXT_PUBLIC_WS_URL;
-    const tokenParam = sessionToken ? `&token=${sessionToken}` : "";
     if (configured) {
       if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
         return `${configured}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}${tokenParam}`;
@@ -67,7 +73,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.hostname}:3001/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}${tokenParam}`;
-  }, [width, height, windowId, retryKey]);
+  }, [width, height, windowId, retryKey, wsToken]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -110,6 +116,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
 
   const connect = useCallback(
     () => {
+      if (!wsUrl) return;
       disconnect();
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -755,22 +762,27 @@ const SSHTerminal = ({
 
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
-    const cookies = document.cookie.split("; ");
-    const sessionToken = 
-      cookies.find((c) => c.startsWith("authjs.session-token="))?.split("=")[1] ||
-      cookies.find((c) => c.startsWith("next-auth.session-token="))?.split("=")[1];
     const configured = process.env.NEXT_PUBLIC_WS_URL;
     if (configured) {
       if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
-        return `${configured}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}${sessionToken ? `&token=${sessionToken}` : ""}`;
+        return `${configured}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
       }
       const proto = configured.startsWith("https") ? "wss:" : "ws:";
       const base = configured.replace(/^https?:\/\//, "");
-      return `${proto}//${base}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}${sessionToken ? `&token=${sessionToken}` : ""}`;
+      return `${proto}//${base}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:3001/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}${sessionToken ? `&token=${sessionToken}` : ""}`;
+    return `${proto}//${window.location.hostname}:3001/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
   }, [connectionId, windowId, retryKey]);
+
+  const [wsToken, setWsToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/ws-token")
+      .then((r) => r.json())
+      .then((d) => { if (d.token) setWsToken(d.token); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handleScrollEvent = (e: any) => {
@@ -949,12 +961,12 @@ const SSHTerminal = ({
   }, []);
 
   useEffect(() => {
-    if (!wsUrl) return;
+    if (!wsUrl || !wsToken) return;
 
     const term = termInstanceRef.current;
     const fit = fitRef.current;
 
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(`${wsUrl}&token=${wsToken}`);
     wsRef.current = ws;
     setStatus("connecting");
 
@@ -996,7 +1008,7 @@ const SSHTerminal = ({
     return () => {
       ws.close();
     };
-  }, [wsUrl]);
+  }, [wsUrl, wsToken]);
 
   const sendShortcut = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
