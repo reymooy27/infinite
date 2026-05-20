@@ -283,7 +283,7 @@ export function createSSHSocket(
     logger.info(`[SSH] Shell ready for connection ${connection.id}`);
     ws.send(JSON.stringify({ type: "connected" }));
     const shellOptions = {
-      term: "xterm-256color",
+      term: "xterm",
       cols: initialCols,
       rows: initialRows,
     };

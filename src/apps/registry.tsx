@@ -1,9 +1,10 @@
 import type { AppDefinition, AppId } from "@/types";
+import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Code2, FileText, Monitor } from "lucide-react";
+import { Code2, Copy, FileText, Monitor } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DevBrowser from "./DevBrowser";
 import { useSettingsStore } from "@/stores/useSettingsStore";
@@ -35,6 +36,7 @@ const SSHTerminal = ({
   const fitRef = useRef<FitAddon | null>(null);
   const [status, setStatus] = useState<string>("connecting");
   const [retryKey, setRetryKey] = useState(0);
+  const [copyFeedback, setCopyFeedback] = useState(false);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -112,6 +114,8 @@ const SSHTerminal = ({
     const unicode11Addon = new Unicode11Addon();
     term.loadAddon(unicode11Addon);
     term.unicode.activeVersion = "11";
+    const clipboardAddon = new ClipboardAddon();
+    term.loadAddon(clipboardAddon);
     term.open(terminalRef.current);
     fit.fit();
 
@@ -135,6 +139,89 @@ const SSHTerminal = ({
       term.dispose();
       termInstanceRef.current = null;
       fitRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const container = terminalRef.current;
+    if (!container) return;
+
+    let startPos = { x: 0, y: 0 };
+    let isDragSelection = false;
+
+    const getXterm = (): HTMLElement | null =>
+      container.querySelector('.xterm');
+
+    const getScreen = (): HTMLElement | null =>
+      container.querySelector('.xterm-screen');
+
+    const dispatchDoc = (type: string, props: Record<string, number>) => {
+      document.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...props }));
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const screen = getScreen();
+      if (!screen || !screen.contains(e.target as Node)) return;
+
+      startPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      isDragSelection = false;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+
+      const dx = e.touches[0].clientX - startPos.x;
+      const dy = e.touches[0].clientY - startPos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 2) return;
+
+      const xtermEl = getXterm();
+      if (!xtermEl) return;
+
+      e.preventDefault();
+
+      if (!isDragSelection && dist > 8) {
+        isDragSelection = true;
+        xtermEl.dispatchEvent(
+          new MouseEvent('mousedown', {
+            bubbles: true, cancelable: true,
+            clientX: startPos.x, clientY: startPos.y,
+            button: 0, buttons: 1, detail: 1,
+          }),
+        );
+      }
+
+      if (isDragSelection) {
+        const t = e.touches[0];
+        dispatchDoc('mousemove', {
+          clientX: t.clientX, clientY: t.clientY,
+          button: 0, buttons: 1,
+        });
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (isDragSelection && e.changedTouches.length === 1) {
+        const t = e.changedTouches[0];
+        dispatchDoc('mouseup', {
+          clientX: t.clientX, clientY: t.clientY,
+          button: 0, buttons: 1,
+        });
+        e.preventDefault();
+      }
+      isDragSelection = false;
+    };
+
+    container.addEventListener('touchstart', onTouchStart, { passive: false });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd, { passive: false });
+
+    return () => {
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
     };
   }, []);
 
@@ -203,6 +290,50 @@ const SSHTerminal = ({
         }
       }, 80);
     }
+  }, []);
+
+  const handleCopy = useCallback(async () => {
+    const term = termInstanceRef.current;
+    if (!term) return;
+    const selection = term.getSelection();
+    if (!selection) return;
+
+    const showFeedback = () => {
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 1200);
+    };
+
+    // 1. Try modern clipboard API (secure context / localhost)
+    try {
+      await navigator.clipboard.writeText(selection);
+      showFeedback();
+      return;
+    } catch {}
+
+    // 2. Try legacy execCommand fallback (works on more mobile browsers)
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = selection;
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      ta.style.pointerEvents = 'none';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showFeedback();
+      return;
+    } catch {}
+
+    // 3. Try OSC 52 self-feed through terminal parser (triggers ClipboardAddon)
+    try {
+      const b64 = btoa(unescape(encodeURIComponent(selection)));
+      term.write(`\x1b]52;c;${b64}\x07`);
+      showFeedback();
+    } catch {}
   }, []);
 
   return (
@@ -305,6 +436,18 @@ const SSHTerminal = ({
               title="Enter"
             >
               ↵
+            </button>
+            <div className="w-px h-4 bg-neutral-700" />
+            <button
+              onClick={handleCopy}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Copy selected text"
+            >
+              {copyFeedback ? (
+                <span className="text-green-400">Copied!</span>
+              ) : (
+                <Copy size={12} />
+              )}
             </button>
           </div>
           {showTmuxShortcuts && (

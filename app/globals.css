@@ -68,6 +68,12 @@ body {
   padding: 8px;
 }
 
+.xterm,
+.xterm-screen,
+.xterm canvas {
+  touch-action: auto;
+}
+
 .xterm-viewport {
   overflow-y: auto !important;
 }

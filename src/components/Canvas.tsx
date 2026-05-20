@@ -201,6 +201,10 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     ((tw as any).instance ?? tw)?.setState?.(scale, tx, ty);
   }, [focusTargetId, windows]);
 
+  const isTerminalFocused =
+    focusTargetId !== null &&
+    windows.find((w) => w.id === focusTargetId)?.appId === "ssh";
+
   useEffect(() => {
     const tw = wrapperRef.current;
     if (!tw) return;
@@ -208,16 +212,19 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       setup?: {
         panning?: { disabled: boolean };
         wheel?: { disabled: boolean };
+        pinch?: { disabled: boolean };
       };
     };
     if (placingAppId || draggingId || focusTargetId) {
       if (twAny.setup?.panning) twAny.setup.panning.disabled = true;
       if (twAny.setup?.wheel) twAny.setup.wheel.disabled = true;
+      if (isTerminalFocused && twAny.setup?.pinch) twAny.setup.pinch.disabled = true;
     } else {
       if (twAny.setup?.panning) twAny.setup.panning.disabled = false;
       if (twAny.setup?.wheel) twAny.setup.wheel.disabled = false;
+      if (twAny.setup?.pinch) twAny.setup.pinch.disabled = false;
     }
-  }, [placingAppId, draggingId, focusTargetId]);
+  }, [placingAppId, draggingId, focusTargetId, isTerminalFocused]);
 
   useEffect(() => {
     const el = containerRef.current;
