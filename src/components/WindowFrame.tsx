@@ -62,10 +62,13 @@ export default function WindowFrame({
   const bringToFront = useWindowStore((s) => s.bringToFront);
   const setDragging = useWindowStore((s) => s.setDragging);
   const clearDragging = useWindowStore((s) => s.clearDragging);
+  const renameWindow = useWindowStore((s) => s.renameWindow);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
   const frameRef = useRef<any>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const pointerDownTime = useRef<number>(0);
@@ -241,6 +244,21 @@ export default function WindowFrame({
         onPointerDown={(e: any) => e.stopPropagation()}
         onClick={(e: any) => {
           e.stopPropagation();
+          setEditValue(title);
+          setIsEditing(true);
+        }}
+        className="w-10 h-10 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
+        title="Rename"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+        </svg>
+      </button>
+      <button
+        onPointerDown={(e: any) => e.stopPropagation()}
+        onClick={(e: any) => {
+          e.stopPropagation();
           minimizeWindow(id);
         }}
         className="w-12 h-10 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
@@ -326,9 +344,24 @@ export default function WindowFrame({
           onDoubleClick={handleDoubleClick}
           onClick={(e: any) => e.stopPropagation()}
         >
-          <span className="text-sm text-neutral-300 font-medium truncate pr-32">
-            {title}
-          </span>
+          {isEditing ? (
+            <input
+              autoFocus
+              className="text-sm text-neutral-100 font-medium bg-neutral-700 border border-neutral-500 rounded px-1.5 py-0.5 outline-none w-48 max-w-full"
+              value={editValue}
+              onChange={(e: any) => setEditValue(e.target.value)}
+              onBlur={() => { renameWindow(id, editValue || title); setIsEditing(false); }}
+              onKeyDown={(e: any) => {
+                if (e.key === "Enter") { renameWindow(id, editValue || title); setIsEditing(false); }
+                if (e.key === "Escape") setIsEditing(false);
+                e.stopPropagation();
+              }}
+              onPointerDown={(e: any) => e.stopPropagation()}
+              onClick={(e: any) => e.stopPropagation()}
+            />
+          ) : (
+            <span className="text-sm text-neutral-300 font-medium truncate pr-32">{title}</span>
+          )}
         </div>
 
         {/* Floating buttons outside of drag handle */}
@@ -466,9 +499,24 @@ export default function WindowFrame({
           <div className="w-4 h-0.5 bg-neutral-400 rounded-full" />
           <div className="w-4 h-0.5 bg-neutral-400 rounded-full" />
         </div>
-        <span className="text-sm text-neutral-300 font-medium truncate pr-32">
-          {title}
-        </span>
+        {isEditing ? (
+          <input
+            autoFocus
+            className="text-sm text-neutral-100 font-medium bg-neutral-700 border border-neutral-500 rounded px-1.5 py-0.5 outline-none w-48 max-w-full"
+            value={editValue}
+            onChange={(e: any) => setEditValue(e.target.value)}
+            onBlur={() => { renameWindow(id, editValue || title); setIsEditing(false); }}
+            onKeyDown={(e: any) => {
+              if (e.key === "Enter") { renameWindow(id, editValue || title); setIsEditing(false); }
+              if (e.key === "Escape") setIsEditing(false);
+              e.stopPropagation();
+            }}
+            onPointerDown={(e: any) => e.stopPropagation()}
+            onClick={(e: any) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="text-sm text-neutral-300 font-medium truncate pr-32">{title}</span>
+        )}
       </div>
 
       {/* Floating buttons outside of drag handle */}
