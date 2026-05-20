@@ -8,6 +8,8 @@ import { Code2, Copy, FileText, Monitor } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DevBrowser from "./DevBrowser";
 import { useSettingsStore } from "@/stores/useSettingsStore";
+import { useWsToken } from "@/hooks/useWsToken";
+import { buildWsUrl } from "@/lib/ws";
 
 const Notes = () => {
   const [content, setContent] = useState("");
@@ -50,29 +52,11 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [height, setHeight] = useState(700);
   const [retryKey, setRetryKey] = useState(0);
 
-  const [wsToken, setWsToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/ws-token")
-      .then((r) => r.json())
-      .then((d) => { if (d.token) setWsToken(d.token); })
-      .catch(() => {});
-  }, []);
+  const wsToken = useWsToken();
 
   const wsUrl = useMemo(() => {
     if (!wsToken) return null;
-    const tokenParam = `&token=${wsToken}`;
-    const configured = process.env.NEXT_PUBLIC_WS_URL;
-    if (configured) {
-      if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
-        return `${configured}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}${tokenParam}`;
-      }
-      const proto = configured.startsWith("https") ? "wss:" : "ws:";
-      const base = configured.replace(/^https?:\/\//, "");
-      return `${proto}//${base}/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}${tokenParam}`;
-    }
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:3001/ws/browser?width=${width}&height=${height}&windowId=${windowId}&r=${retryKey}${tokenParam}`;
+    return buildWsUrl("/ws/browser", { width, height, windowId: windowId || "", r: retryKey, token: wsToken });
   }, [width, height, windowId, retryKey, wsToken]);
 
   useEffect(() => {
@@ -760,29 +744,12 @@ const SSHTerminal = ({
   const statusRef = useRef(status);
   statusRef.current = status;
 
+  const wsToken = useWsToken();
+
   const wsUrl = useMemo(() => {
-    if (!connectionId) return null;
-    const configured = process.env.NEXT_PUBLIC_WS_URL;
-    if (configured) {
-      if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
-        return `${configured}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
-      }
-      const proto = configured.startsWith("https") ? "wss:" : "ws:";
-      const base = configured.replace(/^https?:\/\//, "");
-      return `${proto}//${base}/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
-    }
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:3001/ws/ssh?connectionId=${connectionId}&windowId=${windowId}&r=${retryKey}`;
-  }, [connectionId, windowId, retryKey]);
-
-  const [wsToken, setWsToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/ws-token")
-      .then((r) => r.json())
-      .then((d) => { if (d.token) setWsToken(d.token); })
-      .catch(() => {});
-  }, []);
+    if (!connectionId || !wsToken) return null;
+    return buildWsUrl("/ws/ssh", { connectionId, windowId: windowId || "", r: retryKey, token: wsToken });
+  }, [connectionId, windowId, retryKey, wsToken]);
 
   useEffect(() => {
     const handleScrollEvent = (e: any) => {
@@ -961,12 +928,12 @@ const SSHTerminal = ({
   }, []);
 
   useEffect(() => {
-    if (!wsUrl || !wsToken) return;
+    if (!wsUrl) return;
 
     const term = termInstanceRef.current;
     const fit = fitRef.current;
 
-    const ws = new WebSocket(`${wsUrl}&token=${wsToken}`);
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     setStatus("connecting");
 
@@ -1008,7 +975,7 @@ const SSHTerminal = ({
     return () => {
       ws.close();
     };
-  }, [wsUrl, wsToken]);
+  }, [wsUrl]);
 
   const sendShortcut = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

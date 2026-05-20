@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { buildHttpBaseUrl } from "@/lib/ws";
 
 interface ConsoleEntry {
   level: "log" | "warn" | "error" | "info" | "debug";
@@ -52,24 +53,7 @@ export default function DevBrowser({
   const apiBaseUrl = useRef<string>("");
 
   if (!apiBaseUrl.current && typeof window !== "undefined") {
-    const configured = process.env.NEXT_PUBLIC_WS_URL;
-    if (configured) {
-      if (
-        configured.startsWith("http://") ||
-        configured.startsWith("https://")
-      ) {
-        apiBaseUrl.current = configured;
-      } else if (
-        configured.startsWith("ws://") ||
-        configured.startsWith("wss://")
-      ) {
-        apiBaseUrl.current = configured.replace(/^ws/, "http");
-      } else {
-        apiBaseUrl.current = `${window.location.protocol}//${configured.replace(/^https?:\/\//, "")}`;
-      }
-    } else {
-      apiBaseUrl.current = `${window.location.protocol}//${window.location.hostname}:3001`;
-    }
+    apiBaseUrl.current = buildHttpBaseUrl();
   }
 
   useEffect(() => {

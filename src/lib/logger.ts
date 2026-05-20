@@ -1,50 +1,18 @@
-type LogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG";
+type LogLevel = "info" | "warn" | "error" | "debug";
 
-interface LogEntry {
-  timestamp: string;
-  level: LogLevel;
-  message: string;
-  context?: Record<string, unknown>;
-}
-
-function formatLog(entry: LogEntry): string {
-  const base = `[${entry.timestamp}] [${entry.level}] ${entry.message}`;
-  if (entry.context && Object.keys(entry.context).length > 0) {
-    return `${base} ${JSON.stringify(entry.context)}`;
-  }
-  return base;
-}
-
-function log(level: LogLevel, message: string, context?: Record<string, unknown>) {
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level,
-    message,
-    context,
-  };
-  console.log(formatLog(entry));
+function log(level: LogLevel, message: string, meta?: Record<string, unknown>) {
+  const entry = `[${new Date().toISOString()}] [${level.toUpperCase()}] ${message}${meta ? " " + JSON.stringify(meta) : ""}`;
+  if (level === "error") console.error(entry);
+  else console.log(entry);
 }
 
 export const logger = {
-  info: (message: string, context?: Record<string, unknown>) => log("INFO", message, context),
-  warn: (message: string, context?: Record<string, unknown>) => log("WARN", message, context),
-  error: (message: string, context?: Record<string, unknown>) => log("ERROR", message, context),
-  debug: (message: string, context?: Record<string, unknown>) => log("DEBUG", message, context),
+  info: (msg: string, meta?: Record<string, unknown>) => log("info", msg, meta),
+  warn: (msg: string, meta?: Record<string, unknown>) => log("warn", msg, meta),
+  error: (msg: string, meta?: Record<string, unknown>) => log("error", msg, meta),
+  debug: (msg: string, meta?: Record<string, unknown>) => log("debug", msg, meta),
 };
 
-export function logApiRequest(
-  method: string,
-  path: string,
-  statusCode: number,
-  durationMs: number,
-  error?: unknown
-) {
-  const level: LogLevel = statusCode >= 500 ? "ERROR" : statusCode >= 400 ? "WARN" : "INFO";
-  const msg = `${method} ${path} ${statusCode} ${durationMs}ms`;
-  if (error) {
-    const errDetail = error instanceof Error ? error.message : String(error);
-    log(level, msg, { error: errDetail });
-  } else {
-    log(level, msg);
-  }
+export function logApiRequest(method: string, path: string, status: number, duration: number, _err?: unknown) {
+  logger.info(`${method} ${path} ${status} ${duration}ms`);
 }
