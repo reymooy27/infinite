@@ -153,7 +153,6 @@ export default function Dock() {
   const placingAppId = useWindowStore((s) => s.placingAppId);
   const setPlacingApp = useWindowStore((s) => s.setPlacingApp);
   const clearPlacing = useWindowStore((s) => s.clearPlacing);
-  const focusLastWindow = useWindowStore((s) => s.focusLastWindow);
   const clearFocus = useWindowStore((s) => s.clearFocus);
   const restoreWindow = useWindowStore((s) => s.restoreWindow);
   const focusWindow = useWindowStore((s) => s.focusWindow);
@@ -310,29 +309,6 @@ export default function Dock() {
         {hasWindows && (
           <>
             <div className="w-px h-6 sm:h-8 bg-neutral-700 mx-0.5 sm:mx-1" />
-            <button
-              onClick={() => {
-                clearFocus();
-                focusLastWindow();
-              }}
-              className="flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer group"
-              title="Focus last window"
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-neutral-400 group-hover:text-neutral-200"
-              >
-                <circle cx="12" cy="12" r="3" />
-                <path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-              </svg>
-            </button>
             {/* Window manager button */}
             <div className="relative" ref={menuRef}>
               <button

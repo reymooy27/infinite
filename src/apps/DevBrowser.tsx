@@ -16,8 +16,13 @@ interface HistoryEntry {
   targetUrl: string;
 }
 
+interface Bookmark {
+  id: number;
+  url: string;
+  createdAt: string;
+}
+
 const LAST_URL_STORAGE_KEY = "dev-browser-last-url";
-const QUICK_LINKS_KEY = "dev-browser-quick-links";
 
 export default function DevBrowser({
   windowId,
@@ -39,12 +44,7 @@ export default function DevBrowser({
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [iframeKey, setIframeKey] = useState(0);
-  const [quickLinks, setQuickLinks] = useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      return JSON.parse(window.localStorage.getItem(QUICK_LINKS_KEY) ?? "[]");
-    } catch { return []; }
-  });
+  const [quickLinks, setQuickLinks] = useState<Bookmark[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
@@ -84,9 +84,13 @@ export default function DevBrowser({
   }, [history, historyIndex, storageKey]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(QUICK_LINKS_KEY, JSON.stringify(quickLinks));
-  }, [quickLinks]);
+    fetch("/api/bookmarks")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setQuickLinks(data);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -315,17 +319,30 @@ export default function DevBrowser({
     ? history[historyIndex]?.displayUrl
     : inputUrl.trim() || null;
 
-  const isPinned = pinUrl ? quickLinks.includes(pinUrl) : false;
+  const pinnedBookmark = pinUrl ? quickLinks.find((q) => q.url === pinUrl) : null;
+  const isPinned = !!pinnedBookmark;
 
-  const togglePin = () => {
+  const togglePin = async () => {
     if (!pinUrl) return;
-    setQuickLinks((prev) =>
-      isPinned ? prev.filter((l) => l !== pinUrl) : [...prev, pinUrl]
-    );
+    if (pinnedBookmark) {
+      await fetch(`/api/bookmarks/${pinnedBookmark.id}`, { method: "DELETE" });
+      setQuickLinks((prev) => prev.filter((q) => q.id !== pinnedBookmark.id));
+    } else {
+      const res = await fetch("/api/bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: pinUrl }),
+      });
+      if (res.ok) {
+        const bookmark = await res.json();
+        setQuickLinks((prev) => [bookmark, ...prev]);
+      }
+    }
   };
 
-  const removeQuickLink = (index: number) => {
-    setQuickLinks((prev) => prev.filter((_, i) => i !== index));
+  const removeQuickLink = async (id: number) => {
+    await fetch(`/api/bookmarks/${id}`, { method: "DELETE" });
+    setQuickLinks((prev) => prev.filter((q) => q.id !== id));
   };
 
   const handleRefresh = () => {
@@ -479,18 +496,18 @@ export default function DevBrowser({
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-950/90 z-5">
               <p className="text-neutral-600 text-xs mb-3 font-medium tracking-wide uppercase">Quick Access</p>
               <div className="flex flex-wrap gap-2 justify-center max-w-lg px-4">
-                {quickLinks.map((link, i) => (
-                  <div key={i} className="group relative">
+                {quickLinks.map((bookmark) => (
+                  <div key={bookmark.id} className="group relative">
                     <button
-                      onClick={() => navigateToUrl(link)}
+                      onClick={() => navigateToUrl(bookmark.url)}
                       className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-blue-500/50 rounded-lg text-neutral-300 text-sm transition-colors font-mono"
                     >
-                      {link}
+                      {bookmark.url}
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        removeQuickLink(i);
+                        removeQuickLink(bookmark.id);
                       }}
                       className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-neutral-800 border border-neutral-700 hover:bg-red-600 hover:border-red-500 text-neutral-500 hover:text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
                       title="Remove"

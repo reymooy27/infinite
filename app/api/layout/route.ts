@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
   try {
     logger.info(`[${method}] ${path} Start`);
 
-    const layout = await prisma.layout.findUnique({
-      where: { id: 1 },
+    const layout = await prisma.layout.findFirst({
+      orderBy: { updatedAt: "desc" },
     });
 
     const duration = Date.now() - start;
@@ -35,12 +35,19 @@ export async function POST(req: NextRequest) {
     logger.info(`[${method}] ${path} Start`);
 
     const body = await req.json();
-    
-    const layout = await prisma.layout.upsert({
-      where: { id: 1 },
-      update: { data: body },
-      create: { id: 1, data: body },
+
+    const existing = await prisma.layout.findFirst({
+      orderBy: { updatedAt: "desc" },
     });
+
+    const layout = existing
+      ? await prisma.layout.update({
+          where: { id: existing.id },
+          data: { data: body },
+        })
+      : await prisma.layout.create({
+          data: { id: crypto.randomUUID(), data: body },
+        });
 
     const duration = Date.now() - start;
     logger.info(`[${method}] ${path} Saved layout`);

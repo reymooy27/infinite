@@ -150,13 +150,15 @@ const SSHTerminal = ({
     let isDragSelection = false;
 
     const getXterm = (): HTMLElement | null =>
-      container.querySelector('.xterm');
+      container.querySelector(".xterm");
 
     const getScreen = (): HTMLElement | null =>
-      container.querySelector('.xterm-screen');
+      container.querySelector(".xterm-screen");
 
     const dispatchDoc = (type: string, props: Record<string, number>) => {
-      document.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...props }));
+      document.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, cancelable: true, ...props }),
+      );
     };
 
     const onTouchStart = (e: TouchEvent) => {
@@ -185,19 +187,25 @@ const SSHTerminal = ({
       if (!isDragSelection && dist > 8) {
         isDragSelection = true;
         xtermEl.dispatchEvent(
-          new MouseEvent('mousedown', {
-            bubbles: true, cancelable: true,
-            clientX: startPos.x, clientY: startPos.y,
-            button: 0, buttons: 1, detail: 1,
+          new MouseEvent("mousedown", {
+            bubbles: true,
+            cancelable: true,
+            clientX: startPos.x,
+            clientY: startPos.y,
+            button: 0,
+            buttons: 1,
+            detail: 1,
           }),
         );
       }
 
       if (isDragSelection) {
         const t = e.touches[0];
-        dispatchDoc('mousemove', {
-          clientX: t.clientX, clientY: t.clientY,
-          button: 0, buttons: 1,
+        dispatchDoc("mousemove", {
+          clientX: t.clientX,
+          clientY: t.clientY,
+          button: 0,
+          buttons: 1,
         });
       }
     };
@@ -205,23 +213,25 @@ const SSHTerminal = ({
     const onTouchEnd = (e: TouchEvent) => {
       if (isDragSelection && e.changedTouches.length === 1) {
         const t = e.changedTouches[0];
-        dispatchDoc('mouseup', {
-          clientX: t.clientX, clientY: t.clientY,
-          button: 0, buttons: 1,
+        dispatchDoc("mouseup", {
+          clientX: t.clientX,
+          clientY: t.clientY,
+          button: 0,
+          buttons: 1,
         });
         e.preventDefault();
       }
       isDragSelection = false;
     };
 
-    container.addEventListener('touchstart', onTouchStart, { passive: false });
-    container.addEventListener('touchmove', onTouchMove, { passive: false });
-    container.addEventListener('touchend', onTouchEnd, { passive: false });
+    container.addEventListener("touchstart", onTouchStart, { passive: false });
+    container.addEventListener("touchmove", onTouchMove, { passive: false });
+    container.addEventListener("touchend", onTouchEnd, { passive: false });
 
     return () => {
-      container.removeEventListener('touchstart', onTouchStart);
-      container.removeEventListener('touchmove', onTouchMove);
-      container.removeEventListener('touchend', onTouchEnd);
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
+      container.removeEventListener("touchend", onTouchEnd);
     };
   }, []);
 
@@ -312,17 +322,17 @@ const SSHTerminal = ({
 
     // 2. Try legacy execCommand fallback (works on more mobile browsers)
     try {
-      const ta = document.createElement('textarea');
+      const ta = document.createElement("textarea");
       ta.value = selection;
-      ta.style.position = 'fixed';
-      ta.style.top = '0';
-      ta.style.left = '0';
-      ta.style.opacity = '0';
-      ta.style.pointerEvents = 'none';
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
       document.body.appendChild(ta);
       ta.focus();
       ta.select();
-      document.execCommand('copy');
+      document.execCommand("copy");
       document.body.removeChild(ta);
       showFeedback();
       return;
@@ -435,7 +445,7 @@ const SSHTerminal = ({
               className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
               title="Enter"
             >
-              ↵
+              Enter
             </button>
             <div className="w-px h-4 bg-neutral-700" />
             <button

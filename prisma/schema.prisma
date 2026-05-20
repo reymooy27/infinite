@@ -16,14 +16,74 @@ model Connection {
   passwordEncrypted   String?  @map("password_encrypted")
   privateKeyEncrypted String?  @map("private_key_encrypted")
   createdAt           DateTime @default(now()) @map("created_at")
+  user_id             String?
+  users               users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("connections")
 }
 
 model Layout {
-  id        Int      @id @default(1)
+  id        String   @id
+  user_id   String?
   data      Json
   updatedAt DateTime @updatedAt @map("updated_at")
+  users     users?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
 
   @@map("layouts")
+}
+
+model accounts {
+  id                  String  @id
+  user_id             String
+  type                String
+  provider            String
+  provider_account_id String
+  refresh_token       String?
+  access_token        String?
+  expires_at          Int?
+  token_type          String?
+  scope               String?
+  id_token            String?
+  session_state       String?
+  users               users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, provider_account_id])
+}
+
+model sessions {
+  id            String   @id
+  session_token String   @unique
+  user_id       String
+  expires       DateTime
+  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model users {
+  id            String       @id
+  name          String?
+  email         String?      @unique
+  emailVerified DateTime?
+  image         String?
+  plan          String       @default("free")
+  created_at    DateTime     @default(now())
+  accounts      accounts[]
+  connections   Connection[]
+  layouts       Layout[]
+  sessions      sessions[]
+}
+
+model verification_tokens {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Bookmark {
+  id        Int      @id @default(autoincrement())
+  url       String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("bookmarks")
 }
