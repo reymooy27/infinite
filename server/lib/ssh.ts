@@ -1,4 +1,6 @@
 import { Client, ClientChannel } from "ssh2";
+import net from "net";
+import type { AddressInfo } from "net";
 import { logger } from "./logger.js";
 
 const ERR_UNHANDLED = "ERR_UNHANDLED_ERROR";
@@ -32,7 +34,14 @@ interface ActiveSession {
   cleanupTimer?: ReturnType<typeof setTimeout>;
 }
 
+interface ActiveTunnel {
+  conn: Client;
+  server: net.Server;
+  localPort: number;
+}
+
 const sessions = new Map<string, ActiveSession>();
+const tunnels = new Map<string, ActiveTunnel>();
 const SESSION_TIMEOUT = 1000 * 60 * 30; // 30 minutes
 
 function validatePrivateKey(keyStr: string): {
@@ -50,6 +59,146 @@ function validatePrivateKey(keyStr: string): {
     };
   }
   return { valid: true };
+}
+
+function getSSHConfig(connection: SSHConnection) {
+  const config: {
+    host: string;
+    port: number;
+    username: string;
+    readyTimeout: number;
+    keepaliveInterval?: number;
+    keepaliveCountMax?: number;
+    password?: string;
+    privateKey?: string;
+  } = {
+    host: connection.host,
+    port: connection.port || 22,
+    username: connection.username,
+    readyTimeout: 15000,
+    keepaliveInterval: 10000,
+    keepaliveCountMax: 3,
+  };
+
+  if (connection.authType === "key" && connection.privateKey) {
+    const validation = validatePrivateKey(connection.privateKey);
+    if (!validation.valid) {
+      throw new Error(`Invalid private key: ${validation.error}`);
+    }
+    config.privateKey = connection.privateKey;
+  } else {
+    config.password = connection.password;
+  }
+
+  return config;
+}
+
+function connectSSH(connection: SSHConnection): Promise<Client> {
+  return new Promise((resolve, reject) => {
+    const conn = new Client();
+    const config = getSSHConfig(connection);
+
+    conn.once("ready", () => resolve(conn));
+    conn.once("error", reject);
+
+    try {
+      conn.connect(config);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+export async function ensureLocalTunnel(
+  connection: SSHConnection,
+  targetHost: string,
+  targetPort: number,
+) {
+  const key = `${connection.id}:${targetHost}:${targetPort}`;
+  const existing = tunnels.get(key);
+  if (existing) {
+    return {
+      localPort: existing.localPort,
+      url: `http://127.0.0.1:${existing.localPort}`,
+    };
+  }
+
+  const conn = await connectSSH(connection);
+  const server = net.createServer((socket) => {
+    conn.forwardOut(
+      socket.localAddress || "127.0.0.1",
+      socket.localPort || 0,
+      targetHost,
+      targetPort,
+      (err, stream) => {
+        if (err) {
+          logger.error("[SSH] Tunnel forward error", {
+            connectionId: connection.id,
+            targetHost,
+            targetPort,
+            error: err.message,
+          });
+          socket.destroy(err);
+          return;
+        }
+
+        socket.pipe(stream);
+        stream.pipe(socket);
+
+        stream.on("error", () => {
+          socket.destroy();
+        });
+
+        socket.on("error", () => {
+          stream.close();
+        });
+      },
+    );
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+
+  const address = server.address() as AddressInfo | null;
+  if (!address?.port) {
+    server.close();
+    conn.end();
+    throw new Error("Failed to allocate local tunnel port");
+  }
+
+  const tunnel: ActiveTunnel = {
+    conn,
+    server,
+    localPort: address.port,
+  };
+  tunnels.set(key, tunnel);
+
+  conn.on("close", () => {
+    tunnels.delete(key);
+    server.close();
+  });
+
+  server.on("close", () => {
+    tunnels.delete(key);
+    conn.end();
+  });
+
+  logger.info("[SSH] Local tunnel ready", {
+    connectionId: connection.id,
+    targetHost,
+    targetPort,
+    localPort: address.port,
+  });
+
+  return {
+    localPort: address.port,
+    url: `http://127.0.0.1:${address.port}`,
+  };
 }
 
 export function createSSHSocket(
@@ -113,40 +262,18 @@ export function createSSHSocket(
 
   const conn = new Client();
 
-  const config: {
-    host: string;
-    port: number;
-    username: string;
-    readyTimeout: number;
-    keepaliveInterval?: number;
-    keepaliveCountMax?: number;
-    password?: string;
-    privateKey?: string;
-  } = {
-    host: connection.host,
-    port: connection.port || 22,
-    username: connection.username,
-    readyTimeout: 15000,
-    keepaliveInterval: 10000,
-    keepaliveCountMax: 3,
-  };
-
-  if (connection.authType === "key" && connection.privateKey) {
-    const validation = validatePrivateKey(connection.privateKey);
-    if (!validation.valid) {
-      logger.warn(`[SSH] Invalid private key for connection ${connection.id}`);
-      ws.send(
-        JSON.stringify({
-          type: "error",
-          message: `Invalid private key: ${validation.error}`,
-        }),
-      );
-      ws.close();
-      return null;
-    }
-    config.privateKey = connection.privateKey;
-  } else {
-    config.password = connection.password;
+  let config;
+  try {
+    config = getSSHConfig(connection);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Invalid SSH configuration";
+    logger.warn(`[SSH] Invalid SSH config for connection ${connection.id}`, {
+      error: message,
+    });
+    ws.send(JSON.stringify({ type: "error", message }));
+    ws.close();
+    return null;
   }
 
   let initialCols = 80;

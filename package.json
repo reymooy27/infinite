@@ -11,13 +11,14 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "postinstall": "patch-package && prisma generate"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
     "@gsap/react": "^2.1.2",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@xterm/addon-clipboard": "^0.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",
     "@xterm/addon-web-links": "^0.12.0",
@@ -32,7 +33,6 @@
     "next": "^16.2.4",
     "next-auth": "^5.0.0-beta.31",
     "pg": "^8.20.0",
-    "puppeteer": "^24.42.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-rnd": "^10.5.3",
@@ -53,6 +53,7 @@
     "@types/ws": "^8.0.0",
     "eslint": "^10.2.1",
     "eslint-config-next": "^16.2.4",
+    "patch-package": "^8.0.1",
     "postcss": "^8.5.12",
     "prisma": "^7.8.0",
     "tailwindcss": "^4.2.4",

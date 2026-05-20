@@ -28,16 +28,14 @@ interface WindowState {
   restoreWindow: (id: string) => void;
   maximizeWindow: (id: string) => void;
   focusLastWindow: () => void;
+  renameWindow: (id: string, title: string) => void;
   loadLayout: () => Promise<void>;
   saveLayout: () => Promise<void>;
 }
 
 const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
-  "code-editor": { width: 400, height: 300 },
-  terminal: { width: 500, height: 320 },
   notes: { width: 320, height: 300 },
   ssh: { width: 400, height: 350 },
-  browser: { width: 800, height: 600 },
   devBrowser: { width: 1024, height: 768 },
 };
 
@@ -157,6 +155,15 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   focusLastWindow: () => {
     const last = get().windows.filter((w) => !w.minimized).at(-1);
     if (last) get().focusWindow(last.id);
+  },
+
+  renameWindow: (id, title) => {
+    set((state) => ({
+      windows: state.windows.map((w) =>
+        w.id === id ? { ...w, metadata: { ...w.metadata, title } } : w
+      ),
+    }));
+    get().saveLayout();
   },
 
   loadLayout: async () => {

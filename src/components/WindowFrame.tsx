@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useRef, useState, cloneElement } from "react";
+import { useCallback, useEffect, useRef, useState, cloneElement } from "react";
 import { Rnd } from "react-rnd";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { canvasTransform } from "@/lib/canvasTransform";
@@ -10,6 +10,8 @@ const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
 const LONG_PRESS_DURATION = 200;
 const DRAG_THRESHOLD = 5;
+const EDGE_RESIZE_HIT_SIZE = 28;
+const CORNER_RESIZE_HIT_SIZE = 76;
 
 const RESIZE_CONFIG = {
   bottomRight: true,
@@ -20,6 +22,17 @@ const RESIZE_CONFIG = {
   left: true,
   bottom: true,
   top: true,
+};
+
+const MOBILE_RESIZE_CONFIG = {
+  bottomRight: true,
+  bottomLeft: false,
+  topRight: false,
+  topLeft: false,
+  right: false,
+  left: false,
+  bottom: false,
+  top: false,
 };
 
 interface WindowFrameProps {
@@ -49,9 +62,13 @@ export default function WindowFrame({
   const bringToFront = useWindowStore((s) => s.bringToFront);
   const setDragging = useWindowStore((s) => s.setDragging);
   const clearDragging = useWindowStore((s) => s.clearDragging);
+  const renameWindow = useWindowStore((s) => s.renameWindow);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
   const frameRef = useRef<any>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const pointerDownTime = useRef<number>(0);
@@ -86,6 +103,21 @@ export default function WindowFrame({
   const isMaximized = win?.maximized;
   const isMinimized = win?.minimized;
   const maxZ = useWindowStore((s) => Math.max(...s.windows.map((w) => w.z), 0));
+  const resizeConfig = isMobile ? MOBILE_RESIZE_CONFIG : RESIZE_CONFIG;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateIsMobile = (event?: MediaQueryList | MediaQueryListEvent) => {
+      setIsMobile(event?.matches ?? mediaQuery.matches);
+    };
+
+    updateIsMobile(mediaQuery);
+    mediaQuery.addEventListener("change", updateIsMobile);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateIsMobile);
+    };
+  }, []);
 
   const getViewBounds = useCallback(() => {
     const inst = canvasTransform.current as any;
@@ -212,6 +244,21 @@ export default function WindowFrame({
         onPointerDown={(e: any) => e.stopPropagation()}
         onClick={(e: any) => {
           e.stopPropagation();
+          setEditValue(title);
+          setIsEditing(true);
+        }}
+        className="w-10 h-10 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
+        title="Rename"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+        </svg>
+      </button>
+      <button
+        onPointerDown={(e: any) => e.stopPropagation()}
+        onClick={(e: any) => {
+          e.stopPropagation();
           minimizeWindow(id);
         }}
         className="w-12 h-10 flex items-center justify-center hover:bg-neutral-600 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer active:bg-neutral-500 touch-manipulation"
@@ -297,9 +344,24 @@ export default function WindowFrame({
           onDoubleClick={handleDoubleClick}
           onClick={(e: any) => e.stopPropagation()}
         >
-          <span className="text-sm text-neutral-300 font-medium truncate pr-32">
-            {title}
-          </span>
+          {isEditing ? (
+            <input
+              autoFocus
+              className="text-sm text-neutral-100 font-medium bg-neutral-700 border border-neutral-500 rounded px-1.5 py-0.5 outline-none w-48 max-w-full"
+              value={editValue}
+              onChange={(e: any) => setEditValue(e.target.value)}
+              onBlur={() => { renameWindow(id, editValue || title); setIsEditing(false); }}
+              onKeyDown={(e: any) => {
+                if (e.key === "Enter") { renameWindow(id, editValue || title); setIsEditing(false); }
+                if (e.key === "Escape") setIsEditing(false);
+                e.stopPropagation();
+              }}
+              onPointerDown={(e: any) => e.stopPropagation()}
+              onClick={(e: any) => e.stopPropagation()}
+            />
+          ) : (
+            <span className="text-sm text-neutral-300 font-medium truncate pr-32">{title}</span>
+          )}
         </div>
 
         {/* Floating buttons outside of drag handle */}
@@ -321,7 +383,10 @@ export default function WindowFrame({
           onDoubleClick={handleContentDoubleClick}
           onClick={(e: any) => e.stopPropagation()}
         >
-          {cloneElement(children as any, { windowId: id })}
+          {cloneElement(children as any, {
+            windowId: id,
+            connectionId: win?.metadata?.connectionId,
+          })}
         </div>
 
         {/* Floating scroll buttons for mobile - Right edge */}
@@ -385,18 +450,38 @@ export default function WindowFrame({
       }}
       minWidth={MIN_WIDTH}
       minHeight={MIN_HEIGHT}
-      style={{ zIndex: z }}
+      style={{ zIndex: z, display: "flex", willChange: "transform" }}
       scale={scale}
       dragHandleClassName="window-drag-handle"
       disableDragging={false}
-      enableResizing={RESIZE_CONFIG}
+      enableResizing={resizeConfig}
       resizeHandleStyles={{
-        bottom: { height: "20px", bottom: 0 },
-        right: { width: "20px", right: 0 },
-        bottomRight: { width: "40px", height: "40px", right: 0, bottom: 0 },
-        bottomLeft: { width: "40px", height: "40px", left: 0, bottom: 0 },
-        topRight: { width: "40px", height: "40px", right: 0, top: 0 },
-        topLeft: { width: "40px", height: "40px", left: 0, top: 0 },
+        bottom: { height: `${EDGE_RESIZE_HIT_SIZE}px`, bottom: 0 },
+        right: { width: `${EDGE_RESIZE_HIT_SIZE}px`, right: 0 },
+        bottomRight: {
+          width: `${CORNER_RESIZE_HIT_SIZE}px`,
+          height: `${CORNER_RESIZE_HIT_SIZE}px`,
+          right: 0,
+          bottom: 0,
+        },
+        bottomLeft: {
+          width: `${CORNER_RESIZE_HIT_SIZE}px`,
+          height: `${CORNER_RESIZE_HIT_SIZE}px`,
+          left: 0,
+          bottom: 0,
+        },
+        topRight: {
+          width: `${CORNER_RESIZE_HIT_SIZE}px`,
+          height: `${CORNER_RESIZE_HIT_SIZE}px`,
+          right: 0,
+          top: 0,
+        },
+        topLeft: {
+          width: `${CORNER_RESIZE_HIT_SIZE}px`,
+          height: `${CORNER_RESIZE_HIT_SIZE}px`,
+          left: 0,
+          top: 0,
+        },
       }}
       onDragStart={handleDragStart}
       onDragStop={handleDragStop}
@@ -414,9 +499,24 @@ export default function WindowFrame({
           <div className="w-4 h-0.5 bg-neutral-400 rounded-full" />
           <div className="w-4 h-0.5 bg-neutral-400 rounded-full" />
         </div>
-        <span className="text-sm text-neutral-300 font-medium truncate pr-32">
-          {title}
-        </span>
+        {isEditing ? (
+          <input
+            autoFocus
+            className="text-sm text-neutral-100 font-medium bg-neutral-700 border border-neutral-500 rounded px-1.5 py-0.5 outline-none w-48 max-w-full"
+            value={editValue}
+            onChange={(e: any) => setEditValue(e.target.value)}
+            onBlur={() => { renameWindow(id, editValue || title); setIsEditing(false); }}
+            onKeyDown={(e: any) => {
+              if (e.key === "Enter") { renameWindow(id, editValue || title); setIsEditing(false); }
+              if (e.key === "Escape") setIsEditing(false);
+              e.stopPropagation();
+            }}
+            onPointerDown={(e: any) => e.stopPropagation()}
+            onClick={(e: any) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="text-sm text-neutral-300 font-medium truncate pr-32">{title}</span>
+        )}
       </div>
 
       {/* Floating buttons outside of drag handle */}
@@ -437,10 +537,13 @@ export default function WindowFrame({
         onDoubleClick={handleContentDoubleClick}
         onClick={(e: any) => e.stopPropagation()}
       >
-        {cloneElement(children as any, { windowId: id })}
+        {cloneElement(children as any, {
+          windowId: id,
+          connectionId: win?.metadata?.connectionId,
+        })}
       </div>
       {/* Visual resize handle for mobile */}
-      <div className="absolute bottom-1 right-1 w-5 h-5 pointer-events-none opacity-60 text-blue-500/80">
+      <div className="absolute bottom-0.5 right-0.5 h-8 w-8 pointer-events-none text-blue-400/90 opacity-80 md:hidden">
         <svg
           viewBox="0 0 24 24"
           fill="none"

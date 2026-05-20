@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
-import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
-import { canvasTransform } from "@/lib/canvasTransform";
-import { useWindowStore } from "@/stores/useWindowStore";
-import { useSSHStore } from "@/stores/useSSHStore";
 import registry from "@/apps/registry";
+import { canvasTransform } from "@/lib/canvasTransform";
+import { useSSHStore } from "@/stores/useSSHStore";
+import { useWindowStore } from "@/stores/useWindowStore";
 import type { AppId } from "@/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 
 export default function Canvas({ children }: { children: React.ReactNode }) {
   const wrapperRef = useRef<React.ComponentRef<typeof TransformWrapper>>(null);
@@ -18,10 +18,16 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   } | null>(null);
   const isMiddlePanning = useRef(false);
   const middlePanStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
-  const [pendingSSH, setPendingSSH] = useState<{ x: number; y: number } | null>(
-    null,
-  );
-  const [zoomScale, setZoomScale] = useState(1);
+  const scaleRef = useRef(1);
+  const lastScale = useRef(1);
+  const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const percentRef = useRef<HTMLButtonElement>(null);
+  const [pendingConnectionApp, setPendingConnectionApp] = useState<{
+    appId: AppId;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [isZooming, setIsZooming] = useState(false);
   const draggingId = useWindowStore((s) => s.draggingId);
   const focusTargetId = useWindowStore((s) => s.focusTargetId);
   const windows = useWindowStore((s) => s.windows);
@@ -60,6 +66,45 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     return () => el.removeEventListener("dblclick", prevent);
   }, []);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const inst = canvasTransform.current as any;
+      if (!inst?.state) return;
+      const wrapper = inst.wrapperComponent as HTMLElement | undefined;
+      if (!wrapper) return;
+      const rect = wrapper.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const { scale, positionX, positionY } = inst.state;
+      const delta = -e.deltaY * 0.005;
+      const newScale = scale * Math.exp(delta);
+      const clamped = Math.min(20, Math.max(0.1, newScale));
+      const ratio = clamped / scale;
+      const newPosX = mouseX - (mouseX - positionX) * ratio;
+      const newPosY = mouseY - (mouseY - positionY) * ratio;
+      (inst.setState ?? inst.instance?.setState)?.call(inst, clamped, newPosX, newPosY);
+    };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  useEffect(() => {
+    let frame: number;
+    const tick = () => {
+      if (percentRef.current) {
+        percentRef.current.textContent = `${Math.round(scaleRef.current * 100)}%`;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent) => {
       if (!placingAppId) return;
@@ -90,8 +135,11 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       const x = canvasX - app.defaultWidth / 2;
       const y = canvasY - app.defaultHeight / 2;
 
-      if (placingAppId === "ssh") {
-        setPendingSSH({ x, y });
+      if (
+        placingAppId === "ssh" ||
+        placingAppId === "devBrowser"
+      ) {
+        setPendingConnectionApp({ appId: placingAppId, x, y });
         fetchConnections();
         return;
       }
@@ -153,6 +201,10 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     ((tw as any).instance ?? tw)?.setState?.(scale, tx, ty);
   }, [focusTargetId, windows]);
 
+  const isTerminalFocused =
+    focusTargetId !== null &&
+    windows.find((w) => w.id === focusTargetId)?.appId === "ssh";
+
   useEffect(() => {
     const tw = wrapperRef.current;
     if (!tw) return;
@@ -160,37 +212,19 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       setup?: {
         panning?: { disabled: boolean };
         wheel?: { disabled: boolean };
+        pinch?: { disabled: boolean };
       };
     };
     if (placingAppId || draggingId || focusTargetId) {
       if (twAny.setup?.panning) twAny.setup.panning.disabled = true;
       if (twAny.setup?.wheel) twAny.setup.wheel.disabled = true;
+      if (isTerminalFocused && twAny.setup?.pinch) twAny.setup.pinch.disabled = true;
     } else {
       if (twAny.setup?.panning) twAny.setup.panning.disabled = false;
       if (twAny.setup?.wheel) twAny.setup.wheel.disabled = false;
+      if (twAny.setup?.pinch) twAny.setup.pinch.disabled = false;
     }
-  }, [placingAppId, draggingId, focusTargetId]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const z = zoomRef.current;
-        if (!z) return;
-        if (e.deltaY < 0) {
-          z.zoomIn();
-        } else {
-          z.zoomOut();
-        }
-      }
-    };
-
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheel);
-  }, []);
+  }, [placingAppId, draggingId, focusTargetId, isTerminalFocused]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -204,7 +238,9 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
       const tw = wrapperRef.current;
       if (!tw) return;
-      const state = (tw as unknown as { state?: { positionX: number; positionY: number } }).state;
+      const state = (
+        tw as unknown as { state?: { positionX: number; positionY: number } }
+      ).state;
       isMiddlePanning.current = true;
       middlePanStart.current = {
         x: e.clientX,
@@ -258,29 +294,39 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   );
 
   const handleSelectConnection = (conn: { id: number; name: string }) => {
-    if (!pendingSSH) return;
-    openApp("ssh" as AppId, pendingSSH.x, pendingSSH.y, {
+    if (!pendingConnectionApp) return;
+    openApp(pendingConnectionApp.appId, pendingConnectionApp.x, pendingConnectionApp.y, {
       connectionId: conn.id,
-      title: conn.name,
+      title:
+        pendingConnectionApp.appId === "ssh"
+          ? conn.name
+          : `${conn.name} ${registry[pendingConnectionApp.appId].title}`,
     });
-    setPendingSSH(null);
+    setPendingConnectionApp(null);
   };
 
-  const handleCancelSSH = () => {
-    setPendingSSH(null);
+  const handleCancelConnectionPick = () => {
+    setPendingConnectionApp(null);
     clearPlacing();
   };
 
   const handleNoConnection = () => {
-    if (!pendingSSH) return;
-    openApp("ssh" as AppId, pendingSSH.x, pendingSSH.y);
-    setPendingSSH(null);
+    if (!pendingConnectionApp) return;
+    openApp(
+      pendingConnectionApp.appId,
+      pendingConnectionApp.x,
+      pendingConnectionApp.y,
+    );
+    setPendingConnectionApp(null);
   };
 
   const isDragging = draggingId !== null;
   const gridColor = isDragging ? "#444" : "#333";
   const bgColor = isDragging ? "#1e1e2e" : "#1a1a1a";
   const placingApp = placingAppId ? registry[placingAppId] : null;
+  const pendingAppDefinition = pendingConnectionApp
+    ? registry[pendingConnectionApp.appId]
+    : null;
 
   return (
     <div
@@ -308,14 +354,21 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           animationType: "easeOut",
         }}
         pinch={{
-          step: 5,
+          step: 2,
         }}
         doubleClick={{ disabled: true }}
         trackPadPanning={{
           disabled: false,
         }}
         onTransform={({ state }) => {
-          setZoomScale(state.scale);
+          const newScale = state.scale;
+          scaleRef.current = newScale;
+          if (newScale !== lastScale.current) {
+            setIsZooming(true);
+            lastScale.current = newScale;
+            clearTimeout(zoomTimer.current);
+            zoomTimer.current = setTimeout(() => setIsZooming(false), 150);
+          }
         }}
         panning={{
           disabled: false,
@@ -327,83 +380,88 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         {({ zoomIn, zoomOut, resetTransform }) => {
           zoomRef.current = { zoomIn, zoomOut };
           return (
-          <>
-            <TransformComponent
-              wrapperStyle={{
-                width: "100%",
-                height: "100%",
-              }}
-            >
-              <div
-                ref={contentRef}
-                className="relative"
-                style={{
-                  willChange: "transform",
-                  width: "10000px",
-                  height: "10000px",
-                  backgroundSize: "40px 40px",
-                  backgroundColor: bgColor,
-                  transition: "background-color 0.2s ease",
+            <>
+              <TransformComponent
+                wrapperStyle={{
+                  width: "100%",
+                  height: "100%",
+                  background: bgColor,
                 }}
-                onClick={handleBackgroundClick}
               >
-                {children}
+                <div
+                  ref={contentRef}
+                  className="relative"
+                  style={{
+                    willChange: "transform",
+                    transform: "translateZ(0)",
+                    width: "10000px",
+                    height: "10000px",
+                    backgroundSize: "40px 40px",
+                    backgroundColor: bgColor,
+                    transition: "background-color 0.2s ease",
+                  }}
+                  onClick={handleBackgroundClick}
+                >
+                  <div style={{ pointerEvents: isZooming ? "none" : "auto" }}>
+                    {children}
+                  </div>
+                </div>
+              </TransformComponent>
+              <div className="absolute bottom-4 left-4 hidden sm:flex z-[9999] items-center gap-1 px-1 py-1 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg shadow-xl text-xs">
+                <button
+                  onClick={() => zoomOut()}
+                  className="w-6 h-6 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
+                  title="Zoom out"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+                <button
+                  ref={percentRef}
+                  onClick={() => resetTransform()}
+                  className="min-w-6 h-6 flex items-center justify-center px-1.5 rounded hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-[11px] transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
+                  title="Reset zoom"
+                >
+                  100%
+                </button>
+                <button
+                  onClick={() => zoomIn()}
+                  className="w-6 h-6 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
+                  title="Zoom in"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
               </div>
-            </TransformComponent>
-            <div className="absolute bottom-4 left-4 hidden sm:flex z-[9999] items-center gap-1 px-2 py-1.5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg shadow-xl text-xs">
-              <button
-                onClick={() => zoomOut()}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
-                title="Zoom out"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-              <button
-                onClick={() => resetTransform()}
-                className="min-w-[52px] h-8 flex items-center justify-center px-1.5 rounded hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-[11px] transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
-                title="Reset zoom"
-              >
-                {Math.round(zoomScale * 100)}%
-              </button>
-              <button
-                onClick={() => zoomIn()}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
-                title="Zoom in"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-            </div>
-          </>
+            </>
           );
         }}
       </TransformWrapper>
-      {placingApp && !pendingSSH && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-3 px-5 py-3 bg-blue-900/90 backdrop-blur-md border border-blue-500 text-blue-100 rounded-lg shadow-lg text-sm">
+      {placingApp && !pendingConnectionApp && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[9998] flex flex-col md:flex-row md:justify-center items-center gap-3 px-5 py-3 bg-blue-900/90 backdrop-blur-md border border-blue-500 text-blue-100 rounded-lg shadow-lg text-xs md:text-sm">
           <span className="text-lg">{placingApp.icon}</span>
-          <span>
+          <span className="text-center">
             Click on canvas to place <strong>{placingApp.title}</strong>
           </span>
           <button
@@ -417,7 +475,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       )}
-      {pendingSSH && (
+      {pendingConnectionApp && pendingAppDefinition && (
         <div
           className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={(e) => e.stopPropagation()}
@@ -428,10 +486,10 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700">
               <h2 className="text-sm font-semibold text-neutral-200">
-                Select SSH Connection
+                Select SSH Session for {pendingAppDefinition.title}
               </h2>
               <button
-                onClick={handleCancelSSH}
+                onClick={handleCancelConnectionPick}
                 className="w-6 h-6 flex items-center justify-center rounded hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 cursor-pointer transition-colors"
               >
                 <svg
@@ -451,13 +509,17 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
             <div className="p-5 flex flex-col gap-2.5 max-h-[60vh] overflow-y-auto">
               {connections.length === 0 ? (
                 <div className="text-center py-8 px-4">
-                  <p className="text-neutral-500 text-sm mb-3">No SSH connections yet</p>
-                  <p className="text-neutral-600 text-xs mb-4">Add a connection in the SSH sidebar first</p>
+                  <p className="text-neutral-500 text-sm mb-3">
+                    No SSH connections yet
+                  </p>
+                  <p className="text-neutral-600 text-xs mb-4">
+                    Add a connection in the SSH sidebar first
+                  </p>
                   <button
                     onClick={handleNoConnection}
                     className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm rounded-md cursor-pointer transition-colors"
                   >
-                    Open without connection
+                    Open without SSH
                   </button>
                 </div>
               ) : (

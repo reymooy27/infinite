@@ -1,6 +1,6 @@
 import type React from "react";
 
-export type AppId = "code-editor" | "terminal" | "notes" | "ssh" | "browser" | "devBrowser";
+export type AppId = "notes" | "ssh" | "devBrowser";
 
 export interface SSHConnection {
   id: number;

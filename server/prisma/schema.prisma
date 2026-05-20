@@ -85,3 +85,11 @@ model Layout {
 
   @@map("layouts")
 }
+
+model Bookmark {
+  id        Int      @id @default(autoincrement())
+  url       String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("bookmarks")
+}

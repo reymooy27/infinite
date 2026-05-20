@@ -8,23 +8,89 @@ interface ConsoleEntry {
 
 interface DevBrowserProps {
   windowId?: string;
+  connectionId?: number;
 }
 
-export default function DevBrowser({ windowId }: DevBrowserProps) {
+interface HistoryEntry {
+  displayUrl: string;
+  targetUrl: string;
+}
+
+interface Bookmark {
+  id: number;
+  url: string;
+  createdAt: string;
+}
+
+const LAST_URL_STORAGE_KEY = "dev-browser-last-url";
+
+export default function DevBrowser({
+  windowId,
+  connectionId,
+}: DevBrowserProps) {
+  const storageKey = windowId
+    ? `${LAST_URL_STORAGE_KEY}:${windowId}`
+    : LAST_URL_STORAGE_KEY;
   const [url, setUrl] = useState("about:blank");
-  const [inputUrl, setInputUrl] = useState("");
+  const [inputUrl, setInputUrl] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(storageKey) ?? "";
+  });
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<ConsoleEntry[]>([]);
-  const [showConsole, setShowConsole] = useState(true);
+  const [showConsole, setShowConsole] = useState(false);
   const [consoleAvailable, setConsoleAvailable] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [iframeKey, setIframeKey] = useState(0);
+  const [quickLinks, setQuickLinks] = useState<Bookmark[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
+  const apiBaseUrl = useRef<string>("");
+
+  if (!apiBaseUrl.current && typeof window !== "undefined") {
+    const configured = process.env.NEXT_PUBLIC_WS_URL;
+    if (configured) {
+      if (
+        configured.startsWith("http://") ||
+        configured.startsWith("https://")
+      ) {
+        apiBaseUrl.current = configured;
+      } else if (
+        configured.startsWith("ws://") ||
+        configured.startsWith("wss://")
+      ) {
+        apiBaseUrl.current = configured.replace(/^ws/, "http");
+      } else {
+        apiBaseUrl.current = `${window.location.protocol}//${configured.replace(/^https?:\/\//, "")}`;
+      }
+    } else {
+      apiBaseUrl.current = `${window.location.protocol}//${window.location.hostname}:3001`;
+    }
+  }
+
   useEffect(() => {
     consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [consoleLogs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const currentEntry = history[historyIndex];
+    if (!currentEntry?.displayUrl) return;
+    window.localStorage.setItem(storageKey, currentEntry.displayUrl);
+  }, [history, historyIndex, storageKey]);
+
+  useEffect(() => {
+    fetch("/api/bookmarks")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setQuickLinks(data);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -132,20 +198,170 @@ export default function DevBrowser({ windowId }: DevBrowserProps) {
     }, 500);
   }, []);
 
-  const handleNavigate = (e: React.FormEvent) => {
-    e.preventDefault();
-    let targetUrl = inputUrl.trim();
-    if (!targetUrl) return;
+  const resolveTargetUrl = useCallback(
+    async (rawUrl: string) => {
+      let targetUrl = rawUrl.trim();
+      if (!targetUrl) return null;
 
-    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-      targetUrl = "http://" + targetUrl;
-    }
+      if (
+        /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/.*)?$/i.test(targetUrl)
+      ) {
+        targetUrl = `http://${targetUrl}`;
+      } else if (
+        !targetUrl.startsWith("http://") &&
+        !targetUrl.startsWith("https://")
+      ) {
+        targetUrl = "http://" + targetUrl;
+      }
 
-    setUrl(targetUrl);
+      const displayUrl = targetUrl;
+
+      const parsed = new URL(targetUrl);
+      const isLocalHost =
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "0.0.0.0";
+
+      if (isLocalHost) {
+        if (!connectionId) {
+          throw new Error(
+            "This Dev Browser window is not attached to an SSH connection. Open it from SSH Manager to access remote localhost.",
+          );
+        }
+
+        const targetPort = parsed.port
+          ? parseInt(parsed.port, 10)
+          : parsed.protocol === "https:"
+            ? 443
+            : 80;
+
+        const res = await fetch(`${apiBaseUrl.current}/api/tunnels`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connectionId,
+            targetHost: "127.0.0.1",
+            targetPort,
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to create localhost tunnel");
+        }
+
+        const data = await res.json();
+        targetUrl = `${data.url}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+
+      return { displayUrl, targetUrl };
+    },
+    [connectionId],
+  );
+
+  const loadEntry = useCallback((entry: HistoryEntry, forceReload = false) => {
     setError(null);
     setIsLoading(true);
     setConsoleLogs([]);
     setConsoleAvailable(false);
+    setInputUrl(entry.displayUrl);
+
+    if (forceReload || entry.targetUrl === url) {
+      setIframeKey((prev) => prev + 1);
+    }
+
+    setUrl(entry.targetUrl);
+  }, [url]);
+
+  const navigateToUrl = useCallback(async (rawUrl: string) => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return;
+
+    setError(null);
+    setIsLoading(true);
+    setInputUrl(trimmed);
+
+    try {
+      const entry = await resolveTargetUrl(trimmed);
+      if (!entry) {
+        setIsLoading(false);
+        return;
+      }
+
+      const isRefresh =
+        historyIndex >= 0 &&
+        history[historyIndex]?.displayUrl === entry.displayUrl &&
+        history[historyIndex]?.targetUrl === entry.targetUrl;
+
+      if (isRefresh) {
+        loadEntry(entry, true);
+        return;
+      }
+
+      const nextHistory = history.slice(0, historyIndex + 1).concat(entry);
+      setHistory(nextHistory);
+      setHistoryIndex(nextHistory.length - 1);
+      loadEntry(entry);
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+        setIsLoading(false);
+      }
+    }
+  }, [resolveTargetUrl, historyIndex, history, loadEntry]);
+
+  const handleNavigate = (e: React.FormEvent) => {
+    e.preventDefault();
+    navigateToUrl(inputUrl);
+  };
+
+  const pinUrl = historyIndex >= 0
+    ? history[historyIndex]?.displayUrl
+    : inputUrl.trim() || null;
+
+  const pinnedBookmark = pinUrl ? quickLinks.find((q) => q.url === pinUrl) : null;
+  const isPinned = !!pinnedBookmark;
+
+  const togglePin = async () => {
+    if (!pinUrl) return;
+    if (pinnedBookmark) {
+      await fetch(`/api/bookmarks/${pinnedBookmark.id}`, { method: "DELETE" });
+      setQuickLinks((prev) => prev.filter((q) => q.id !== pinnedBookmark.id));
+    } else {
+      const res = await fetch("/api/bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: pinUrl }),
+      });
+      if (res.ok) {
+        const bookmark = await res.json();
+        setQuickLinks((prev) => [bookmark, ...prev]);
+      }
+    }
+  };
+
+  const removeQuickLink = async (id: number) => {
+    await fetch(`/api/bookmarks/${id}`, { method: "DELETE" });
+    setQuickLinks((prev) => prev.filter((q) => q.id !== id));
+  };
+
+  const handleRefresh = () => {
+    if (historyIndex < 0 || !history[historyIndex]) return;
+    loadEntry(history[historyIndex], true);
+  };
+
+  const handleBack = () => {
+    if (historyIndex <= 0) return;
+    const nextIndex = historyIndex - 1;
+    setHistoryIndex(nextIndex);
+    loadEntry(history[nextIndex]);
+  };
+
+  const handleForward = () => {
+    if (historyIndex < 0 || historyIndex >= history.length - 1) return;
+    const nextIndex = historyIndex + 1;
+    setHistoryIndex(nextIndex);
+    loadEntry(history[nextIndex]);
   };
 
   const handleLoad = () => {
@@ -177,6 +393,33 @@ export default function DevBrowser({ windowId }: DevBrowserProps) {
         onSubmit={handleNavigate}
         className="flex items-center gap-2 px-3 py-2 bg-neutral-950 border-b border-neutral-800"
       >
+        <button
+          type="button"
+          onClick={handleBack}
+          disabled={historyIndex <= 0}
+          className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600 disabled:border-neutral-800 text-neutral-300 text-sm rounded-md border border-neutral-700 transition-colors"
+          title="Back"
+        >
+          ←
+        </button>
+        <button
+          type="button"
+          onClick={handleForward}
+          disabled={historyIndex < 0 || historyIndex >= history.length - 1}
+          className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600 disabled:border-neutral-800 text-neutral-300 text-sm rounded-md border border-neutral-700 transition-colors"
+          title="Forward"
+        >
+          →
+        </button>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={historyIndex < 0}
+          className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600 disabled:border-neutral-800 text-neutral-300 text-sm rounded-md border border-neutral-700 transition-colors"
+          title="Refresh"
+        >
+          ↻
+        </button>
         <input
           type="text"
           value={inputUrl}
@@ -201,6 +444,19 @@ export default function DevBrowser({ windowId }: DevBrowserProps) {
           title="Toggle console"
         >
           Console {consoleLogs.length > 0 && `(${consoleLogs.length})`}
+        </button>
+        <button
+          type="button"
+          onClick={togglePin}
+          disabled={!pinUrl}
+          className={`px-2 py-1.5 text-xs rounded-md border transition-colors ${
+            isPinned
+              ? "bg-yellow-600/20 border-yellow-500 text-yellow-400"
+              : "border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30"
+          }`}
+          title={isPinned ? "Unpin" : "Pin"}
+        >
+          {isPinned ? "★" : "☆"}
         </button>
         <button
           type="button"
@@ -236,7 +492,36 @@ export default function DevBrowser({ windowId }: DevBrowserProps) {
             </div>
           ) : null}
 
+          {historyIndex < 0 && quickLinks.length > 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-950/90 z-5">
+              <p className="text-neutral-600 text-xs mb-3 font-medium tracking-wide uppercase">Quick Access</p>
+              <div className="flex flex-wrap gap-2 justify-center max-w-lg px-4">
+                {quickLinks.map((bookmark) => (
+                  <div key={bookmark.id} className="group relative">
+                    <button
+                      onClick={() => navigateToUrl(bookmark.url)}
+                      className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-blue-500/50 rounded-lg text-neutral-300 text-sm transition-colors font-mono"
+                    >
+                      {bookmark.url}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeQuickLink(bookmark.id);
+                      }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-neutral-800 border border-neutral-700 hover:bg-red-600 hover:border-red-500 text-neutral-500 hover:text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                      title="Remove"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <iframe
+            key={iframeKey}
             ref={iframeRef}
             src={url}
             className="w-full h-full border-0"
@@ -289,7 +574,9 @@ export default function DevBrowser({ windowId }: DevBrowserProps) {
           <span className={`w-2 h-2 rounded-full ${error ? "bg-red-500" : "bg-green-500"}`} />
           {error ? "Blocked" : "Ready"}
         </span>
-        <span className="truncate max-w-[200px]">{url}</span>
+        <span className="truncate max-w-[200px]">
+          {historyIndex >= 0 ? history[historyIndex]?.displayUrl : (inputUrl.trim() || "about:blank")}
+        </span>
       </div>
     </div>
   );

@@ -80,6 +80,13 @@ export default function SSHPanel() {
     });
   };
 
+  const handleOpenDevBrowser = (conn: { id: number; name: string }) => {
+    useWindowStore.getState().openApp("devBrowser", undefined, undefined, {
+      connectionId: conn.id,
+      title: `${conn.name} Dev Browser`,
+    });
+  };
+
   return (
     <div className="flex flex-col max-h-[70vh] overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
@@ -113,6 +120,13 @@ export default function SSHPanel() {
                 title="Connect & place on canvas"
               >
                 Connect
+              </button>
+              <button
+                onClick={() => handleOpenDevBrowser(conn)}
+                className="shrink-0 px-2 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 text-neutral-100 rounded cursor-pointer transition-colors"
+                title="Open Dev Browser attached to this SSH connection"
+              >
+                Dev
               </button>
               <button
                 onClick={() => handleDelete(conn.id)}

@@ -50,22 +50,20 @@ export async function POST(req: NextRequest) {
 
     const existing = await prisma.layout.findFirst({
       where: { userId: session.user.id },
+      orderBy: { updatedAt: "desc" },
     });
 
-    let layout;
-    if (existing) {
-      layout = await prisma.layout.update({
-        where: { id: existing.id },
-        data: { data: body },
-      });
-    } else {
-      layout = await prisma.layout.create({
-        data: {
-          userId: session.user.id,
-          data: body,
-        },
-      });
-    }
+    const layout = existing
+      ? await prisma.layout.update({
+          where: { id: existing.id },
+          data: { data: body },
+        })
+      : await prisma.layout.create({
+          data: {
+            userId: session.user.id,
+            data: body,
+          },
+        });
 
     const duration = Date.now() - start;
     logApiRequest(method, path, 200, duration);

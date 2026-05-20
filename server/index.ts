@@ -6,8 +6,7 @@ import cors from "cors";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
-import { createSSHSocket } from "./lib/ssh.js";
-import { createBrowserSession } from "./lib/browser.js";
+import { createSSHSocket, ensureLocalTunnel } from "./lib/ssh.js";
 import { logger } from "./lib/logger.js";
 
 const app = express();
@@ -16,6 +15,36 @@ const wss = new WebSocketServer({ noServer: true, pingInterval: 15000, pingTimeo
 
 app.use(cors());
 app.use(express.json());
+
+app.post("/api/tunnels", async (req, res) => {
+  const connectionId = parseInt(String(req.body?.connectionId || "0"), 10);
+  const targetHost =
+    typeof req.body?.targetHost === "string" && req.body.targetHost
+      ? req.body.targetHost
+      : "127.0.0.1";
+  const targetPort = parseInt(String(req.body?.targetPort || "0"), 10);
+
+  if (!connectionId || !targetPort) {
+    res.status(400).json({ error: "Missing connectionId or targetPort" });
+    return;
+  }
+
+  try {
+    const connection = await loadConnection(connectionId);
+    const tunnel = await ensureLocalTunnel(connection, targetHost, targetPort);
+    res.json(tunnel);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to create tunnel";
+    logger.error("[Tunnel] Failed to create local tunnel", {
+      connectionId,
+      targetHost,
+      targetPort,
+      error: message,
+    });
+    res.status(500).json({ error: message });
+  }
+});
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -100,85 +129,26 @@ async function getUserIdFromSession(req: IncomingMessage): Promise<string | null
   }
 }
 
-server.on("upgrade", (req: IncomingMessage, socket, head) => {
-  const pathname = req.url ? new URL(req.url, "http://localhost").pathname : "";
-  logger.info(`[WS] Upgrade request for ${pathname}`);
-
-  if (pathname === "/ws/ssh" || pathname === "/ws/browser") {
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req);
-    });
-  } else {
-    logger.warn(`[WS] Rejected upgrade for unknown path: ${pathname}`);
-    socket.destroy();
-  }
-});
-
-wss.on("connection", async (ws, req) => {
-  const rawUrl = req.url || "";
-  const u = new URL(rawUrl, "http://localhost");
-  const pathname = u.pathname;
-
-  const userId = await getUserIdFromSession(req);
-  if (!userId) {
-    logger.warn(`[WS] Connection rejected: no valid session`);
-    ws.send(JSON.stringify({ type: "error", message: "Authentication required" }));
-    ws.close(4001, "Unauthorized");
-    return;
-  }
-
-  if (pathname === "/ws/browser") {
-    const windowId = u.searchParams.get("windowId") || "";
-    logger.info(`[WS] New browser session, windowId: ${windowId}, userId: ${userId}`);
-    const viewportW = parseInt(u.searchParams.get("width") || "1024", 10);
-    const viewportH = parseInt(u.searchParams.get("height") || "768", 10);
-    createBrowserSession(ws, viewportW, viewportH, windowId).catch((err) => {
-      logger.error(`[WS] Failed to create browser session`, { error: err.message });
-    });
-    return;
-  }
-
-  const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
-  const windowId = u.searchParams.get("windowId") || "";
-
-  logger.info(`[WS] New SSH connection attempt, connectionId: ${connId}, windowId: ${windowId}, userId: ${userId}`);
-
-  if (!connId) {
-    logger.warn(`[WS] Connection rejected: missing connectionId`);
-    ws.send(JSON.stringify({ type: "error", message: "Missing connectionId" }));
-    ws.close();
-    return;
-  }
-
+async function loadConnection(connId: number, userId?: string) {
   let row: ConnectionRow | null;
   try {
-    row = await prisma.connection.findFirst({
-      where: { id: connId, userId },
-    }) as ConnectionRow | null;
+    row = (await prisma.connection.findFirst({
+      where: userId ? { id: connId, userId } : { id: connId },
+    })) as ConnectionRow | null;
   } catch (err) {
     logger.error(`[WS] Database error fetching connection ${connId}`, {
-      error: err instanceof Error ? err.message : String(err)
+      error: err instanceof Error ? err.message : String(err),
     });
-    ws.send(JSON.stringify({ type: "error", message: "Database error" }));
-    ws.close();
-    return;
+    throw new Error("Database error");
   }
 
   if (!row) {
-    logger.warn(`[WS] Connection rejected: connection ${connId} not found or not owned by user`);
-    ws.send(JSON.stringify({ type: "error", message: "Connection not found" }));
-    ws.close();
-    return;
+    throw new Error("Connection not found");
   }
 
   const secret = process.env.ENCRYPTION_SECRET;
   if (!secret) {
-    logger.error(`[WS] Connection ${connId}: ENCRYPTION_SECRET not set`);
-    ws.send(
-      JSON.stringify({ type: "error", message: "ENCRYPTION_SECRET not set" }),
-    );
-    ws.close();
-    return;
+    throw new Error("ENCRYPTION_SECRET not set");
   }
 
   const connection: {
@@ -208,15 +178,71 @@ wss.on("connection", async (ws, req) => {
     }
   } catch (err) {
     logger.error(`[WS] Connection ${connId}: Failed to decrypt credentials`, {
-      error: err instanceof Error ? err.message : String(err)
+      error: err instanceof Error ? err.message : String(err),
     });
-    ws.send(JSON.stringify({ type: "error", message: "Failed to decrypt credentials" }));
+    throw new Error("Failed to decrypt credentials");
+  }
+
+  return connection;
+}
+
+server.on("upgrade", (req: IncomingMessage, socket, head) => {
+  const pathname = req.url ? new URL(req.url, "http://localhost").pathname : "";
+  logger.info(`[WS] Upgrade request for ${pathname}`);
+
+  if (pathname === "/ws/ssh") {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
+  } else {
+    logger.warn(`[WS] Rejected upgrade for unknown path: ${pathname}`);
+    socket.destroy();
+  }
+});
+
+wss.on("connection", async (ws, req) => {
+  const rawUrl = req.url || "";
+  const u = new URL(rawUrl, "http://localhost");
+
+  const userId = await getUserIdFromSession(req);
+  if (!userId) {
+    logger.warn(`[WS] Connection rejected: no valid session`);
+    ws.send(JSON.stringify({ type: "error", message: "Authentication required" }));
+    ws.close(4001, "Unauthorized");
+    return;
+  }
+
+  const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
+  const windowId = u.searchParams.get("windowId") || "";
+
+  logger.info(`[WS] New SSH connection attempt, connectionId: ${connId}, windowId: ${windowId}, userId: ${userId}`);
+
+  if (!connId) {
+    logger.warn(`[WS] Connection rejected: missing connectionId`);
+    ws.send(JSON.stringify({ type: "error", message: "Missing connectionId" }));
     ws.close();
     return;
   }
 
-  logger.info(`[WS] SSH connection established: ${connection.name} (${connection.host})`);
-  createSSHSocket(connection, ws as Parameters<typeof createSSHSocket>[1], windowId);
+  try {
+    const connection = await loadConnection(connId, userId);
+    logger.info(
+      `[WS] SSH connection established: ${connection.name} (${connection.host})`,
+    );
+    createSSHSocket(
+      connection,
+      ws as Parameters<typeof createSSHSocket>[1],
+      windowId,
+    );
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to load SSH connection";
+    logger.error(`[WS] Connection ${connId}: setup failed`, {
+      error: message,
+    });
+    ws.send(JSON.stringify({ type: "error", message }));
+    ws.close();
+  }
 });
 
 wss.on("error", (err) => {
