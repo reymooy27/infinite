@@ -17,6 +17,7 @@ model User {
   sessions      Session[]
   connections   Connection[]
   layouts       Layout[]
+  bookmarks     Bookmark[]
   createdAt     DateTime     @default(now()) @map("created_at")
 
   @@map("users")
@@ -89,6 +90,8 @@ model Layout {
 model Bookmark {
   id        Int      @id @default(autoincrement())
   url       String
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("bookmarks")
