@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
+import UserAccount from "@/components/UserAccount";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import Sidebar from "@/components/Sidebar";
 import SignIn from "@/components/SignIn";
@@ -128,6 +129,7 @@ export default function App() {
         })}
       <Sidebar />
       <Dock />
+      <UserAccount />
     </div>
   );
 }

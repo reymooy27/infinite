@@ -2,6 +2,7 @@ const CACHE_NAME = 'infinite-v1';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
+  '/icon.svg',
   '/icon-192.png',
   '/icon-512.png'
 ];
