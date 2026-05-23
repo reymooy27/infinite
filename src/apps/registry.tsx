@@ -1226,6 +1226,13 @@ const SSHTerminal = ({
                 kill
               </button>
               <button
+                onClick={() => sendTmux("w")}
+                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                title="List windows"
+              >
+                win
+              </button>
+              <button
                 onClick={() => sendTmux("d")}
                 className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
                 title="Detach"

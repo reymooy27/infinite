@@ -4,6 +4,7 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import { jwtDecrypt } from "jose";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
@@ -147,14 +148,29 @@ function getSessionTokenFromHeaders(headers: { cookie?: string }, query?: { toke
 
 async function verifySessionToken(sessionToken: string): Promise<string | null> {
   try {
-    const session = await prisma.session.findUnique({
-      where: { sessionToken },
-      select: { userId: true, expires: true },
+    const secret = process.env.AUTH_SECRET;
+    if (!secret) return null;
+    const { hkdf } = await import("@panva/hkdf");
+    const salt = "authjs.session-token";
+    const encryptionKey = await hkdf("sha256", secret, salt, `Auth.js Generated Encryption Key (${salt})`, 64);
+    const { payload } = await jwtDecrypt(sessionToken, encryptionKey, {
+      clockTolerance: 15,
+      keyManagementAlgorithms: ["dir"],
+      contentEncryptionAlgorithms: ["A256CBC-HS512"],
     });
-    if (!session || session.expires < new Date()) return null;
-    return session.userId;
+    return (payload.sub as string) || null;
   } catch {
-    return null;
+    // Fallback: try DB lookup for existing database sessions
+    try {
+      const session = await prisma.session.findUnique({
+        where: { sessionToken },
+        select: { userId: true, expires: true },
+      });
+      if (!session || session.expires < new Date()) return null;
+      return session.userId;
+    } catch {
+      return null;
+    }
   }
 }
 
