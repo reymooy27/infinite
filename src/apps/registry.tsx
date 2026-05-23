@@ -771,11 +771,12 @@ const SSHTerminal = ({
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (
-        !document.hidden &&
-        (statusRef.current === "disconnected" || statusRef.current === "error")
-      ) {
-        setRetryKey((k) => k + 1);
+      if (!document.hidden) {
+        const ws = wsRef.current;
+        const isStale = !ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING;
+        if (isStale || statusRef.current === "disconnected" || statusRef.current === "error") {
+          setRetryKey((k) => k + 1);
+        }
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
@@ -959,8 +960,15 @@ const SSHTerminal = ({
       setStatus("connected");
     };
 
-    ws.onclose = () => setStatus("disconnected");
-    ws.onerror = () => setStatus("error");
+    // Send ping every 20s to keep connection alive through proxies/firewalls
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 20000);
+
+    ws.onclose = () => { clearInterval(pingInterval); setStatus("disconnected"); };
+    ws.onerror = () => { clearInterval(pingInterval); setStatus("error"); };
 
     ws.onmessage = (e) => {
       try {
@@ -981,6 +989,7 @@ const SSHTerminal = ({
     };
 
     return () => {
+      clearInterval(pingInterval);
       ws.close();
     };
   }, [wsUrl]);
