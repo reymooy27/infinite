@@ -3,6 +3,8 @@ import type { SSHConnection, CreateConnectionInput } from "@/types";
 
 interface SSHState {
   connections: SSHConnection[];
+  limit: number;
+  plan: string;
   loading: boolean;
   error: string | null;
   fetchConnections: () => Promise<void>;
@@ -12,6 +14,8 @@ interface SSHState {
 
 export const useSSHStore = create<SSHState>((set, get) => ({
   connections: [],
+  limit: 3,
+  plan: "free",
   loading: false,
   error: null,
 
@@ -21,7 +25,7 @@ export const useSSHStore = create<SSHState>((set, get) => ({
       const res = await fetch("/api/connections");
       if (!res.ok) throw new Error("Failed to fetch connections");
       const data = await res.json();
-      set({ connections: data, loading: false });
+      set({ connections: data.connections ?? data, limit: data.limit ?? 3, plan: data.plan ?? "free", loading: false });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
@@ -35,7 +39,10 @@ export const useSSHStore = create<SSHState>((set, get) => ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(conn),
       });
-      if (!res.ok) throw new Error("Failed to create connection");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to create connection" }));
+        throw new Error(err.error);
+      }
       const data = await res.json();
       set((state) => ({
         connections: [data, ...state.connections],

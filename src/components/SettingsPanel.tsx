@@ -59,6 +59,8 @@ export default function SettingsPanel({
   );
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
   const setShowTmuxShortcuts = useSettingsStore((s) => s.setShowTmuxShortcuts);
+  const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
+  const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
 
   if (currentPage === "root") {
     return (
@@ -95,6 +97,27 @@ export default function SettingsPanel({
 
   return (
     <div className="space-y-2.5 p-2.5">
+      <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+        <h3 className="text-[13px] font-medium text-neutral-100">Font size</h3>
+        <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+          Adjust the terminal text size (8–24px).
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={() => setTerminalFontSize(Math.max(8, terminalFontSize - 1))}
+            className="h-7 w-7 rounded bg-neutral-700 text-neutral-200 hover:bg-neutral-600 transition-colors cursor-pointer flex items-center justify-center text-sm font-medium"
+          >
+            −
+          </button>
+          <span className="text-sm text-neutral-200 w-8 text-center font-mono">{terminalFontSize}</span>
+          <button
+            onClick={() => setTerminalFontSize(Math.min(24, terminalFontSize + 1))}
+            className="h-7 w-7 rounded bg-neutral-700 text-neutral-200 hover:bg-neutral-600 transition-colors cursor-pointer flex items-center justify-center text-sm font-medium"
+          >
+            +
+          </button>
+        </div>
+      </div>
       <ToggleRow
         title="Terminal button shortcuts"
         description="Show or hide the on-screen terminal shortcut buttons for control keys, arrows, and enter/tab actions."

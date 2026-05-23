@@ -12,6 +12,8 @@ export default function SSHPanel() {
   const deleteConnection = useSSHStore((s) => s.deleteConnection);
   const loading = useSSHStore((s) => s.loading);
   const error = useSSHStore((s) => s.error);
+  const limit = useSSHStore((s) => s.limit);
+  const atLimit = connections.length >= limit;
 
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
@@ -272,12 +274,19 @@ export default function SSHPanel() {
 
       {!showForm && connections.length > 0 && (
         <div className="border-t border-neutral-700 p-4">
-          <button
-            onClick={() => setShowForm(true)}
-            className="w-full h-8 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 text-sm rounded-md cursor-pointer transition-colors"
-          >
-            + Add Connection
-          </button>
+          {atLimit ? (
+            <p className="text-xs text-neutral-500 text-center">
+              Connection limit reached ({connections.length}/{limit}).{" "}
+              <span className="text-blue-400">Upgrade to add more.</span>
+            </p>
+          ) : (
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-full h-8 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 text-sm rounded-md cursor-pointer transition-colors"
+            >
+              + Add Connection ({connections.length}/{limit})
+            </button>
+          )}
         </div>
       )}
     </div>

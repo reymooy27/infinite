@@ -741,6 +741,7 @@ const SSHTerminal = ({
     (s) => s.showTerminalShortcuts,
   );
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
+  const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const statusRef = useRef(status);
   statusRef.current = status;
 
@@ -791,7 +792,7 @@ const SSHTerminal = ({
         background: "#0a0a0a",
         cursor: "#e0e0e0",
       },
-      fontSize: 13,
+      fontSize: terminalFontSize,
       fontFamily: '"JetBrains Mono", "JetBrainsMono Nerd Font", monospace',
       allowProposedApi: true,
       cursorBlink: true,
@@ -833,6 +834,13 @@ const SSHTerminal = ({
       fitRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (termInstanceRef.current) {
+      termInstanceRef.current.options.fontSize = terminalFontSize;
+      fitRef.current?.fit();
+    }
+  }, [terminalFontSize]);
 
   useEffect(() => {
     const container = terminalRef.current;

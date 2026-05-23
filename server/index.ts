@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
@@ -13,10 +14,40 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ noServer: true, pingInterval: 15000, pingTimeout: 5000 });
 
-app.use(cors());
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim());
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
+const apiLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, try again later" },
+});
+app.use("/api", apiLimiter);
+
 app.post("/api/tunnels", async (req, res) => {
+  const userId = await getUserIdFromRequest(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
   const connectionId = parseInt(String(req.body?.connectionId || "0"), 10);
   const targetHost =
     typeof req.body?.targetHost === "string" && req.body.targetHost
@@ -30,7 +61,7 @@ app.post("/api/tunnels", async (req, res) => {
   }
 
   try {
-    const connection = await loadConnection(connectionId);
+    const connection = await loadConnection(connectionId, userId);
     const tunnel = await ensureLocalTunnel(connection, targetHost, targetPort);
     res.json(tunnel);
   } catch (err) {
@@ -46,8 +77,19 @@ app.post("/api/tunnels", async (req, res) => {
   }
 });
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+// Per-user active SSH session tracking
+const userSessions = new Map<string, Set<import("ws").WebSocket>>();
+const MAX_SESSIONS_PER_USER = 5;
+
+app.get("/health", async (_req, res) => {
+  let dbOk = false;
+  try {
+    await prisma.$queryRawUnsafe("SELECT 1");
+    dbOk = true;
+  } catch {}
+  const activeConnections = Array.from(userSessions.values()).reduce((sum, s) => sum + s.size, 0);
+  const status = dbOk ? "ok" : "degraded";
+  res.status(dbOk ? 200 : 503).json({ status, db: dbOk ? "connected" : "unreachable", activeConnections, timestamp: new Date().toISOString() });
 });
 
 interface ConnectionRow {
@@ -73,67 +115,70 @@ function parseCookies(cookieHeader: string): Record<string, string> {
   return cookies;
 }
 
-async function getUserIdFromSession(req: IncomingMessage): Promise<string | null> {
-  const cookieHeader = req.headers.cookie;
-  const url = req.url ? new URL(req.url, "http://localhost") : null;
-  const queryToken = url?.searchParams.get("token");
-  const path = url?.pathname || "unknown";
-
-  logger.debug(`[Auth] getUserIdFromSession called for ${path}`);
-  logger.debug(`[Auth] Cookie header present: ${!!cookieHeader}`);
-  logger.debug(`[Auth] Cookie header value: ${cookieHeader?.substring(0, 200)}`);
-  logger.debug(`[Auth] Query token present: ${!!queryToken}`);
-
+function getSessionTokenFromHeaders(headers: { cookie?: string }, query?: { token?: string }): string | null {
   let sessionToken: string | null = null;
 
-  if (cookieHeader) {
-    const cookies = parseCookies(cookieHeader);
-    const cookieKeys = Object.keys(cookies);
-    logger.debug(`[Auth] Cookies found: ${cookieKeys.join(", ")}`);
-    sessionToken = 
-      cookies["authjs.session-token"] || 
-      cookies["next-auth.session-token"] || 
-      cookies["__Secure-next-auth.session-token"] || 
-      cookies["__Host-next-auth.session-token"] || 
+  if (headers.cookie) {
+    const cookies = parseCookies(headers.cookie);
+    sessionToken =
+      cookies["authjs.session-token"] ||
+      cookies["next-auth.session-token"] ||
+      cookies["__Secure-next-auth.session-token"] ||
+      cookies["__Host-next-auth.session-token"] ||
       null;
-    logger.debug(`[Auth] Cookie session token found: ${!!sessionToken}`);
   }
 
-  if (!sessionToken && queryToken) {
-    sessionToken = queryToken;
-    logger.debug(`[Auth] Using query token as fallback`);
+  if (!sessionToken && query?.token) {
+    sessionToken = query.token;
   }
 
-  if (!sessionToken) {
-    logger.warn(`[Auth] No session token found for ${path}`);
-    return null;
-  }
+  return sessionToken;
+}
 
-  const tokenPreview = sessionToken.length > 20 ? sessionToken.substring(0, 20) + "..." : sessionToken;
-  logger.debug(`[Auth] Token preview: ${tokenPreview}`);
-
+async function verifySessionToken(sessionToken: string): Promise<string | null> {
   try {
     const session = await prisma.session.findUnique({
       where: { sessionToken },
-      select: { userId: true },
+      select: { userId: true, expires: true },
     });
-    if (!session) {
-      logger.warn(`[Auth] Session not found in DB for token ${tokenPreview}`);
-      return null;
-    }
-    logger.info(`[Auth] Valid session found, userId: ${session.userId}`);
+    if (!session || session.expires < new Date()) return null;
     return session.userId;
-  } catch (err) {
-    logger.error(`[Auth] DB error: ${err instanceof Error ? err.message : String(err)}`);
+  } catch {
     return null;
   }
 }
 
-async function loadConnection(connId: number, userId?: string) {
+async function getUserIdFromRequest(req: express.Request): Promise<string | null> {
+  const token = getSessionTokenFromHeaders(
+    { cookie: req.headers.cookie },
+    { token: req.query.token as string | undefined }
+  );
+  if (!token) return null;
+  return verifySessionToken(token);
+}
+
+async function getUserIdFromSession(req: IncomingMessage): Promise<string | null> {
+  const url = req.url ? new URL(req.url, "http://localhost") : null;
+  const token = getSessionTokenFromHeaders(
+    { cookie: req.headers.cookie },
+    { token: url?.searchParams.get("token") || undefined }
+  );
+  if (!token) {
+    logger.warn(`[Auth] No session token found for ${url?.pathname || "unknown"}`);
+    return null;
+  }
+  const userId = await verifySessionToken(token);
+  if (!userId) {
+    logger.warn(`[Auth] Invalid session token for ${url?.pathname || "unknown"}`);
+  }
+  return userId;
+}
+
+async function loadConnection(connId: number, userId: string) {
   let row: ConnectionRow | null;
   try {
     row = (await prisma.connection.findFirst({
-      where: userId ? { id: connId, userId } : { id: connId },
+      where: { id: connId, userId },
     })) as ConnectionRow | null;
   } catch (err) {
     logger.error(`[WS] Database error fetching connection ${connId}`, {
@@ -186,16 +231,31 @@ async function loadConnection(connId: number, userId?: string) {
   return connection;
 }
 
+// WS upgrade rate limit: per-IP, 10 attempts per minute
+const wsUpgradeAttempts = new Map<string, { count: number; resetAt: number }>();
+
 server.on("upgrade", (req: IncomingMessage, socket, head) => {
   const pathname = req.url ? new URL(req.url, "http://localhost").pathname : "";
-  logger.info(`[WS] Upgrade request for ${pathname}`);
+  const ip = req.socket.remoteAddress || "unknown";
+
+  // Rate limit upgrades
+  const now = Date.now();
+  const entry = wsUpgradeAttempts.get(ip);
+  if (entry && entry.resetAt > now) {
+    if (entry.count >= 10) {
+      socket.destroy();
+      return;
+    }
+    entry.count++;
+  } else {
+    wsUpgradeAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
+  }
 
   if (pathname === "/ws/ssh") {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });
   } else {
-    logger.warn(`[WS] Rejected upgrade for unknown path: ${pathname}`);
     socket.destroy();
   }
 });
@@ -206,19 +266,31 @@ wss.on("connection", async (ws, req) => {
 
   const userId = await getUserIdFromSession(req);
   if (!userId) {
-    logger.warn(`[WS] Connection rejected: no valid session`);
     ws.send(JSON.stringify({ type: "error", message: "Authentication required" }));
     ws.close(4001, "Unauthorized");
     return;
   }
 
+  // Enforce per-user session limit
+  const sessions = userSessions.get(userId) || new Set();
+  if (sessions.size >= MAX_SESSIONS_PER_USER) {
+    ws.send(JSON.stringify({ type: "error", message: "Too many active sessions" }));
+    ws.close(4008, "Session limit reached");
+    return;
+  }
+  sessions.add(ws);
+  userSessions.set(userId, sessions);
+  ws.on("close", () => {
+    sessions.delete(ws);
+    if (sessions.size === 0) userSessions.delete(userId);
+  });
+
   const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
   const windowId = u.searchParams.get("windowId") || "";
 
-  logger.info(`[WS] New SSH connection attempt, connectionId: ${connId}, windowId: ${windowId}, userId: ${userId}`);
+  logger.info(`[WS] SSH connection, connectionId: ${connId}, userId: ${userId}`);
 
   if (!connId) {
-    logger.warn(`[WS] Connection rejected: missing connectionId`);
     ws.send(JSON.stringify({ type: "error", message: "Missing connectionId" }));
     ws.close();
     return;
@@ -226,9 +298,6 @@ wss.on("connection", async (ws, req) => {
 
   try {
     const connection = await loadConnection(connId, userId);
-    logger.info(
-      `[WS] SSH connection established: ${connection.name} (${connection.host})`,
-    );
     createSSHSocket(
       connection,
       ws as Parameters<typeof createSSHSocket>[1],
@@ -237,9 +306,7 @@ wss.on("connection", async (ws, req) => {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load SSH connection";
-    logger.error(`[WS] Connection ${connId}: setup failed`, {
-      error: message,
-    });
+    logger.error(`[WS] Connection ${connId}: setup failed`, { error: message });
     ws.send(JSON.stringify({ type: "error", message }));
     ws.close();
   }
@@ -253,3 +320,16 @@ const PORT = process.env.WS_PORT || 3001;
 server.listen(PORT, () => {
   logger.info(`Server started`, { port: PORT, env: process.env.NODE_ENV || "development" });
 });
+
+// Graceful shutdown
+function shutdown(signal: string) {
+  logger.info(`${signal} received, shutting down...`);
+  wss.clients.forEach((ws) => ws.close(1001, "Server shutting down"));
+  server.close(() => {
+    logger.info("Server closed");
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 10_000);
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
