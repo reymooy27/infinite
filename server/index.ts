@@ -147,30 +147,31 @@ function getSessionTokenFromHeaders(headers: { cookie?: string }, query?: { toke
 }
 
 async function verifySessionToken(sessionToken: string): Promise<string | null> {
-  try {
-    const secret = process.env.AUTH_SECRET;
-    if (!secret) return null;
-    const { hkdf } = await import("@panva/hkdf");
-    const salt = "authjs.session-token";
-    const encryptionKey = await hkdf("sha256", secret, salt, `Auth.js Generated Encryption Key (${salt})`, 64);
-    const { payload } = await jwtDecrypt(sessionToken, encryptionKey, {
-      clockTolerance: 15,
-      keyManagementAlgorithms: ["dir"],
-      contentEncryptionAlgorithms: ["A256CBC-HS512"],
-    });
-    return (payload.sub as string) || null;
-  } catch {
-    // Fallback: try DB lookup for existing database sessions
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) return null;
+  const { hkdf } = await import("@panva/hkdf");
+  const salts = ["authjs.session-token", "__Secure-authjs.session-token"];
+  for (const salt of salts) {
     try {
-      const session = await prisma.session.findUnique({
-        where: { sessionToken },
-        select: { userId: true, expires: true },
+      const encryptionKey = await hkdf("sha256", secret, salt, `Auth.js Generated Encryption Key (${salt})`, 64);
+      const { payload } = await jwtDecrypt(sessionToken, encryptionKey, {
+        clockTolerance: 15,
+        keyManagementAlgorithms: ["dir"],
+        contentEncryptionAlgorithms: ["A256CBC-HS512"],
       });
-      if (!session || session.expires < new Date()) return null;
-      return session.userId;
-    } catch {
-      return null;
-    }
+      if (payload.sub) return payload.sub as string;
+    } catch {}
+  }
+  // Fallback: DB lookup for existing database sessions
+  try {
+    const session = await prisma.session.findUnique({
+      where: { sessionToken },
+      select: { userId: true, expires: true },
+    });
+    if (!session || session.expires < new Date()) return null;
+    return session.userId;
+  } catch {
+    return null;
   }
 }
 
