@@ -1,6 +1,5 @@
 FROM node:20-slim
 
-# Install system dependencies for ssh2
 RUN apt-get update && apt-get install -y \
     openssl \
     libssl-dev \

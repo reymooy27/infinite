@@ -17,12 +17,12 @@ kill_timeout = 30
   auto_start_machines = true
   min_machines_running = 1
 
-  [http_service.checks]
-    [http_service.checks.health]
-      interval = "30s"
-      timeout = "5s"
-      path = "/health"
-      method = "GET"
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    path = "/health"
+    method = "GET"
 
 [[vm]]
   memory = '1gb'
