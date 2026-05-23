@@ -97,7 +97,13 @@ export default function SSHPanel() {
   return (
     <div className="flex flex-col max-h-[70vh] overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-        {connections.length === 0 && !showForm ? (
+        {loading && connections.length === 0 ? (
+          <div className="flex flex-col gap-2">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-14 rounded-lg bg-neutral-800 animate-pulse" />
+            ))}
+          </div>
+        ) : connections.length === 0 && !showForm ? (
           <div className="text-center py-8 px-4">
             <p className="text-neutral-500 text-sm mb-3">No SSH connections yet</p>
             <button
