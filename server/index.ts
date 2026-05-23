@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import type { IncomingMessage } from "http";
@@ -9,13 +9,6 @@ import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
 import { createSSHSocket, ensureLocalTunnel } from "./lib/ssh.js";
 import { logger } from "./lib/logger.js";
-
-const app = express();
-const server = createServer(app);
-const wss = new WebSocketServer({ noServer: true, pingInterval: 15000, pingTimeout: 5000 });
-
-// Agent registry: agentId -> WebSocket
-const agentRegistry = new Map<string, WebSocket>();
 
 const app = express();
 const server = createServer(app);
