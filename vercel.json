@@ -4,6 +4,6 @@
   "installCommand": "npm install",
   "framework": "nextjs",
   "env": {
-    "NEXT_PUBLIC_WS_URL": "wss://infinite-server.fly.dev"
+    "NEXT_PUBLIC_WS_URL": "wss://pc.tailf79140.ts.net"
   }
 }
