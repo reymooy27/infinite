@@ -14,7 +14,7 @@ const SECURITY_HEADERS: Record<string, string> = {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self'",
-    "connect-src 'self' wss://infinite-server.fly.dev https://accounts.google.com https://github.com",
+    "connect-src 'self' wss://infinite-server.fly.dev wss://*.ts.net https://accounts.google.com https://github.com",
     "frame-ancestors 'none'",
   ].join("; "),
 };
