@@ -79,7 +79,8 @@ export async function POST(req: NextRequest) {
 
     // Input validation
     const trimmedName = String(name).trim().slice(0, 100);
-    const trimmedHost = String(host).trim().slice(0, 255);
+    const rawHost = String(host).trim();
+    const trimmedHost = (rawHost.includes("://") ? new URL(rawHost.startsWith("http") ? rawHost : `https://${rawHost}`).hostname : rawHost).slice(0, 255);
     const trimmedUsername = String(username).trim().slice(0, 64);
     const parsedPort = Math.min(65535, Math.max(1, parseInt(port) || 22));
 
