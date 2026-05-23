@@ -88,7 +88,7 @@ export default function AgentPanel() {
         ) : (
           agents.map((agent) => {
             const isOnline = onlineIds.has(agent.id);
-            const installCmd = `INFINITE_TOKEN=${agent.token} INFINITE_SERVER=${wsUrl} npx infinite-agent`;
+            const installCmd = `INFINITE_TOKEN=${agent.token} INFINITE_SERVER=${wsUrl} node agent/index.js`;
             return (
               <div key={agent.id} className="flex flex-col gap-2 p-3 bg-neutral-800 rounded-lg border border-neutral-700">
                 <div className="flex items-center justify-between">
