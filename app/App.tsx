@@ -1,6 +1,8 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
@@ -8,14 +10,13 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import UserAccount from "@/components/UserAccount";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import Sidebar from "@/components/Sidebar";
-import SignIn from "@/components/SignIn";
 import WindowFrame from "@/components/WindowFrame";
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 import { useWindowStore } from "@/stores/useWindowStore";
-import { useEffect, useState } from "react";
 
 export default function App() {
   const { data: session, status } = useSession();
+  const router = useRouter();
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
   const loadLayout = useWindowStore((s) => s.loadLayout);
@@ -85,7 +86,8 @@ export default function App() {
   }
 
   if (status === "unauthenticated") {
-    return <SignIn />;
+    router.replace("/login");
+    return null;
   }
 
   return (

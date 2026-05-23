@@ -18,10 +18,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   pages: {
-    signIn: "/",
+    signIn: "/login",
   },
   session: {
     strategy: "database",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60,   // refresh once per day
   },
   callbacks: {
     session({ session, user }) {
