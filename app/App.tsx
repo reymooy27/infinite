@@ -92,11 +92,6 @@ export default function App() {
     <ErrorBoundary>
     <div className="h-[100dvh] bg-neutral-950 overflow-hidden relative select-none touch-none">
       <NavigationBlockModal />
-      {isMobile && (
-        <div className="fixed top-0 left-0 right-0 z-[99998] bg-amber-900/90 backdrop-blur-sm px-4 py-2 text-center text-xs text-amber-100">
-          Infinite is designed for desktop. Some features may not work on mobile.
-        </div>
-      )}
       {showOnboarding && (
         <div className="fixed inset-0 z-[99997] bg-black/70 flex items-center justify-center p-6">
           <div className="bg-neutral-900 border border-neutral-700 rounded-2xl p-6 max-w-sm w-full space-y-4 text-center">
