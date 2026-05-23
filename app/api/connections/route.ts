@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     logger.info(`[${method}] ${path} Start`);
 
     const body = await req.json();
-    const { name, host, port, username, authType, password, privateKey } = body;
+    const { name, host, port, username, authType, password, privateKey, agentId } = body;
 
     if (!name || !host || !username) {
       const duration = Date.now() - start;
@@ -127,6 +127,7 @@ export async function POST(req: NextRequest) {
         authType: authType === "key" ? "key" : "password",
         passwordEncrypted: password ? encrypt(password, secret) : null,
         privateKeyEncrypted: privateKey ? encrypt(privateKey, secret) : null,
+        agentId: agentId || null,
         userId,
       },
       select: {

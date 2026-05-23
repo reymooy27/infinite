@@ -1,0 +1,16 @@
+{
+  "name": "infinite-agent",
+  "version": "1.0.0",
+  "description": "Infinite SSH relay agent",
+  "type": "module",
+  "bin": {
+    "infinite-agent": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ssh2": "^1.16.0",
+    "ws": "^8.18.0"
+  }
+}

@@ -22,11 +22,14 @@ export default function SSHPanel() {
   const [authType, setAuthType] = useState<AuthType>("password");
   const [password, setPassword] = useState("");
   const [privateKey, setPrivateKey] = useState("");
+  const [agentId, setAgentId] = useState("");
+  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [formError, setFormError] = useState("");
   const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
     fetchConnections();
+    fetch("/api/agents").then((r) => r.ok ? r.json() : []).then(setAgents).catch(() => {});
   }, [fetchConnections]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,6 +60,7 @@ export default function SSHPanel() {
         authType,
         password: authType === "password" ? password : undefined,
         privateKey: authType === "key" ? privateKey : undefined,
+        agentId: agentId || undefined,
       });
       setName("");
       setHost("");
@@ -65,6 +69,7 @@ export default function SSHPanel() {
       setAuthType("password");
       setPassword("");
       setPrivateKey("");
+      setAgentId("");
       setShowForm(false);
     } catch (err) {
       setFormError((err as Error).message);
@@ -257,6 +262,19 @@ export default function SSHPanel() {
               rows={3}
               className="px-2 py-1.5 bg-neutral-800 border border-neutral-600 rounded-md text-xs text-neutral-200 placeholder-neutral-500 outline-none focus:border-blue-500 font-mono resize-none"
             />
+          )}
+
+          {agents.length > 0 && (
+            <select
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              className="h-8 px-3 bg-neutral-800 border border-neutral-600 rounded-md text-sm text-neutral-200 outline-none focus:border-blue-500"
+            >
+              <option value="">Via Fly server (public IP)</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>Via agent: {a.name}</option>
+              ))}
+            </select>
           )}
 
           {formError && <p className="text-red-400 text-xs">{formError}</p>}

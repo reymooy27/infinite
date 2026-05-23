@@ -47,4 +47,5 @@ export interface CreateConnectionInput {
   authType?: AuthType;
   password?: string;
   privateKey?: string;
+  agentId?: string;
 }

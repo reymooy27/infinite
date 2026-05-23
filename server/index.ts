@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import type { IncomingMessage } from "http";
@@ -9,6 +9,13 @@ import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
 import { createSSHSocket, ensureLocalTunnel } from "./lib/ssh.js";
 import { logger } from "./lib/logger.js";
+
+const app = express();
+const server = createServer(app);
+const wss = new WebSocketServer({ noServer: true, pingInterval: 15000, pingTimeout: 5000 });
+
+// Agent registry: agentId -> WebSocket
+const agentRegistry = new Map<string, WebSocket>();
 
 const app = express();
 const server = createServer(app);
@@ -81,6 +88,15 @@ app.post("/api/tunnels", async (req, res) => {
 const userSessions = new Map<string, Set<import("ws").WebSocket>>();
 const MAX_SESSIONS_PER_USER = 5;
 
+app.post("/api/agents/online", (req, res) => {
+  const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const online = ids.filter((id) => {
+    const ws = agentRegistry.get(id);
+    return ws && ws.readyState === 1; // OPEN
+  });
+  res.json({ online });
+});
+
 app.get("/health", async (_req, res) => {
   let dbOk = false;
   try {
@@ -102,6 +118,7 @@ interface ConnectionRow {
   passwordEncrypted: string | null;
   privateKeyEncrypted: string | null;
   userId: string;
+  agentId: string | null;
 }
 
 function parseCookies(cookieHeader: string): Record<string, string> {
@@ -205,6 +222,7 @@ async function loadConnection(connId: number, userId: string) {
     authType: "password" | "key";
     password?: string;
     privateKey?: string;
+    agentId?: string;
   } = {
     id: row.id,
     name: row.name,
@@ -212,6 +230,7 @@ async function loadConnection(connId: number, userId: string) {
     port: row.port,
     username: row.username,
     authType: row.authType as "password" | "key",
+    agentId: row.agentId ?? undefined,
   };
 
   try {
@@ -229,6 +248,80 @@ async function loadConnection(connId: number, userId: string) {
   }
 
   return connection;
+}
+
+// Proxy SSH traffic between browser WS and agent WS
+// Protocol: agent receives {type:"ssh",sessionId,host,port,username,authType,password?,privateKey?}
+// then raw binary frames are piped both ways tagged with sessionId
+function proxyThroughAgent(
+  browserWs: WebSocket,
+  agentWs: WebSocket,
+  connection: Awaited<ReturnType<typeof loadConnection>>,
+  windowId: string,
+) {
+  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  logger.info(`[Agent] Proxying session ${sessionId} for connection ${connection.id}`);
+
+  // Tell agent to open SSH connection
+  agentWs.send(JSON.stringify({
+    type: "ssh",
+    sessionId,
+    host: connection.host,
+    port: connection.port,
+    username: connection.username,
+    authType: connection.authType,
+    password: connection.password,
+    privateKey: connection.privateKey,
+    windowId,
+  }));
+
+  // Browser → Agent
+  browserWs.on("message", (data) => {
+    if (agentWs.readyState === WebSocket.OPEN) {
+      // Wrap with sessionId prefix for agent multiplexing
+      if (typeof data === "string") {
+        agentWs.send(JSON.stringify({ type: "data", sessionId, data }));
+      } else {
+        agentWs.send(JSON.stringify({ type: "data", sessionId, data: Buffer.from(data as Buffer).toString("base64"), encoding: "base64" }));
+      }
+    }
+  });
+
+  // Agent → Browser (filter by sessionId)
+  const onAgentMessage = (raw: Buffer) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.sessionId !== sessionId) return;
+      if (msg.type === "data") {
+        const payload = msg.encoding === "base64" ? Buffer.from(msg.data, "base64") : msg.data;
+        if (browserWs.readyState === WebSocket.OPEN) browserWs.send(payload);
+      } else if (msg.type === "error" || msg.type === "close") {
+        if (browserWs.readyState === WebSocket.OPEN) {
+          browserWs.send(JSON.stringify({ type: msg.type, message: msg.message }));
+          browserWs.close();
+        }
+      } else {
+        // Forward control messages (connected, resize ack, etc.)
+        if (browserWs.readyState === WebSocket.OPEN) browserWs.send(JSON.stringify(msg));
+      }
+    } catch {}
+  };
+
+  agentWs.on("message", onAgentMessage);
+
+  browserWs.on("close", () => {
+    agentWs.off("message", onAgentMessage);
+    if (agentWs.readyState === WebSocket.OPEN) {
+      agentWs.send(JSON.stringify({ type: "close", sessionId }));
+    }
+  });
+
+  agentWs.on("close", () => {
+    if (browserWs.readyState === WebSocket.OPEN) {
+      browserWs.send(JSON.stringify({ type: "error", message: "Agent disconnected" }));
+      browserWs.close();
+    }
+  });
 }
 
 // WS upgrade rate limit: per-IP, 10 attempts per minute
@@ -251,7 +344,7 @@ server.on("upgrade", (req: IncomingMessage, socket, head) => {
     wsUpgradeAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
   }
 
-  if (pathname === "/ws/ssh") {
+  if (pathname === "/ws/ssh" || pathname === "/ws/agent") {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });
@@ -263,7 +356,32 @@ server.on("upgrade", (req: IncomingMessage, socket, head) => {
 wss.on("connection", async (ws, req) => {
   const rawUrl = req.url || "";
   const u = new URL(rawUrl, "http://localhost");
+  const pathname = u.pathname;
 
+  // Agent registration endpoint
+  if (pathname === "/ws/agent") {
+    const token = u.searchParams.get("token");
+    if (!token) {
+      ws.close(4001, "Missing token");
+      return;
+    }
+    const agent = await prisma.agent.findUnique({ where: { token } }).catch(() => null);
+    if (!agent) {
+      ws.close(4001, "Invalid token");
+      return;
+    }
+    agentRegistry.set(agent.id, ws);
+    logger.info(`[Agent] Connected: ${agent.id} (${agent.name})`);
+    ws.send(JSON.stringify({ type: "connected", agentId: agent.id }));
+    ws.on("close", () => {
+      agentRegistry.delete(agent.id);
+      logger.info(`[Agent] Disconnected: ${agent.id}`);
+    });
+    // Keep alive pings handled by wss pingInterval
+    return;
+  }
+
+  // SSH endpoint
   const userId = await getUserIdFromSession(req);
   if (!userId) {
     ws.send(JSON.stringify({ type: "error", message: "Authentication required" }));
@@ -298,14 +416,26 @@ wss.on("connection", async (ws, req) => {
 
   try {
     const connection = await loadConnection(connId, userId);
+
+    // If connection has an agentId, proxy through the agent
+    if (connection.agentId) {
+      const agentWs = agentRegistry.get(connection.agentId);
+      if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "error", message: "Agent is offline" }));
+        ws.close();
+        return;
+      }
+      proxyThroughAgent(ws, agentWs, connection, windowId);
+      return;
+    }
+
     createSSHSocket(
       connection,
       ws as Parameters<typeof createSSHSocket>[1],
       windowId,
     );
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Failed to load SSH connection";
+    const message = err instanceof Error ? err.message : "Failed to load SSH connection";
     logger.error(`[WS] Connection ${connId}: setup failed`, { error: message });
     ws.send(JSON.stringify({ type: "error", message }));
     ws.close();

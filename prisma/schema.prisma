@@ -18,6 +18,7 @@ model User {
   connections   Connection[]
   layouts       Layout[]
   bookmarks     Bookmark[]
+  agents        Agent[]
   createdAt     DateTime     @default(now()) @map("created_at")
 
   @@map("users")
@@ -72,6 +73,7 @@ model Connection {
   privateKeyEncrypted String?  @map("private_key_encrypted")
   createdAt           DateTime @default(now()) @map("created_at")
   userId              String   @map("user_id")
+  agentId             String?  @map("agent_id")
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("connections")
@@ -85,6 +87,17 @@ model Layout {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("layouts")
+}
+
+model Agent {
+  id        String   @id @default(cuid())
+  name      String
+  token     String   @unique
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("agents")
 }
 
 model Bookmark {
