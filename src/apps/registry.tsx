@@ -1095,7 +1095,7 @@ const SSHTerminal = ({
         </div>
       )}
       {status === "connected" && isMobile && drawerOpen && (
-        <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} />
+        <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} anchorRef={terminalRef} />
       )}
 
       {/* Desktop UI */}
