@@ -7,7 +7,7 @@ export default function SignIn() {
   const [loading, setLoading] = useState<string | null>(null);
 
   return (
-    <div className="h-[100dvh] flex items-center justify-center bg-neutral-950">
+    <div className="h-[100dvh] flex items-center justify-center bg-neutral-950 touch-auto overscroll-auto overflow-auto">
       <div className="text-center max-w-sm px-8">
         <h1 className="text-3xl font-bold text-white mb-2">Infinite</h1>
         <p className="text-neutral-400 text-sm mb-8">
