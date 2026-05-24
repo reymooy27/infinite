@@ -112,19 +112,19 @@ export function ShortcutDrawer({
 
   return (
     <div
-      className={`absolute bottom-0 left-0 right-0 z-50 transition-transform duration-200 ease-out ${
-        open ? "translate-y-0" : "translate-y-[calc(100%-2.5rem)]"
+      className={`absolute left-0 right-0 z-30 transition-transform duration-200 ease-out ${
+        open ? "bottom-[3.25rem]" : "bottom-[3.25rem] translate-y-[calc(100%-2rem)]"
       }`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
       {/* Drag handle */}
       <div
-        className="flex items-center justify-center h-10 bg-neutral-900/95 backdrop-blur-sm border-t border-neutral-700 rounded-t-xl cursor-pointer"
+        className="flex items-center justify-center h-8 bg-neutral-900/95 backdrop-blur-sm border-t border-neutral-700 rounded-t-xl cursor-pointer"
         onClick={() => setOpen((o) => !o)}
       >
         <ChevronDown
-          size={18}
+          size={16}
           className={`text-neutral-500 transition-transform duration-200 ${open ? "" : "rotate-180"}`}
         />
       </div>

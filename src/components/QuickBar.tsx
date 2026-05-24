@@ -19,7 +19,7 @@ export function QuickBar({
   );
 
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/90 backdrop-blur-sm border-t border-neutral-700">
+    <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg">
       <button
         onClick={() => press("\x03")}
         className="flex-1 h-11 flex items-center justify-center rounded-lg bg-neutral-800 active:bg-neutral-600 text-[11px] font-mono text-neutral-300 transition-colors"

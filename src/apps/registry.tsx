@@ -1084,7 +1084,7 @@ const SSHTerminal = ({
       {/* Mobile UI */}
       {status === "connected" && isMobile && (
         <>
-          <div className="absolute bottom-0 left-0 right-0 z-40">
+          <div className="absolute bottom-1 left-1 right-1 z-30">
             <QuickBar onSend={sendShortcut} onCopy={handleCopy} copyFeedback={copyFeedback} />
           </div>
           <ShortcutDrawer onSend={sendShortcut} onTmux={sendTmux} />
