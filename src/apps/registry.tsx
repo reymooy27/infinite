@@ -1093,8 +1093,8 @@ const SSHTerminal = ({
               copyFeedback={copyFeedback}
               drawerOpen={drawerOpen}
             />
+            <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} />
           </div>
-          <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} />
         </>
       )}
 
