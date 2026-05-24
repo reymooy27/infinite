@@ -8,6 +8,7 @@ import { Code2, Copy, FileText, Monitor } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DevBrowser from "./DevBrowser";
 import { useSettingsStore } from "@/stores/useSettingsStore";
+import { useWindowStore } from "@/stores/useWindowStore";
 import { useWsToken } from "@/hooks/useWsToken";
 import { buildWsUrl } from "@/lib/ws";
 
@@ -803,7 +804,13 @@ const SSHTerminal = ({
     const fit = new FitAddon();
     fitRef.current = fit;
     term.loadAddon(fit);
-    const links = new WebLinksAddon();
+    const links = new WebLinksAddon((_event, uri) => {
+      const { openApp } = useWindowStore.getState();
+      openApp("devBrowser", undefined, undefined, {
+        initialUrl: uri,
+        title: `Dev Browser`,
+      });
+    });
     term.loadAddon(links);
     const unicode11Addon = new Unicode11Addon();
     term.loadAddon(unicode11Addon);

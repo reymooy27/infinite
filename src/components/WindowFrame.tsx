@@ -386,6 +386,7 @@ export default function WindowFrame({
           {cloneElement(children as any, {
             windowId: id,
             connectionId: win?.metadata?.connectionId,
+            initialUrl: win?.metadata?.initialUrl,
           })}
         </div>
 
@@ -540,6 +541,7 @@ export default function WindowFrame({
         {cloneElement(children as any, {
           windowId: id,
           connectionId: win?.metadata?.connectionId,
+          initialUrl: win?.metadata?.initialUrl,
         })}
       </div>
       {/* Visual resize handle for mobile */}

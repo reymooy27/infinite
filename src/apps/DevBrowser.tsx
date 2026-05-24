@@ -10,6 +10,7 @@ interface ConsoleEntry {
 interface DevBrowserProps {
   windowId?: string;
   connectionId?: number;
+  initialUrl?: string;
 }
 
 interface HistoryEntry {
@@ -28,6 +29,7 @@ const LAST_URL_STORAGE_KEY = "dev-browser-last-url";
 export default function DevBrowser({
   windowId,
   connectionId,
+  initialUrl,
 }: DevBrowserProps) {
   const storageKey = windowId
     ? `${LAST_URL_STORAGE_KEY}:${windowId}`
@@ -298,6 +300,10 @@ export default function DevBrowser({
     e.preventDefault();
     navigateToUrl(inputUrl);
   };
+
+  useEffect(() => {
+    if (initialUrl) navigateToUrl(initialUrl);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const pinUrl = historyIndex >= 0
     ? history[historyIndex]?.displayUrl
