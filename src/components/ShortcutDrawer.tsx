@@ -98,7 +98,7 @@ export function ShortcutDrawer({
   if (!open) return null;
 
   return (
-    <div className="relative mt-1.5 bg-neutral-900/95 backdrop-blur-sm border border-neutral-700 rounded-xl overflow-hidden z-50">
+    <div className="fixed bottom-0 left-0 right-0 z-[99999] bg-neutral-900/95 backdrop-blur-sm border-t border-neutral-700 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800">
         <div className="flex gap-1 overflow-x-auto">

@@ -1084,18 +1084,18 @@ const SSHTerminal = ({
 
       {/* Mobile UI */}
       {status === "connected" && isMobile && (
-        <>
-          <div className="absolute bottom-1 left-1 right-1 z-30">
-            <QuickBar
-              onSend={sendShortcut}
-              onCopy={handleCopy}
-              onToggleDrawer={() => setDrawerOpen((o) => !o)}
-              copyFeedback={copyFeedback}
-              drawerOpen={drawerOpen}
-            />
-            <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} />
-          </div>
-        </>
+        <div className="absolute bottom-1 left-1 right-1 z-30">
+          <QuickBar
+            onSend={sendShortcut}
+            onCopy={handleCopy}
+            onToggleDrawer={() => setDrawerOpen((o) => !o)}
+            copyFeedback={copyFeedback}
+            drawerOpen={drawerOpen}
+          />
+        </div>
+      )}
+      {status === "connected" && isMobile && drawerOpen && (
+        <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} />
       )}
 
       {/* Desktop UI */}
