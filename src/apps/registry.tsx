@@ -11,7 +11,6 @@ import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import DevBrowser from "./DevBrowser";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
-import { useWsToken } from "@/hooks/useWsToken";
 import { buildWsUrl } from "@/lib/ws";
 
 const Notes = () => {
@@ -55,12 +54,9 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const [height, setHeight] = useState(700);
   const [retryKey, setRetryKey] = useState(0);
 
-  const wsToken = useWsToken();
-
   const wsUrl = useMemo(() => {
-    if (!wsToken) return null;
-    return buildWsUrl("/ws/browser", { width, height, windowId: windowId || "", r: retryKey, token: wsToken });
-  }, [width, height, windowId, retryKey, wsToken]);
+    return buildWsUrl("/ws/browser", { width, height, windowId: windowId || "", r: retryKey });
+  }, [width, height, windowId, retryKey]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -749,8 +745,6 @@ const SSHTerminal = ({
   const statusRef = useRef(status);
   statusRef.current = status;
 
-  const wsToken = useWsToken();
-
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
     setIsMobile(mq.matches);
@@ -760,9 +754,9 @@ const SSHTerminal = ({
   }, []);
 
   const wsUrl = useMemo(() => {
-    if (!connectionId || !wsToken) return null;
-    return buildWsUrl("/ws/ssh", { connectionId, windowId: windowId || "", r: retryKey, token: wsToken });
-  }, [connectionId, windowId, retryKey, wsToken]);
+    if (!connectionId) return null;
+    return buildWsUrl("/ws/ssh", { connectionId, windowId: windowId || "", r: retryKey });
+  }, [connectionId, windowId, retryKey]);
 
   useEffect(() => {
     const handleScrollEvent = (e: any) => {

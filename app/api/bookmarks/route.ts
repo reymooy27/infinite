@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger, logApiRequest } from "@/lib/logger";
-import { auth } from "@/lib/auth";
-
-async function getUserId() {
-  const session = await auth();
-  return session?.user?.id;
-}
+import { LOCAL_USER_ID } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const start = Date.now();
@@ -14,11 +9,8 @@ export async function GET(req: NextRequest) {
   const path = "/api/bookmarks";
 
   try {
-    const userId = await getUserId();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const bookmarks = await prisma.bookmark.findMany({
-      where: { userId },
+      where: { userId: LOCAL_USER_ID },
       orderBy: { createdAt: "desc" },
     });
 
@@ -40,9 +32,6 @@ export async function POST(req: NextRequest) {
   const path = "/api/bookmarks";
 
   try {
-    const userId = await getUserId();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const body = await req.json();
     const { url } = body;
 
@@ -52,14 +41,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required field: url" }, { status: 400 });
     }
 
-    const existing = await prisma.bookmark.findFirst({ where: { url, userId } });
+    const existing = await prisma.bookmark.findFirst({ where: { url, userId: LOCAL_USER_ID } });
     if (existing) {
       const duration = Date.now() - start;
       logApiRequest(method, path, 200, duration);
       return NextResponse.json(existing);
     }
 
-    const bookmark = await prisma.bookmark.create({ data: { url, userId } });
+    const bookmark = await prisma.bookmark.create({ data: { url, userId: LOCAL_USER_ID } });
 
     const duration = Date.now() - start;
     logApiRequest(method, path, 201, duration);

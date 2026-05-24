@@ -1,13 +1,10 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import UserAccount from "@/components/UserAccount";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import Sidebar from "@/components/Sidebar";
 import WindowFrame from "@/components/WindowFrame";
@@ -15,8 +12,6 @@ import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 
 export default function App() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
   const loadLayout = useWindowStore((s) => s.loadLayout);
@@ -34,16 +29,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (status === "authenticated" && !localStorage.getItem("infinite-onboarded")) {
+    if (!localStorage.getItem("infinite-onboarded")) {
       setShowOnboarding(true);
     }
-  }, [status]);
+  }, []);
 
   useEffect(() => {
-    if (status === "authenticated") {
-      loadLayout();
-    }
-  }, [loadLayout, status]);
+    loadLayout();
+  }, [loadLayout]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -76,19 +69,6 @@ export default function App() {
       window.removeEventListener("popstate", handlePopState);
     };
   }, [windows.length, block, unblock]);
-
-  if (status === "loading") {
-    return (
-      <div className="h-[100dvh] flex items-center justify-center bg-neutral-950">
-        <div className="w-6 h-6 border-2 border-neutral-600 border-t-white rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated") {
-    router.replace("/login");
-    return null;
-  }
 
   return (
     <ErrorBoundary>
@@ -163,7 +143,6 @@ export default function App() {
         })}
       <Sidebar />
       <Dock />
-      <UserAccount />
     </div>
     </ErrorBoundary>
   );

@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import AuthProvider from "@/components/AuthProvider";
 
 export const viewport: Viewport = {
   themeColor: "#0a0a0a"
@@ -32,7 +31,7 @@ export default function RootLayout({
         <link rel="serviceworker" href="/sw.js" />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        {children}
       </body>
     </html>
   );

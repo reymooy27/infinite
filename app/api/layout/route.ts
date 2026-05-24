@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger, logApiRequest } from "@/lib/logger";
-import { auth } from "@/lib/auth";
+import { LOCAL_USER_ID } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const start = Date.now();
@@ -9,15 +9,8 @@ export async function GET(req: NextRequest) {
   const path = "/api/layout";
 
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    logger.info(`[${method}] ${path} Start`);
-
     const layout = await prisma.layout.findFirst({
-      where: { userId: session.user.id },
+      where: { userId: LOCAL_USER_ID },
       orderBy: { updatedAt: "desc" },
     });
 
@@ -39,17 +32,10 @@ export async function POST(req: NextRequest) {
   const path = "/api/layout";
 
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    logger.info(`[${method}] ${path} Start`);
-
     const body = await req.json();
 
     const existing = await prisma.layout.findFirst({
-      where: { userId: session.user.id },
+      where: { userId: LOCAL_USER_ID },
       orderBy: { updatedAt: "desc" },
     });
 
@@ -59,10 +45,7 @@ export async function POST(req: NextRequest) {
           data: { data: body },
         })
       : await prisma.layout.create({
-          data: {
-            userId: session.user.id,
-            data: body,
-          },
+          data: { userId: LOCAL_USER_ID, data: body },
         });
 
     const duration = Date.now() - start;

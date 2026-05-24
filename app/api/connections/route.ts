@@ -2,14 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { encrypt } from "@/lib/crypto";
 import { logger, logApiRequest } from "@/lib/logger";
-import { auth } from "@/lib/auth";
-
-const PLAN_LIMITS: Record<string, number> = { free: 3, pro: 20 };
-
-async function getUserId() {
-  const session = await auth();
-  return session?.user?.id;
-}
+import { LOCAL_USER_ID } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const start = Date.now();
@@ -17,15 +10,10 @@ export async function GET(req: NextRequest) {
   const path = "/api/connections";
 
   try {
-    const userId = await getUserId();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     logger.info(`[${method}] ${path} Start`);
 
     const connections = await prisma.connection.findMany({
-      where: { userId },
+      where: { userId: LOCAL_USER_ID },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -38,13 +26,9 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { plan: true } });
-    const plan = user?.plan || "free";
-    const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
-
     const duration = Date.now() - start;
     logApiRequest(method, path, 200, duration);
-    return NextResponse.json({ connections, limit, plan });
+    return NextResponse.json({ connections, limit: 999, plan: "local" });
   } catch (err) {
     const duration = Date.now() - start;
     const error = err instanceof Error ? err.message : "Unknown error";
@@ -60,11 +44,6 @@ export async function POST(req: NextRequest) {
   const path = "/api/connections";
 
   try {
-    const userId = await getUserId();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     logger.info(`[${method}] ${path} Start`);
 
     const body = await req.json();
@@ -72,12 +51,10 @@ export async function POST(req: NextRequest) {
 
     if (!name || !host || !username) {
       const duration = Date.now() - start;
-      logger.warn(`[${method}] ${path} Validation failed: missing required fields`);
       logApiRequest(method, path, 400, duration);
       return NextResponse.json({ error: "Missing required fields: name, host, username" }, { status: 400 });
     }
 
-    // Input validation
     const trimmedName = String(name).trim().slice(0, 100);
     const rawHost = String(host).trim();
     const trimmedHost = (rawHost.includes("://") ? new URL(rawHost.startsWith("http") ? rawHost : `https://${rawHost}`).hostname : rawHost).slice(0, 255);
@@ -94,20 +71,6 @@ export async function POST(req: NextRequest) {
       const duration = Date.now() - start;
       logApiRequest(method, path, 400, duration);
       return NextResponse.json({ error: "Invalid username" }, { status: 400 });
-    }
-
-    // Enforce plan connection limits
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { plan: true } });
-    const plan = user?.plan || "free";
-    const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
-    const count = await prisma.connection.count({ where: { userId } });
-    if (count >= limit) {
-      const duration = Date.now() - start;
-      logApiRequest(method, path, 403, duration);
-      return NextResponse.json(
-        { error: `Connection limit reached (${limit}). Upgrade your plan to add more.`, limit, count },
-        { status: 403 }
-      );
     }
 
     const secret = process.env.ENCRYPTION_SECRET;
@@ -128,7 +91,7 @@ export async function POST(req: NextRequest) {
         passwordEncrypted: password ? encrypt(password, secret) : null,
         privateKeyEncrypted: privateKey ? encrypt(privateKey, secret) : null,
         agentId: agentId || null,
-        userId,
+        userId: LOCAL_USER_ID,
       },
       select: {
         id: true,

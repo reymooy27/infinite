@@ -4,12 +4,13 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-import { jwtDecrypt } from "jose";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
 import { createSSHSocket, ensureLocalTunnel } from "./lib/ssh.js";
 import { logger } from "./lib/logger.js";
+
+const LOCAL_USER_ID = "local-user";
 
 const app = express();
 const server = createServer(app);
@@ -43,11 +44,7 @@ const apiLimiter = rateLimit({
 app.use("/api", apiLimiter);
 
 app.post("/api/tunnels", async (req, res) => {
-  const userId = await getUserIdFromRequest(req);
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  const userId = getUserIdFromRequest(req);
 
   const connectionId = parseInt(String(req.body?.connectionId || "0"), 10);
   const targetHost =
@@ -115,90 +112,13 @@ interface ConnectionRow {
   agentId: string | null;
 }
 
-function parseCookies(cookieHeader: string): Record<string, string> {
-  const cookies: Record<string, string> = {};
-  cookieHeader.split(";").forEach((cookie) => {
-    const [name, ...rest] = cookie.split("=");
-    if (name && rest.length > 0) {
-      cookies[name.trim()] = rest.join("=").trim();
-    }
-  });
-  return cookies;
+// Local-only mode: no auth required
+function getUserIdFromRequest(_req: express.Request): string {
+  return LOCAL_USER_ID;
 }
 
-function getSessionTokenFromHeaders(headers: { cookie?: string }, query?: { token?: string }): string | null {
-  let sessionToken: string | null = null;
-
-  if (headers.cookie) {
-    const cookies = parseCookies(headers.cookie);
-    sessionToken =
-      cookies["authjs.session-token"] ||
-      cookies["next-auth.session-token"] ||
-      cookies["__Secure-next-auth.session-token"] ||
-      cookies["__Host-next-auth.session-token"] ||
-      null;
-  }
-
-  if (!sessionToken && query?.token) {
-    sessionToken = query.token;
-  }
-
-  return sessionToken;
-}
-
-async function verifySessionToken(sessionToken: string): Promise<string | null> {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret) return null;
-  const { hkdf } = await import("@panva/hkdf");
-  const salts = ["authjs.session-token", "__Secure-authjs.session-token"];
-  for (const salt of salts) {
-    try {
-      const encryptionKey = await hkdf("sha256", secret, salt, `Auth.js Generated Encryption Key (${salt})`, 64);
-      const { payload } = await jwtDecrypt(sessionToken, encryptionKey, {
-        clockTolerance: 15,
-        keyManagementAlgorithms: ["dir"],
-        contentEncryptionAlgorithms: ["A256CBC-HS512"],
-      });
-      if (payload.sub) return payload.sub as string;
-    } catch {}
-  }
-  // Fallback: DB lookup for existing database sessions
-  try {
-    const session = await prisma.session.findUnique({
-      where: { sessionToken },
-      select: { userId: true, expires: true },
-    });
-    if (!session || session.expires < new Date()) return null;
-    return session.userId;
-  } catch {
-    return null;
-  }
-}
-
-async function getUserIdFromRequest(req: express.Request): Promise<string | null> {
-  const token = getSessionTokenFromHeaders(
-    { cookie: req.headers.cookie },
-    { token: req.query.token as string | undefined }
-  );
-  if (!token) return null;
-  return verifySessionToken(token);
-}
-
-async function getUserIdFromSession(req: IncomingMessage): Promise<string | null> {
-  const url = req.url ? new URL(req.url, "http://localhost") : null;
-  const token = getSessionTokenFromHeaders(
-    { cookie: req.headers.cookie },
-    { token: url?.searchParams.get("token") || undefined }
-  );
-  if (!token) {
-    logger.warn(`[Auth] No session token found for ${url?.pathname || "unknown"}`);
-    return null;
-  }
-  const userId = await verifySessionToken(token);
-  if (!userId) {
-    logger.warn(`[Auth] Invalid session token for ${url?.pathname || "unknown"}`);
-  }
-  return userId;
+function getUserIdFromSession(_req: IncomingMessage): string {
+  return LOCAL_USER_ID;
 }
 
 async function loadConnection(connId: number, userId: string) {
@@ -392,12 +312,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   // SSH endpoint
-  const userId = await getUserIdFromSession(req);
-  if (!userId) {
-    ws.send(JSON.stringify({ type: "error", message: "Authentication required" }));
-    ws.close(4001, "Unauthorized");
-    return;
-  }
+  const userId = getUserIdFromSession(req);
 
   // Enforce per-user session limit
   const sessions = userSessions.get(userId) || new Set();
