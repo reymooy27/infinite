@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 export interface QuickBarSlot {
   label: string;
   data: string;
+  isTmux?: boolean;
 }
 
 export const AVAILABLE_SHORTCUTS: QuickBarSlot[] = [
@@ -24,6 +25,21 @@ export const AVAILABLE_SHORTCUTS: QuickBarSlot[] = [
   { label: "→", data: "\x1b[C" },
   { label: "Esc", data: "\x1b" },
   { label: "Enter", data: "\r" },
+];
+
+export const AVAILABLE_TMUX_SHORTCUTS: QuickBarSlot[] = [
+  { label: "next", data: "n", isTmux: true },
+  { label: "prev", data: "p", isTmux: true },
+  { label: "new", data: "c", isTmux: true },
+  { label: "vsplt", data: "%", isTmux: true },
+  { label: "hsplt", data: '"', isTmux: true },
+  { label: "zoom", data: "z", isTmux: true },
+  { label: "kill", data: "x", isTmux: true },
+  { label: "win", data: "w", isTmux: true },
+  { label: "detach", data: "d", isTmux: true },
+  { label: "rename", data: ",", isTmux: true },
+  { label: "scroll", data: "[", isTmux: true },
+  { label: "paste", data: "]", isTmux: true },
 ];
 
 const DEFAULT_QUICK_BAR: QuickBarSlot[] = [

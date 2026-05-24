@@ -742,6 +742,7 @@ const SSHTerminal = ({
     (s) => s.showTerminalShortcuts,
   );
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
+  const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -1087,6 +1088,7 @@ const SSHTerminal = ({
         <div className="absolute bottom-1 left-1 right-1 z-30">
           <QuickBar
             onSend={sendShortcut}
+            onTmux={sendTmux}
             onCopy={handleCopy}
             onToggleDrawer={() => setDrawerOpen((o) => !o)}
             copyFeedback={copyFeedback}
@@ -1202,78 +1204,24 @@ const SSHTerminal = ({
               )}
             </button>
           </div>
-          {showTmuxShortcuts && (
+          {showTmuxShortcuts && (() => {
+            const tmux = quickBarSlots.filter((s) => s.isTmux);
+            return tmux.length > 0 ? (
             <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-600 rounded-lg">
               <span className="text-[9px] text-neutral-600 font-mono shrink-0 mr-0.5">
                 tmux
               </span>
-              <button
-                onClick={() => sendTmux("n")}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="Next window"
-              >
-                next
-              </button>
-              <button
-                onClick={() => sendTmux("p")}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="Previous window"
-              >
-                prev
-              </button>
-              <button
-                onClick={() => sendTmux("c")}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="New window"
-              >
-                new
-              </button>
-              <div className="w-px h-4 bg-neutral-700" />
-              <button
-                onClick={() => sendTmux("%")}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="Split vertical"
-              >
-                vsplt
-              </button>
-              <button
-                onClick={() => sendTmux('"')}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="Split horizontal"
-              >
-                hsplt
-              </button>
-              <div className="w-px h-4 bg-neutral-700" />
-              <button
-                onClick={() => sendTmux("z")}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="Zoom pane"
-              >
-                zoom
-              </button>
-              <button
-                onClick={() => sendTmux("x")}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="Kill pane"
-              >
-                kill
-              </button>
-              <button
-                onClick={() => sendTmux("w")}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="List windows"
-              >
-                win
-              </button>
-              <button
-                onClick={() => sendTmux("d")}
-                className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                title="Detach"
-              >
-                detach
-              </button>
+              {tmux.map((s) => (
+                <button
+                  key={s.data}
+                  onClick={() => sendTmux(s.data)}
+                  className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+                >
+                  {s.label}
+                </button>
+              ))}
             </div>
-          )}
+          ) : null})()}
         </div>
       )}
       {status !== "connected" && (
