@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { Copy, MoreHorizontal } from "lucide-react";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 
 export function QuickBar({
   onSend,
@@ -14,6 +15,8 @@ export function QuickBar({
   copyFeedback: boolean;
   drawerOpen: boolean;
 }) {
+  const slots = useSettingsStore((s) => s.quickBarSlots);
+
   const press = useCallback(
     (data: string) => {
       if (navigator.vibrate) navigator.vibrate(10);
@@ -26,11 +29,9 @@ export function QuickBar({
 
   return (
     <div className="flex items-center gap-1 px-2 py-1.5 mr-5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg">
-      <button onClick={() => press("\x03")} className={btn}>C-c</button>
-      <button onClick={() => press("\x04")} className={btn}>C-d</button>
-      <button onClick={() => press("\x09")} className={btn}>Tab</button>
-      <button onClick={() => press("\x1b[A")} className={btn}>↑</button>
-      <button onClick={() => press("\x1b[B")} className={btn}>↓</button>
+      {slots.map((s) => (
+        <button key={s.label} onClick={() => press(s.data)} className={btn}>{s.label}</button>
+      ))}
       <button onClick={onCopy} className={btn}>
         {copyFeedback ? <span className="text-green-400 text-[10px]">✓</span> : <Copy size={13} />}
       </button>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useSettingsStore } from "@/stores/useSettingsStore";
+import { useSettingsStore, AVAILABLE_SHORTCUTS } from "@/stores/useSettingsStore";
+import type { QuickBarSlot } from "@/stores/useSettingsStore";
 
 interface SettingsPanelProps {
   currentPage: "root" | "terminal";
@@ -61,6 +62,8 @@ export default function SettingsPanel({
   const setShowTmuxShortcuts = useSettingsStore((s) => s.setShowTmuxShortcuts);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
+  const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
+  const setQuickBarSlots = useSettingsStore((s) => s.setQuickBarSlots);
 
   if (currentPage === "root") {
     return (
@@ -130,6 +133,39 @@ export default function SettingsPanel({
         checked={showTmuxShortcuts}
         onChange={setShowTmuxShortcuts}
       />
+      <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+        <h3 className="text-[13px] font-medium text-neutral-100">Quick bar buttons</h3>
+        <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+          Choose which shortcuts appear in the mobile quick bar. Tap to add/remove.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {AVAILABLE_SHORTCUTS.map((s) => {
+            const active = quickBarSlots.some((q) => q.data === s.data);
+            return (
+              <button
+                key={s.label}
+                onClick={() => {
+                  if (active) {
+                    setQuickBarSlots(quickBarSlots.filter((q) => q.data !== s.data));
+                  } else if (quickBarSlots.length < 6) {
+                    setQuickBarSlots([...quickBarSlots, s]);
+                  }
+                }}
+                className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
+                  active
+                    ? "bg-blue-600 text-white"
+                    : "bg-neutral-700 text-neutral-400 hover:text-neutral-200"
+                }`}
+              >
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-[10px] text-neutral-500">
+          {quickBarSlots.length}/6 selected
+        </p>
+      </div>
       <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-2.5 text-[11px] leading-4.5 text-neutral-500">
         If terminal shortcuts are disabled, the tmux row is hidden automatically.
       </div>
