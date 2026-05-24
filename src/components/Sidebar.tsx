@@ -199,7 +199,7 @@ export default function Sidebar() {
                 </svg>
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {activePage === "root" && (
                 <div className="p-2.5">
                   <div className="space-y-1.5">

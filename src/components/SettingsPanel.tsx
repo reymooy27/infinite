@@ -99,7 +99,7 @@ export default function SettingsPanel({
   }
 
   return (
-    <div className="space-y-2.5 p-2.5">
+    <div className="space-y-2.5 p-2.5 overflow-y-auto max-h-full">
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
         <h3 className="text-[13px] font-medium text-neutral-100">Font size</h3>
         <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
