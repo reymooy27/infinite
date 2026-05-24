@@ -37,6 +37,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   const clearFocus = useWindowStore((s) => s.clearFocus);
   const connections = useSSHStore((s) => s.connections);
   const fetchConnections = useSSHStore((s) => s.fetchConnections);
+  const sshLoading = useSSHStore((s) => s.loading);
 
   useEffect(() => {
     const tw = wrapperRef.current;
@@ -507,7 +508,13 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             <div className="p-5 flex flex-col gap-2.5 max-h-[60vh] overflow-y-auto">
-              {connections.length === 0 ? (
+              {sshLoading && connections.length === 0 ? (
+                <div className="flex flex-col gap-2">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="h-14 rounded-lg bg-neutral-800 animate-pulse" />
+                  ))}
+                </div>
+              ) : connections.length === 0 ? (
                 <div className="text-center py-8 px-4">
                   <p className="text-neutral-500 text-sm mb-3">
                     No SSH connections yet
