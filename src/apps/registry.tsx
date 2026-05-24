@@ -6,6 +6,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { Code2, Copy, FileText, Monitor } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { QuickBar } from "@/components/QuickBar";
+import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import DevBrowser from "./DevBrowser";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
@@ -738,6 +740,7 @@ const SSHTerminal = ({
   const [status, setStatus] = useState<string>("connecting");
   const [retryKey, setRetryKey] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -747,6 +750,14 @@ const SSHTerminal = ({
   statusRef.current = status;
 
   const wsToken = useWsToken();
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const wsUrl = useMemo(() => {
     if (!connectionId || !wsToken) return null;
@@ -1065,15 +1076,29 @@ const SSHTerminal = ({
   return (
     <div
       className={`relative w-full h-full px-2 bg-[#0a0a0a] ${
-        showTerminalShortcuts
-          ? showTmuxShortcuts
-            ? "pt-2 pb-28"
-            : "pt-2 pb-16"
-          : "py-2"
+        isMobile
+          ? "pt-2 pb-14"
+          : showTerminalShortcuts
+            ? showTmuxShortcuts
+              ? "pt-2 pb-28"
+              : "pt-2 pb-16"
+            : "py-2"
       }`}
     >
       <div ref={terminalRef} className="w-full h-full" />
-      {status === "connected" && showTerminalShortcuts && (
+
+      {/* Mobile UI */}
+      {status === "connected" && isMobile && (
+        <>
+          <div className="absolute bottom-0 left-0 right-0 z-40">
+            <QuickBar onSend={sendShortcut} onCopy={handleCopy} copyFeedback={copyFeedback} />
+          </div>
+          <ShortcutDrawer onSend={sendShortcut} onTmux={sendTmux} />
+        </>
+      )}
+
+      {/* Desktop UI */}
+      {status === "connected" && !isMobile && showTerminalShortcuts && (
         <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
           <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
             <button
