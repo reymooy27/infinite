@@ -17,10 +17,12 @@ export default function AgentPanel() {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchAgents = useCallback(async () => {
     const res = await fetch("/api/agents");
     if (res.ok) setAgents(await res.json());
+    setInitialLoading(false);
   }, []);
 
   const fetchStatus = useCallback(async () => {
@@ -72,7 +74,13 @@ export default function AgentPanel() {
   return (
     <div className="flex flex-col max-h-[70vh] overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-        {agents.length === 0 && !showForm ? (
+        {initialLoading ? (
+          <div className="flex flex-col gap-2">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-20 rounded-lg bg-neutral-800 animate-pulse" />
+            ))}
+          </div>
+        ) : agents.length === 0 && !showForm ? (
           <div className="text-center py-8 px-4">
             <p className="text-neutral-500 text-sm mb-1">No agents yet</p>
             <p className="text-neutral-600 text-xs mb-4">
