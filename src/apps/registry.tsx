@@ -737,6 +737,7 @@ const SSHTerminal = ({
   const [retryKey, setRetryKey] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -1085,9 +1086,15 @@ const SSHTerminal = ({
       {status === "connected" && isMobile && (
         <>
           <div className="absolute bottom-1 left-1 right-1 z-30">
-            <QuickBar onSend={sendShortcut} onCopy={handleCopy} copyFeedback={copyFeedback} />
+            <QuickBar
+              onSend={sendShortcut}
+              onCopy={handleCopy}
+              onToggleDrawer={() => setDrawerOpen((o) => !o)}
+              copyFeedback={copyFeedback}
+              drawerOpen={drawerOpen}
+            />
           </div>
-          <ShortcutDrawer onSend={sendShortcut} onTmux={sendTmux} />
+          <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} />
         </>
       )}
 
