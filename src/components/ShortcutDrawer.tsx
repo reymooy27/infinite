@@ -88,11 +88,16 @@ export function ShortcutDrawer({
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
-    if (!open || !anchorRef.current) return;
-    const el = anchorRef.current.closest("[class*='react-draggable']") || anchorRef.current.parentElement?.parentElement;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    if (!open || !anchorRef.current) { setPos(null); return; }
+    const update = () => {
+      const el = anchorRef.current?.closest("[class*='react-draggable']") || anchorRef.current?.parentElement?.parentElement;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    };
+    update();
+    const id = setInterval(update, 16);
+    return () => clearInterval(id);
   }, [open, anchorRef]);
 
   const handlePress = useCallback(
