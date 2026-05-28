@@ -214,15 +214,12 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         pinch?: { disabled: boolean };
       };
     };
-    if (placingAppId || draggingId || focusTargetId) {
-      if (twAny.setup?.panning) twAny.setup.panning.disabled = true;
-      if (twAny.setup?.wheel) twAny.setup.wheel.disabled = true;
-      if (isTerminalFocused && twAny.setup?.pinch) twAny.setup.pinch.disabled = true;
-    } else {
-      if (twAny.setup?.panning) twAny.setup.panning.disabled = false;
-      if (twAny.setup?.wheel) twAny.setup.wheel.disabled = false;
-      if (twAny.setup?.pinch) twAny.setup.pinch.disabled = false;
-    }
+    const shouldLockCanvas = !!(placingAppId || draggingId);
+    const disablePinch = !!(isTerminalFocused && focusTargetId);
+
+    if (twAny.setup?.panning) twAny.setup.panning.disabled = shouldLockCanvas;
+    if (twAny.setup?.wheel) twAny.setup.wheel.disabled = shouldLockCanvas;
+    if (twAny.setup?.pinch) twAny.setup.pinch.disabled = shouldLockCanvas || disablePinch;
   }, [placingAppId, draggingId, focusTargetId, isTerminalFocused]);
 
   useEffect(() => {

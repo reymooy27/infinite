@@ -16,6 +16,9 @@
 - `npm run lint` — ESLint
 - `npx patch-package` — Reapply patches (auto-runs on npm install via postinstall)
 
+### Git
+- Commit after EVERY change, no exceptions. No partial or staged commits — commit all changes in one shot.
+
 ### Architecture
 
 **Scroll Pinning**: GSAP ScrollTrigger pins `#workspace-container` when it reaches the viewport top. A `#workspace-spacer` div after it provides scroll duration. The pin uses `pinSpacing: false` so height is manually controlled.

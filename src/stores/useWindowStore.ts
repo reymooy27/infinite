@@ -66,8 +66,31 @@ export const useWindowStore = create<WindowState>((set, get) => ({
     }));
   },
 
-  openApp: (appId, x = Math.random() * 400 + 100, y = Math.random() * 300 + 100, metadata) => {
-    // Generate a unique numeric ID for the session
+  openApp: (appId, x, y, metadata) => {
+    if (x === undefined || y === undefined) {
+      const inst = canvasTransform.current as any;
+      const wrapper = inst?.wrapperComponent as HTMLElement | undefined;
+      if (wrapper && inst?.state) {
+        const scale = inst.state.scale ?? 1;
+        const positionX = inst.state.positionX ?? 0;
+        const positionY = inst.state.positionY ?? 0;
+        if (scale > 0 && isFinite(scale)) {
+          const vw = wrapper.offsetWidth;
+          const vh = wrapper.offsetHeight;
+          const centerX = (vw / 2 - positionX) / scale;
+          const centerY = (vh / 2 - positionY) / scale;
+          const { width, height } = DEFAULT_DIMENSIONS[appId];
+          x = centerX - width / 2 + (Math.random() - 0.5) * 100;
+          y = centerY - height / 2 + (Math.random() - 0.5) * 100;
+        } else {
+          x = Math.random() * 400 + 100;
+          y = Math.random() * 300 + 100;
+        }
+      } else {
+        x = Math.random() * 400 + 100;
+        y = Math.random() * 300 + 100;
+      }
+    }
     const id = `window-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const { width, height } = DEFAULT_DIMENSIONS[appId];
     const topZ = get().topZ + 1;
@@ -80,6 +103,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       placingAppId: null,
     }));
     get().saveLayout();
+    get().focusWindow(id);
   },
 
   closeWindow: (id) => {
