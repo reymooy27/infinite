@@ -34,7 +34,7 @@ interface WindowState {
 }
 
 const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
-  notes: { width: 320, height: 300 },
+  notes: { width: 600, height: 450 },
   ssh: { width: 400, height: 350 },
   devBrowser: { width: 1024, height: 768 },
 };

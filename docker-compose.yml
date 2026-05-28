@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: infinite
       POSTGRES_PASSWORD: infinite
@@ -19,8 +20,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "7890:7890"
     environment:
       DATABASE_URL: postgresql://infinite:infinite@db:5432/infinite
       DIRECT_URL: postgresql://infinite:infinite@db:5432/infinite
@@ -34,14 +36,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.server
+    restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "7891:7891"
     environment:
       DATABASE_URL: postgresql://infinite:infinite@db:5432/infinite
       DIRECT_URL: postgresql://infinite:infinite@db:5432/infinite
       ENCRYPTION_SECRET: e45ecd03425f98373b8144e9560e4e7b1f3a3caf635dd53eb74433594091db85
-      PORT: "3001"
-      ALLOWED_ORIGINS: http://localhost:3000
+      PORT: "7891"
+      ALLOWED_ORIGINS: http://localhost:7890
     depends_on:
       db:
         condition: service_healthy

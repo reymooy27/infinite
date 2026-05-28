@@ -180,9 +180,8 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
     const tw = wrapperRef.current;
     if (!tw) return;
-    const wrapper = (
-      tw as unknown as { instance?: { wrapperComponent?: HTMLElement } }
-    ).instance?.wrapperComponent;
+    const inst = (tw as any).instance ?? tw;
+    const wrapper = inst?.wrapperComponent as HTMLElement | undefined;
     if (!wrapper) return;
 
     const vw = wrapper.offsetWidth;
@@ -193,13 +192,12 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     const winCenterX = win.x + winW / 2;
     const winCenterY = win.y + winH / 2;
 
-    const scale =
-      (tw as unknown as { state?: { scale: number } }).state?.scale || 1;
+    const scale = inst?.state?.scale || 1;
 
     const tx = vw / 2 - winCenterX * scale;
     const ty = vh / 2 - winCenterY * scale;
 
-    ((tw as any).instance ?? tw)?.setState?.(scale, tx, ty);
+    inst?.setState?.(scale, tx, ty);
   }, [focusTargetId, windows]);
 
   const isTerminalFocused =

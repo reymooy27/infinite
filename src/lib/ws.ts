@@ -17,9 +17,9 @@ export function buildWsUrl(
     }
   } else if (typeof window !== "undefined") {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    base = `${proto}//${window.location.hostname}:3001`;
+    base = `${proto}//${window.location.hostname}:7891`;
   } else {
-    base = "ws://localhost:3001";
+    base = "ws://localhost:7891";
   }
 
   const query = Object.entries(params)
@@ -34,7 +34,7 @@ export function buildWsUrl(
  * Used for REST API calls to the WS server (e.g., tunnels).
  */
 export function buildHttpBaseUrl(): string {
-  if (typeof window === "undefined") return "http://localhost:3001";
+  if (typeof window === "undefined") return "http://localhost:7891";
 
   const configured = process.env.NEXT_PUBLIC_WS_URL;
   if (configured) {
@@ -46,5 +46,5 @@ export function buildHttpBaseUrl(): string {
     }
     return `${window.location.protocol}//${configured.replace(/^https?:\/\//, "")}`;
   }
-  return `${window.location.protocol}//${window.location.hostname}:3001`;
+  return `${window.location.protocol}//${window.location.hostname}:7891`;
 }

@@ -17,6 +17,6 @@ RUN npx prisma generate
 
 COPY . .
 
-EXPOSE 3001
+EXPOSE 7891
 
 CMD ["npx", "tsx", "index.ts"]

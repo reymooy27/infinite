@@ -14,9 +14,13 @@ const LOCAL_USER_ID = "local-user";
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ noServer: true, pingInterval: 15000, pingTimeout: 5000 });
+const wss = new WebSocketServer({
+  noServer: true,
+  pingInterval: 15000,
+  pingTimeout: 5000,
+});
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000")
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:7890")
   .split(",")
   .map((o) => o.trim());
 
@@ -30,7 +34,7 @@ app.use(
       }
     },
     credentials: true,
-  })
+  }),
 );
 app.use(express.json());
 
@@ -94,9 +98,17 @@ app.get("/health", async (_req, res) => {
     await prisma.$queryRawUnsafe("SELECT 1");
     dbOk = true;
   } catch {}
-  const activeConnections = Array.from(userSessions.values()).reduce((sum, s) => sum + s.size, 0);
+  const activeConnections = Array.from(userSessions.values()).reduce(
+    (sum, s) => sum + s.size,
+    0,
+  );
   const status = dbOk ? "ok" : "degraded";
-  res.status(dbOk ? 200 : 503).json({ status, db: dbOk ? "connected" : "unreachable", activeConnections, timestamp: new Date().toISOString() });
+  res.status(dbOk ? 200 : 503).json({
+    status,
+    db: dbOk ? "connected" : "unreachable",
+    activeConnections,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 interface ConnectionRow {
@@ -190,20 +202,24 @@ function proxyThroughAgent(
   windowId: string,
 ) {
   const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  logger.info(`[Agent] Proxying session ${sessionId} for connection ${connection.id}`);
+  logger.info(
+    `[Agent] Proxying session ${sessionId} for connection ${connection.id}`,
+  );
 
   // Tell agent to open SSH connection
-  agentWs.send(JSON.stringify({
-    type: "ssh",
-    sessionId,
-    host: connection.host,
-    port: connection.port,
-    username: connection.username,
-    authType: connection.authType,
-    password: connection.password,
-    privateKey: connection.privateKey,
-    windowId,
-  }));
+  agentWs.send(
+    JSON.stringify({
+      type: "ssh",
+      sessionId,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      authType: connection.authType,
+      password: connection.password,
+      privateKey: connection.privateKey,
+      windowId,
+    }),
+  );
 
   // Browser → Agent
   browserWs.on("message", (data) => {
@@ -212,7 +228,14 @@ function proxyThroughAgent(
       if (typeof data === "string") {
         agentWs.send(JSON.stringify({ type: "data", sessionId, data }));
       } else {
-        agentWs.send(JSON.stringify({ type: "data", sessionId, data: Buffer.from(data as Buffer).toString("base64"), encoding: "base64" }));
+        agentWs.send(
+          JSON.stringify({
+            type: "data",
+            sessionId,
+            data: Buffer.from(data as Buffer).toString("base64"),
+            encoding: "base64",
+          }),
+        );
       }
     }
   });
@@ -223,16 +246,22 @@ function proxyThroughAgent(
       const msg = JSON.parse(raw.toString());
       if (msg.sessionId !== sessionId) return;
       if (msg.type === "data") {
-        const payload = msg.encoding === "base64" ? Buffer.from(msg.data, "base64") : msg.data;
+        const payload =
+          msg.encoding === "base64"
+            ? Buffer.from(msg.data, "base64")
+            : msg.data;
         if (browserWs.readyState === WebSocket.OPEN) browserWs.send(payload);
       } else if (msg.type === "error" || msg.type === "close") {
         if (browserWs.readyState === WebSocket.OPEN) {
-          browserWs.send(JSON.stringify({ type: msg.type, message: msg.message }));
+          browserWs.send(
+            JSON.stringify({ type: msg.type, message: msg.message }),
+          );
           browserWs.close();
         }
       } else {
         // Forward control messages (connected, resize ack, etc.)
-        if (browserWs.readyState === WebSocket.OPEN) browserWs.send(JSON.stringify(msg));
+        if (browserWs.readyState === WebSocket.OPEN)
+          browserWs.send(JSON.stringify(msg));
       }
     } catch {}
   };
@@ -248,7 +277,9 @@ function proxyThroughAgent(
 
   agentWs.on("close", () => {
     if (browserWs.readyState === WebSocket.OPEN) {
-      browserWs.send(JSON.stringify({ type: "error", message: "Agent disconnected" }));
+      browserWs.send(
+        JSON.stringify({ type: "error", message: "Agent disconnected" }),
+      );
       browserWs.close();
     }
   });
@@ -295,7 +326,9 @@ wss.on("connection", async (ws, req) => {
       ws.close(4001, "Missing token");
       return;
     }
-    const agent = await prisma.agent.findUnique({ where: { token } }).catch(() => null);
+    const agent = await prisma.agent
+      .findUnique({ where: { token } })
+      .catch(() => null);
     if (!agent) {
       ws.close(4001, "Invalid token");
       return;
@@ -317,7 +350,9 @@ wss.on("connection", async (ws, req) => {
   // Enforce per-user session limit
   const sessions = userSessions.get(userId) || new Set();
   if (sessions.size >= MAX_SESSIONS_PER_USER) {
-    ws.send(JSON.stringify({ type: "error", message: "Too many active sessions" }));
+    ws.send(
+      JSON.stringify({ type: "error", message: "Too many active sessions" }),
+    );
     ws.close(4008, "Session limit reached");
     return;
   }
@@ -331,7 +366,9 @@ wss.on("connection", async (ws, req) => {
   const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
   const windowId = u.searchParams.get("windowId") || "";
 
-  logger.info(`[WS] SSH connection, connectionId: ${connId}, userId: ${userId}`);
+  logger.info(
+    `[WS] SSH connection, connectionId: ${connId}, userId: ${userId}`,
+  );
 
   if (!connId) {
     ws.send(JSON.stringify({ type: "error", message: "Missing connectionId" }));
@@ -360,7 +397,8 @@ wss.on("connection", async (ws, req) => {
       windowId,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load SSH connection";
+    const message =
+      err instanceof Error ? err.message : "Failed to load SSH connection";
     logger.error(`[WS] Connection ${connId}: setup failed`, { error: message });
     ws.send(JSON.stringify({ type: "error", message }));
     ws.close();
@@ -371,9 +409,12 @@ wss.on("error", (err) => {
   logger.error(`[WS] WebSocket server error`, { error: err.message });
 });
 
-const PORT = process.env.WS_PORT || 3001;
+const PORT = process.env.WS_PORT || 7891;
 server.listen(PORT, () => {
-  logger.info(`Server started`, { port: PORT, env: process.env.NODE_ENV || "development" });
+  logger.info(`Server started`, {
+    port: PORT,
+    env: process.env.NODE_ENV || "development",
+  });
 });
 
 // Graceful shutdown

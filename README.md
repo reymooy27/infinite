@@ -85,20 +85,20 @@ The development command (`npm run dev`) runs both Next.js dev server and the Web
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://...` |
-| `WS_URL` | WebSocket server URL (optional) | `ws://localhost:3001` |
+| Variable       | Description                     | Default               |
+| -------------- | ------------------------------- | --------------------- |
+| `DATABASE_URL` | PostgreSQL connection string    | `postgresql://...`    |
+| `WS_URL`       | WebSocket server URL (optional) | `ws://localhost:7891` |
 
 ## App Descriptions
 
-| App | Description |
-|-----|-------------|
-| **Notes** | Simple notepad |
-| **Code Editor** | Text editor with line numbers |
-| **Terminal** | Simulated terminal (date, whoami, ls, neofetch, clear, help) |
-| **Browser** | Remote Chromium via Puppeteer; supports URL bar, navigation, scroll, keyboard |
-| **SSH** | Real SSH sessions via xterm.js + WebSocket |
+| App             | Description                                                                   |
+| --------------- | ----------------------------------------------------------------------------- |
+| **Notes**       | Simple notepad                                                                |
+| **Code Editor** | Text editor with line numbers                                                 |
+| **Terminal**    | Simulated terminal (date, whoami, ls, neofetch, clear, help)                  |
+| **Browser**     | Remote Chromium via Puppeteer; supports URL bar, navigation, scroll, keyboard |
+| **SSH**         | Real SSH sessions via xterm.js + WebSocket                                    |
 
 ## Window Operations
 
@@ -114,15 +114,15 @@ The development command (`npm run dev`) runs both Next.js dev server and the Web
 
 Stores SSH connection credentials (encrypted via AES-256-GCM).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | Int | Primary key |
-| `name` | String | Display name |
-| `host` | String | SSH host |
-| `port` | Int | SSH port (default 22) |
-| `username` | String | SSH username |
-| `authType` | String | "password" or "key" |
-| `passwordEncrypted` | String? | Encrypted password |
+| Field                 | Type    | Description           |
+| --------------------- | ------- | --------------------- |
+| `id`                  | Int     | Primary key           |
+| `name`                | String  | Display name          |
+| `host`                | String  | SSH host              |
+| `port`                | Int     | SSH port (default 22) |
+| `username`            | String  | SSH username          |
+| `authType`            | String  | "password" or "key"   |
+| `passwordEncrypted`   | String? | Encrypted password    |
 | `privateKeyEncrypted` | String? | Encrypted private key |
 
 ### Layout
@@ -138,3 +138,4 @@ npm run lint          # ESLint
 npx prisma studio     # Database GUI
 npx prisma migrate   # Run migrations
 ```
+

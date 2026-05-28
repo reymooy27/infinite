@@ -9,23 +9,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import DevBrowser from "./DevBrowser";
+import Notes from "./Notes";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { buildWsUrl } from "@/lib/ws";
-
-const Notes = () => {
-  const [content, setContent] = useState("");
-
-  return (
-    <textarea
-      className="w-full h-full p-4 bg-neutral-800 text-neutral-100 resize-none outline-none text-sm leading-relaxed"
-      placeholder="Start typing..."
-      value={content}
-      onChange={(e) => setContent(e.target.value)}
-      autoFocus
-    />
-  );
-};
 
 const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -1266,8 +1253,8 @@ export const registry: Record<AppId, AppDefinition> = {
       connectionId?: number;
       windowId?: string;
     }>,
-    defaultWidth: 380,
-    defaultHeight: 350,
+    defaultWidth: 600,
+    defaultHeight: 450,
   },
   ssh: {
     id: "ssh",

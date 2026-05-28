@@ -11,5 +11,5 @@ RUN npm ci
 
 COPY server/ ./server/
 
-EXPOSE 3001
+EXPOSE 7891
 CMD ["npx", "tsx", "server/index.ts"]

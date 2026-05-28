@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["ssh2", "prisma"],
   // @ts-ignore
   allowedDevOrigins: ["100.101.46.57"],
+  devIndicators: false,
 };
 
 export default nextConfig;
