@@ -828,7 +828,22 @@ const SSHTerminal = ({
     const observer = new ResizeObserver(() => fit.fit());
     observer.observe(terminalRef.current);
 
+    // Force a canvas re-creation after the initial layout completes.
+    // This works around a GPU compositing issue where the canvas
+    // renderer doesn't paint under CSS transforms until the canvas
+    // is recreated (e.g. on manual resize).
+    let kickRaf = 0;
+    const kickCanvas = () => {
+      const t = termInstanceRef.current;
+      if (t && t.cols > 0 && t.rows > 0) {
+        t.resize(t.cols + 1, t.rows);
+        t.resize(t.cols - 1, t.rows);
+      }
+    };
+    kickRaf = requestAnimationFrame(kickCanvas);
+
     return () => {
+      cancelAnimationFrame(kickRaf);
       observer.disconnect();
       term.dispose();
       termInstanceRef.current = null;
@@ -955,6 +970,13 @@ const SSHTerminal = ({
             rows: term.rows,
           }),
         );
+        requestAnimationFrame(() => {
+          const t = termInstanceRef.current;
+          if (t && t.cols > 0 && t.rows > 0) {
+            t.resize(t.cols + 1, t.rows);
+            t.resize(t.cols - 1, t.rows);
+          }
+        });
       }
       setStatus("connected");
     };
