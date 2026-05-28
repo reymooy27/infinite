@@ -812,9 +812,16 @@ const SSHTerminal = ({
     const clipboardAddon = new ClipboardAddon();
     term.loadAddon(clipboardAddon);
     term.open(terminalRef.current);
-    const raf = requestAnimationFrame(() => {
-      fit.fit();
-    });
+
+    let fitRaf = 0;
+    const retryFit = () => {
+      if (terminalRef.current && terminalRef.current.offsetWidth > 0 && terminalRef.current.offsetHeight > 0) {
+        fit.fit();
+      } else {
+        fitRaf = requestAnimationFrame(retryFit);
+      }
+    };
+    retryFit();
 
     term.onData((data) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -832,7 +839,7 @@ const SSHTerminal = ({
     observer.observe(terminalRef.current);
 
     return () => {
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(fitRaf);
       observer.disconnect();
       term.dispose();
       termInstanceRef.current = null;
@@ -952,7 +959,7 @@ const SSHTerminal = ({
 
     ws.onopen = () => {
       if (fit && term) {
-        requestAnimationFrame(() => {
+        const doFit = () => {
           fit.fit();
           ws.send(
             JSON.stringify({
@@ -961,7 +968,12 @@ const SSHTerminal = ({
               rows: term.rows,
             }),
           );
-        });
+        };
+        if (terminalRef.current && terminalRef.current.offsetWidth > 0) {
+          doFit();
+        } else {
+          requestAnimationFrame(doFit);
+        }
       }
       setStatus("connected");
     };
