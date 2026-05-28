@@ -138,7 +138,7 @@ export default function Notes() {
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-neutral-900 text-neutral-100">
+    <div className="w-full h-full flex flex-col bg-neutral-950 text-neutral-100">
       <div className="flex items-center gap-2 p-2 border-b border-neutral-700 shrink-0">
         <select
           className="flex-1 bg-neutral-800 text-sm px-2 py-1 rounded border border-neutral-600 outline-none cursor-pointer"
