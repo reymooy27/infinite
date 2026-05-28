@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import registry from "@/apps/registry";
 import { useWindowStore } from "@/stores/useWindowStore";
+import { canvasTransform } from "@/lib/canvasTransform";
 import type { AppId } from "@/types";
 
 const DOCK_APPS: AppId[] = ["notes", "devBrowser", "ssh"];
@@ -201,6 +202,8 @@ export default function Dock() {
     restoreWindow(winId);
     focusWindow(winId);
     bringToFront(winId);
+    const win = windows.find((w) => w.id === winId);
+    if (win) canvasTransform.centerOnWindow(win);
   };
 
   const handleFocusFromMenu = (win: (typeof windows)[0]) => {
@@ -209,6 +212,7 @@ export default function Dock() {
     } else {
       clearFocus();
       focusWindow(win.id);
+      canvasTransform.centerOnWindow(win);
     }
     setShowWinMenu(false);
   };

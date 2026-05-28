@@ -120,8 +120,8 @@ export const useWindowStore = create<WindowState>((set, get) => ({
         w.id === id ? { ...w, z: topZ } : w
       ),
       topZ,
+      focusTargetId: id,
     }));
-    // We don't necessarily need to save layout on every focus, but maybe on z-order changes
     get().saveLayout();
   },
 

@@ -99,8 +99,11 @@ export default function NavigationIndicator() {
   }, [windows]);
 
   const handleClick = useCallback(() => {
-    if (dir) focusWindow(dir.targetId);
-  }, [dir, focusWindow]);
+    if (!dir) return;
+    focusWindow(dir.targetId);
+    const win = windows.find((w) => w.id === dir.targetId);
+    if (win) canvasTransform.centerOnWindow(win);
+  }, [dir, focusWindow, windows]);
 
   if (!dir) return null;
 
