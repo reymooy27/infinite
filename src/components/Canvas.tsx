@@ -351,7 +351,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           animationType: "easeOut",
         }}
         pinch={{
-          step: 2,
+          step: 5,
         }}
         doubleClick={{ disabled: true }}
         trackPadPanning={{
