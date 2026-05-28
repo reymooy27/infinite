@@ -76,7 +76,7 @@ export default function NavigationIndicator() {
         const cy = nearest.y + (nearest.height || 300) / 2;
         const dx = cx - vpCX;
         const dy = cy - vpCY;
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI) - 90;
 
         const key = `${angle.toFixed(1)}-${nearestDist.toFixed(0)}`;
         if (key !== prevKey) {
