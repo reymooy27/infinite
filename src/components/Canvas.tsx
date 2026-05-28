@@ -174,33 +174,6 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     };
   }, [placingAppId, handleCanvasClick]);
 
-  useEffect(() => {
-    if (!focusTargetId) return;
-    const win = windows.find((w) => w.id === focusTargetId);
-    if (!win) return;
-
-    const tw = wrapperRef.current;
-    if (!tw) return;
-    const inst = (tw as any).instance ?? tw;
-    const wrapper = inst?.wrapperComponent as HTMLElement | undefined;
-    if (!wrapper) return;
-
-    const vw = wrapper.offsetWidth;
-    const vh = wrapper.offsetHeight;
-
-    const winW = win.width || 400;
-    const winH = win.height || 300;
-    const winCenterX = win.x + winW / 2;
-    const winCenterY = win.y + winH / 2;
-
-    const scale = inst?.state?.scale || 1;
-
-    const tx = vw / 2 - winCenterX * scale;
-    const ty = vh / 2 - winCenterY * scale;
-
-    inst?.setState?.(scale, tx, ty);
-  }, [focusTargetId, windows]);
-
   const isTerminalFocused =
     focusTargetId !== null &&
     windows.find((w) => w.id === focusTargetId)?.appId === "ssh";
