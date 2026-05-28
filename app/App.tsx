@@ -6,6 +6,7 @@ import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
+import NavigationIndicator from "@/components/NavigationIndicator";
 import Sidebar from "@/components/Sidebar";
 import WindowFrame from "@/components/WindowFrame";
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
@@ -141,6 +142,7 @@ export default function App() {
             </WindowFrame>
           );
         })}
+      <NavigationIndicator />
       <Sidebar />
       <Dock />
     </div>
