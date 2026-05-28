@@ -35,6 +35,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   const openApp = useWindowStore((s) => s.openApp);
   const clearPlacing = useWindowStore((s) => s.clearPlacing);
   const clearFocus = useWindowStore((s) => s.clearFocus);
+  const DEFAULT_SCALE = 0.1;
   const connections = useSSHStore((s) => s.connections);
   const fetchConnections = useSSHStore((s) => s.fetchConnections);
   const sshLoading = useSSHStore((s) => s.loading);
@@ -50,9 +51,9 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     const vw = wrapper.offsetWidth;
     const vh = wrapper.offsetHeight;
     ((canvasTransform.current as any)?.setState ?? (tw as any)?.setState)?.(
-      1,
-      vw / 2 - 5000,
-      vh / 2 - 5000,
+      DEFAULT_SCALE,
+      vw / 2 - 5000 * DEFAULT_SCALE,
+      vh / 2 - 5000 * DEFAULT_SCALE,
     );
     return () => {
       canvasTransform.current = null;
@@ -337,8 +338,8 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           >
         }
         limitToBounds={false}
-        initialScale={1}
-        minScale={0.1}
+        initialScale={DEFAULT_SCALE}
+        minScale={0.05}
         maxScale={20}
         centerZoomedOut={false}
         wheel={{
@@ -375,6 +376,13 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       >
         {({ zoomIn, zoomOut, resetTransform }) => {
           zoomRef.current = { zoomIn, zoomOut };
+          const handleReset = () => {
+            const inst = canvasTransform.current as any;
+            const wrapper = inst?.wrapperComponent as HTMLElement | undefined;
+            if (wrapper && inst?.setState) {
+              inst.setState(DEFAULT_SCALE, wrapper.offsetWidth / 2 - 5000 * DEFAULT_SCALE, wrapper.offsetHeight / 2 - 5000 * DEFAULT_SCALE);
+            }
+          };
           return (
             <>
               <TransformComponent
@@ -424,7 +432,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
                 </button>
                 <button
                   ref={percentRef}
-                  onClick={() => resetTransform()}
+                  onClick={handleReset}
                   className="min-w-6 h-6 flex items-center justify-center px-1.5 rounded hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-[11px] transition-colors cursor-pointer active:bg-neutral-600 touch-manipulation"
                   title="Reset zoom"
                 >

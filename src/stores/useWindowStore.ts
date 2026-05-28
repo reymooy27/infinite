@@ -195,9 +195,13 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       const res = await fetch("/api/layout");
       const data = await res.json();
       if (data.windows) {
-        set({ 
+        const topZ = Math.max(0, ...data.windows.map((w: any) => w.z || 0));
+        const topmost = data.windows.reduce((best: any, w: any) =>
+          (w.z || 0) > (best?.z || 0) ? w : best, null);
+        set({
           windows: data.windows,
-          topZ: Math.max(0, ...data.windows.map((w: any) => w.z || 0))
+          topZ,
+          focusTargetId: topmost?.id ?? null,
         });
       }
     } catch (err) {
