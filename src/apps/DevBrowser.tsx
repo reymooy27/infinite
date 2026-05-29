@@ -34,7 +34,7 @@ export default function DevBrowser({
   const storageKey = windowId
     ? `${LAST_URL_STORAGE_KEY}:${windowId}`
     : LAST_URL_STORAGE_KEY;
-  const [url, setUrl] = useState("about:blank");
+  const [url, setUrl] = useState("");
   const [inputUrl, setInputUrl] = useState(() => {
     if (typeof window === "undefined") return "";
     return window.localStorage.getItem(storageKey) ?? "";
@@ -509,14 +509,16 @@ export default function DevBrowser({
             </div>
           )}
 
-          <iframe
-            key={iframeKey}
-            ref={iframeRef}
-            src={url}
-            className="w-full h-full border-0"
-            onLoad={handleLoad}
-            onError={handleError}
-          />
+          {url && (
+            <iframe
+              key={iframeKey}
+              ref={iframeRef}
+              src={url}
+              className="w-full h-full border-0"
+              onLoad={handleLoad}
+              onError={handleError}
+            />
+          )}
         </div>
 
         {showConsole && (
@@ -564,7 +566,7 @@ export default function DevBrowser({
           {error ? "Blocked" : "Ready"}
         </span>
         <span className="truncate max-w-[200px]">
-          {historyIndex >= 0 ? history[historyIndex]?.displayUrl : (inputUrl.trim() || "about:blank")}
+          {historyIndex >= 0 ? history[historyIndex]?.displayUrl : (inputUrl.trim() || "Start browsing")}
         </span>
       </div>
     </div>
