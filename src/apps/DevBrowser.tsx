@@ -210,9 +210,8 @@ export default function DevBrowser({
 
       if (isLocalHost) {
         if (!connectionId) {
-          throw new Error(
-            "This Dev Browser window is not attached to an SSH connection. Open it from SSH Manager to access remote localhost.",
-          );
+          // No SSH connection — load localhost directly from the user's machine
+          return { displayUrl, targetUrl };
         }
 
         const targetPort = parsed.port
