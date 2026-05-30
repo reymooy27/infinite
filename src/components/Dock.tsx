@@ -438,39 +438,6 @@ export default function Dock() {
             </button>
           );
         })}
-        {/* File transfer button */}
-        <div className="relative" ref={fileTransferRef}>
-          <button
-            onClick={() => { setShowFileTransfer((v) => !v); setShowWinMenu(false); }}
-            className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
-              showFileTransfer
-                ? "bg-blue-600 text-white"
-                : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
-            }`}
-            title="File Transfer"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          </button>
-
-          {/* Desktop panel */}
-          {showFileTransfer && (
-            <div className="hidden sm:block absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden z-[9999]">
-              <div className="px-3 py-2 border-b border-neutral-800 text-xs text-neutral-500 font-medium">
-                File Transfer
-              </div>
-              <div className="max-h-72 overflow-y-auto">
-                <FTConnectionList
-                  connections={sshConnections}
-                  onTransfer={handleTransfer}
-                />
-              </div>
-            </div>
-          )}
-        </div>
           {hasWindows && (<>
           <div className="w-px h-6 sm:h-8 bg-neutral-700 mx-0.5 sm:mx-1" />
             <div className="relative" ref={menuRef}>
@@ -520,32 +487,40 @@ export default function Dock() {
             </div>
           </>
         )}
-      </div>
+        {/* File transfer button */}
+        <div className="relative" ref={fileTransferRef}>
+          <button
+            onClick={() => { setShowFileTransfer((v) => !v); setShowWinMenu(false); }}
+            className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+              showFileTransfer
+                ? "bg-blue-600 text-white"
+                : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+            }`}
+            title="File Transfer"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
 
-      {minimized.length > 0 && (
-        <div className="flex gap-1 sm:gap-1 ml-1 sm:ml-2 px-2 sm:px-3 py-2 sm:py-2.5 bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl items-center">
-          {minimized.map((win) => {
-            const app = registry[win.appId];
-            if (!app) return null;
-            const title = (win.metadata?.title as string) || app.title;
-            return (
-              <button
-                key={win.id}
-                onClick={() => handleRestore(win.id)}
-                className="flex items-center gap-1.5 px-1.5 sm:px-2 py-1 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer group min-w-0 text-neutral-200 max-w-[120px]"
-                title={title}
-              >
-                <span className="text-base leading-none shrink-0">
-                  {app.icon}
-                </span>
-                <span className="text-xs text-neutral-400 truncate group-hover:text-neutral-200">
-                  {title}
-                </span>
-              </button>
-            );
-          })}
+          {/* Desktop panel */}
+          {showFileTransfer && (
+            <div className="hidden sm:block absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden z-[9999]">
+              <div className="px-3 py-2 border-b border-neutral-800 text-xs text-neutral-500 font-medium">
+                File Transfer
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                <FTConnectionList
+                  connections={sshConnections}
+                  onTransfer={handleTransfer}
+                />
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
     </>
   );
