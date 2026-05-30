@@ -41,12 +41,12 @@ export default function FileTransferModal() {
   const downloadIdRef = useRef("");
 
   const isUpload = mode === "upload";
-  const rnd = useRef(0);
+  const [connectKey, setConnectKey] = useState(0);
 
   const wsUrl = useMemo(() => {
     if (!connection) return null;
-    return buildWsUrl("/ws/sftp", { connectionId: connection.id, r: rnd.current });
-  }, [connection, rnd.current]);
+    return buildWsUrl("/ws/sftp", { connectionId: connection.id, r: connectKey });
+  }, [connection, connectKey]);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -163,7 +163,7 @@ export default function FileTransferModal() {
       ws.close();
       wsRef.current = null;
     };
-  }, [showModal, wsUrl, status === "input"]); // Only connect on input → connecting transition
+  }, [showModal, wsUrl]); // Only connect on input → connecting transition
 
   async function sendFileChunks(ws: WebSocket, file: File, uploadId: string) {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -200,9 +200,8 @@ export default function FileTransferModal() {
   }, []);
 
   const handleStart = useCallback(() => {
-    rnd.current = Date.now();
+    setConnectKey(k => k + 1);
     setStatus("input");
-    // Force re-render to trigger WS connection effect
   }, []);
 
   const handleCancel = useCallback(() => {
