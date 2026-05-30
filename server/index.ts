@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
-import { createSSHSocket, ensureLocalTunnel } from "./lib/ssh.js";
+import { createSSHSocket, ensureLocalTunnel, createSFTPConnection } from "./lib/ssh.js";
 import { logger } from "./lib/logger.js";
 
 const LOCAL_USER_ID = "local-user";
@@ -305,7 +305,7 @@ server.on("upgrade", (req: IncomingMessage, socket, head) => {
     wsUpgradeAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
   }
 
-  if (pathname === "/ws/ssh" || pathname === "/ws/agent") {
+  if (pathname === "/ws/ssh" || pathname === "/ws/agent" || pathname === "/ws/sftp") {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });
@@ -341,6 +341,32 @@ wss.on("connection", async (ws, req) => {
       logger.info(`[Agent] Disconnected: ${agent.id}`);
     });
     // Keep alive pings handled by wss pingInterval
+    return;
+  }
+
+  // SFTP endpoint — file transfer only, no shell
+  if (pathname === "/ws/sftp") {
+    const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
+
+    if (!connId) {
+      ws.send(JSON.stringify({ type: "error", message: "Missing connectionId" }));
+      ws.close();
+      return;
+    }
+
+    try {
+      const connection = await loadConnection(connId, getUserIdFromSession(req));
+      if (connection.agentId) {
+        ws.send(JSON.stringify({ type: "error", message: "SFTP not supported for agent connections" }));
+        ws.close();
+        return;
+      }
+      createSFTPConnection(connection, ws as Parameters<typeof createSFTPConnection>[1]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load connection";
+      ws.send(JSON.stringify({ type: "error", message }));
+      ws.close();
+    }
     return;
   }
 

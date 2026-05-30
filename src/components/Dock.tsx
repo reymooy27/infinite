@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import registry from "@/apps/registry";
+import { useFileTransferStore } from "@/stores/useFileTransferStore";
+import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { canvasTransform } from "@/lib/canvasTransform";
 import type { AppId } from "@/types";
@@ -150,6 +152,42 @@ function WindowList({
   );
 }
 
+function FTConnectionList({
+  connections,
+  onTransfer,
+}: {
+  connections: { id: number; name: string; username: string; host: string; port: number }[];
+  onTransfer: (conn: { id: number; name: string }, action: "upload" | "download") => void;
+}) {
+  if (connections.length === 0) {
+    return <div className="px-3 py-4 text-xs text-neutral-600 text-center">No SSH connections</div>;
+  }
+  return (
+    <>
+      {connections.map((conn) => (
+        <div key={conn.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-neutral-800">
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-neutral-200 truncate">{conn.name}</div>
+            <div className="text-[10px] text-neutral-500 truncate">{conn.username}@{conn.host}:{conn.port}</div>
+          </div>
+          <button
+            onClick={() => onTransfer(conn, "upload")}
+            className="shrink-0 px-2 py-1 text-[10px] bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-md transition-colors cursor-pointer"
+          >
+            Upload
+          </button>
+          <button
+            onClick={() => onTransfer(conn, "download")}
+            className="shrink-0 px-2 py-1 text-[10px] bg-green-600/20 text-green-400 hover:bg-green-600 hover:text-white rounded-md transition-colors cursor-pointer"
+          >
+            Download
+          </button>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function Dock() {
   const windows = useWindowStore((s) => s.windows);
   const placingAppId = useWindowStore((s) => s.placingAppId);
@@ -169,10 +207,22 @@ export default function Dock() {
   };
 
   const [showWinMenu, setShowWinMenu] = useState(false);
+  const [showFileTransfer, setShowFileTransfer] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const fileTransferRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const ftSheetRef = useRef<HTMLDivElement>(null);
   const dragStartY = useRef(0);
   const dragDelta = useRef(0);
+  const ftDragStartY = useRef(0);
+  const ftDragDelta = useRef(0);
+
+  const sshConnections = useSSHStore((s) => s.connections);
+  const fetchConnections = useSSHStore((s) => s.fetchConnections);
+
+  useEffect(() => {
+    fetchConnections();
+  }, [fetchConnections]);
 
   const handleSheetPointerDown = (e: React.PointerEvent) => {
     if (e.target instanceof HTMLButtonElement) return;
@@ -192,6 +242,27 @@ export default function Dock() {
     sheetRef.current.style.transform = "";
     try {
       sheetRef.current.releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const handleFtSheetPointerDown = (e: React.PointerEvent) => {
+    if (e.target instanceof HTMLButtonElement) return;
+    ftDragStartY.current = e.clientY;
+    ftDragDelta.current = 0;
+    ftSheetRef.current?.setPointerCapture(e.pointerId);
+  };
+  const handleFtSheetPointerMove = (e: React.PointerEvent) => {
+    if (!ftSheetRef.current) return;
+    const delta = Math.max(0, e.clientY - ftDragStartY.current);
+    ftDragDelta.current = delta;
+    ftSheetRef.current.style.transform = `translateY(${delta}px)`;
+  };
+  const handleFtSheetPointerUp = (e: React.PointerEvent) => {
+    if (!ftSheetRef.current) return;
+    if (ftDragDelta.current > 80) setShowFileTransfer(false);
+    ftSheetRef.current.style.transform = "";
+    try {
+      ftSheetRef.current.releasePointerCapture(e.pointerId);
     } catch {}
   };
 
@@ -217,18 +288,31 @@ export default function Dock() {
     setShowWinMenu(false);
   };
 
-  // Close menu on outside click (desktop only — mobile uses backdrop)
+  const handleTransfer = useCallback((conn: { id: number; name: string }, action: "upload" | "download") => {
+    setShowFileTransfer(false);
+    if (action === "upload") {
+      useFileTransferStore.getState().openUpload(conn);
+    } else {
+      useFileTransferStore.getState().openDownload(conn);
+    }
+  }, []);
+
+  // Close menus on outside click
   useEffect(() => {
-    if (!showWinMenu) return;
+    if (!showWinMenu && !showFileTransfer) return;
     const handler = (e: MouseEvent) => {
       if (sheetRef.current?.contains(e.target as Node)) return;
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      if (ftSheetRef.current?.contains(e.target as Node)) return;
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) && showWinMenu) {
         setShowWinMenu(false);
+      }
+      if (fileTransferRef.current && !fileTransferRef.current.contains(e.target as Node) && showFileTransfer) {
+        setShowFileTransfer(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [showWinMenu]);
+  }, [showWinMenu, showFileTransfer]);
 
   return (
     <>
@@ -277,6 +361,49 @@ export default function Dock() {
           </div>
         </div>
       )}
+
+      {/* Mobile backdrop + sheet for File Transfer */}
+      {showFileTransfer && (
+        <div className="sm:hidden">
+          <div
+            className="fixed inset-0 bg-black/50 z-[10000]"
+            onClick={() => setShowFileTransfer(false)}
+          />
+          <div
+            ref={ftSheetRef}
+            className="fixed bottom-0 left-0 right-0 z-[10001] bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl shadow-2xl flex flex-col max-h-[70vh] transition-transform touch-none animate-[slideUp_0.3s_ease-out]"
+          >
+            <div
+              className="w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+              onPointerDown={handleFtSheetPointerDown}
+              onPointerMove={handleFtSheetPointerMove}
+              onPointerUp={handleFtSheetPointerUp}
+            >
+              <div className="w-10 h-1 bg-neutral-600 rounded-full" />
+            </div>
+            <div className="flex items-center justify-between border-b border-neutral-700 px-3 py-2.5 shrink-0">
+              <h2 className="text-[13px] font-semibold text-neutral-200">
+                File Transfer
+              </h2>
+              <button
+                onClick={() => setShowFileTransfer(false)}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-400 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto pb-6 min-h-0 flex-1">
+              <FTConnectionList
+                connections={sshConnections}
+                onTransfer={handleTransfer}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="fixed bottom-1 left-1/2 -translate-x-1/2 z-[9999] flex items-center p-3 sm:p-4">
       <div className="flex gap-1 sm:gap-2 p-0 bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl items-center">
         {DOCK_APPS.map((appId) => {
@@ -311,13 +438,44 @@ export default function Dock() {
             </button>
           );
         })}
-        {hasWindows && (
-          <>
-            <div className="w-px h-6 sm:h-8 bg-neutral-700 mx-0.5 sm:mx-1" />
-            {/* Window manager button */}
+        {/* File transfer button */}
+        <div className="relative" ref={fileTransferRef}>
+          <button
+            onClick={() => { setShowFileTransfer((v) => !v); setShowWinMenu(false); }}
+            className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+              showFileTransfer
+                ? "bg-blue-600 text-white"
+                : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+            }`}
+            title="File Transfer"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+
+          {/* Desktop panel */}
+          {showFileTransfer && (
+            <div className="hidden sm:block absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden z-[9999]">
+              <div className="px-3 py-2 border-b border-neutral-800 text-xs text-neutral-500 font-medium">
+                File Transfer
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                <FTConnectionList
+                  connections={sshConnections}
+                  onTransfer={handleTransfer}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+          {hasWindows && (<>
+          <div className="w-px h-6 sm:h-8 bg-neutral-700 mx-0.5 sm:mx-1" />
             <div className="relative" ref={menuRef}>
               <button
-                onClick={() => setShowWinMenu((v) => !v)}
+                onClick={() => { setShowWinMenu((v) => !v); setShowFileTransfer(false); }}
                 className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
                   showWinMenu
                     ? "bg-neutral-700 text-white"

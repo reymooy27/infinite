@@ -18,6 +18,8 @@
 
 ### Git
 - Commit after EVERY change, no exceptions. No partial or staged commits — commit all changes in one shot.
+- Always push to `origin/master` after every commit.
+- Commit message: conventional commits format, subject ≤50 chars.
 
 ### Architecture
 

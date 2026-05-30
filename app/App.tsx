@@ -5,6 +5,7 @@ import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import FileTransferModal from "@/components/FileTransferModal";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import NavigationIndicator from "@/components/NavigationIndicator";
 import Sidebar from "@/components/Sidebar";
@@ -145,6 +146,7 @@ export default function App() {
       <NavigationIndicator />
       <Sidebar />
       <Dock />
+      <FileTransferModal />
     </div>
     </ErrorBoundary>
   );

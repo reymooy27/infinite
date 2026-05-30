@@ -4,14 +4,16 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Code2, Copy, FileText, Monitor } from "lucide-react";
+import { Code2, Copy, Download, FileText, Monitor, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
+import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
+import { useSSHStore } from "@/stores/useSSHStore";
 import { buildWsUrl } from "@/lib/ws";
 
 const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
@@ -994,6 +996,7 @@ const SSHTerminal = ({
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
+
         if (msg.type === "data" && term) {
           const binaryStr = atob(msg.data);
           const bytes = new Uint8Array(binaryStr.length);
@@ -1075,6 +1078,20 @@ const SSHTerminal = ({
       showFeedback();
     } catch {}
   }, []);
+
+  const handleUploadClick = useCallback(() => {
+    if (!connectionId) return;
+    const conns = useSSHStore.getState().connections;
+    const conn = conns.find((c) => c.id === connectionId);
+    if (conn) useFileTransferStore.getState().openUpload(conn);
+  }, [connectionId]);
+
+  const handleDownloadClick = useCallback(() => {
+    if (!connectionId) return;
+    const conns = useSSHStore.getState().connections;
+    const conn = conns.find((c) => c.id === connectionId);
+    if (conn) useFileTransferStore.getState().openDownload(conn);
+  }, [connectionId]);
 
   return (
     <div
@@ -1209,6 +1226,21 @@ const SSHTerminal = ({
               ) : (
                 <Copy size={12} />
               )}
+            </button>
+            <div className="w-px h-4 bg-neutral-700" />
+            <button
+              onClick={handleUploadClick}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer"
+              title="Upload file to remote"
+            >
+              <Upload size={12} />
+            </button>
+            <button
+              onClick={handleDownloadClick}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer"
+              title="Download file from remote"
+            >
+              <Download size={12} />
             </button>
           </div>
           {showTmuxShortcuts && (() => {

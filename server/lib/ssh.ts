@@ -1,4 +1,4 @@
-import { Client, ClientChannel } from "ssh2";
+import { Client, ClientChannel, SFTPWrapper } from "ssh2";
 import net from "net";
 import type { AddressInfo } from "net";
 import { logger } from "./logger.js";
@@ -43,6 +43,25 @@ interface ActiveTunnel {
 const sessions = new Map<string, ActiveSession>();
 const tunnels = new Map<string, ActiveTunnel>();
 const SESSION_TIMEOUT = 1000 * 60 * 30; // 30 minutes
+const CHUNK_SIZE = 64 * 1024; // 64KB for file transfer chunks
+
+interface ActiveUpload {
+  sftp: SFTPWrapper;
+  handle: Buffer;
+  filePath: string;
+  bytesWritten: number;
+  fileSize: number;
+}
+
+interface ActiveDownload {
+  sftp: SFTPWrapper;
+  handle: Buffer;
+  fileName: string;
+  fileSize: number;
+}
+
+const activeUploads = new Map<string, ActiveUpload>();
+const activeDownloads = new Map<string, ActiveDownload>();
 
 function validatePrivateKey(keyStr: string): {
   valid: boolean;
@@ -201,6 +220,206 @@ export async function ensureLocalTunnel(
   };
 }
 
+function readNextChunk(
+  sftp: SFTPWrapper,
+  handle: Buffer,
+  ws: { send: (data: string) => void },
+  downloadId: string,
+  fileSize: number,
+  position: number,
+) {
+  const buffer = Buffer.alloc(CHUNK_SIZE);
+  sftp.read(handle, buffer, 0, CHUNK_SIZE, position, (err, bytesRead, dataBuffer) => {
+    if (err) {
+      ws.send(JSON.stringify({ type: "download_error", downloadId, message: err.message }));
+      sftp.close(handle, () => {});
+      sftp.end();
+      activeDownloads.delete(downloadId);
+      return;
+    }
+
+    if (bytesRead === 0) {
+      ws.send(JSON.stringify({ type: "download_complete", downloadId }));
+      sftp.close(handle, () => {});
+      sftp.end();
+      activeDownloads.delete(downloadId);
+      return;
+    }
+
+    const chunk = dataBuffer.subarray(0, bytesRead);
+    ws.send(JSON.stringify({
+      type: "download_chunk",
+      downloadId,
+      data: chunk.toString("base64"),
+      offset: position,
+      total: fileSize,
+    }));
+
+    readNextChunk(sftp, handle, ws, downloadId, fileSize, position + bytesRead);
+  });
+}
+
+function handleUploadStart(
+  conn: Client,
+  ws: { send: (data: string) => void },
+  msg: { uploadId: string; fileName: string; fileSize: number; destPath: string },
+  windowId?: string,
+) {
+  const fullPath = msg.destPath.endsWith("/")
+    ? msg.destPath + msg.fileName
+    : msg.destPath;
+
+  conn.sftp((err, sftp) => {
+    if (err) {
+      ws.send(JSON.stringify({ type: "upload_error", uploadId: msg.uploadId, message: err.message }));
+      return;
+    }
+
+    sftp.open(fullPath, "w", (openErr, handle) => {
+      if (openErr) {
+        ws.send(JSON.stringify({ type: "upload_error", uploadId: msg.uploadId, message: openErr.message }));
+        sftp.end();
+        return;
+      }
+
+      activeUploads.set(msg.uploadId, {
+        sftp,
+        handle,
+        filePath: fullPath,
+        bytesWritten: 0,
+        fileSize: msg.fileSize,
+      });
+
+      ws.send(JSON.stringify({ type: "upload_ack", uploadId: msg.uploadId }));
+    });
+  });
+}
+
+function handleUploadChunk(
+  ws: { send: (data: string) => void },
+  msg: { uploadId: string; data: string; offset: number },
+) {
+  const upload = activeUploads.get(msg.uploadId);
+  if (!upload) return;
+
+  const decoded = Buffer.from(msg.data, "base64");
+  upload.sftp.write(upload.handle, decoded, 0, decoded.length, msg.offset, (err) => {
+    if (err) {
+      ws.send(JSON.stringify({ type: "upload_error", uploadId: msg.uploadId, message: err.message }));
+      upload.sftp.close(upload.handle, () => {});
+      upload.sftp.end();
+      activeUploads.delete(msg.uploadId);
+      return;
+    }
+
+    upload.bytesWritten += decoded.length;
+
+    ws.send(JSON.stringify({
+      type: "upload_progress",
+      uploadId: msg.uploadId,
+      bytesWritten: upload.bytesWritten,
+      fileSize: upload.fileSize,
+    }));
+  });
+}
+
+function handleUploadEnd(
+  ws: { send: (data: string) => void },
+  msg: { uploadId: string },
+) {
+  const upload = activeUploads.get(msg.uploadId);
+  if (!upload) return;
+
+  upload.sftp.close(upload.handle, (err) => {
+    upload.sftp.end();
+    activeUploads.delete(msg.uploadId);
+
+    if (err) {
+      ws.send(JSON.stringify({ type: "upload_error", uploadId: msg.uploadId, message: err.message }));
+    } else {
+      ws.send(JSON.stringify({ type: "upload_complete", uploadId: msg.uploadId, path: upload.filePath }));
+    }
+  });
+}
+
+function handleDownloadRequest(
+  conn: Client,
+  ws: { send: (data: string) => void },
+  msg: { downloadId: string; remotePath: string },
+) {
+  conn.sftp((err, sftp) => {
+    if (err) {
+      ws.send(JSON.stringify({ type: "download_error", downloadId: msg.downloadId, message: err.message }));
+      return;
+    }
+
+    sftp.stat(msg.remotePath, (statErr, stats) => {
+      if (statErr) {
+        ws.send(JSON.stringify({ type: "download_error", downloadId: msg.downloadId, message: `File not found: ${statErr.message}` }));
+        sftp.end();
+        return;
+      }
+
+      sftp.open(msg.remotePath, "r", (openErr, handle) => {
+        if (openErr) {
+          ws.send(JSON.stringify({ type: "download_error", downloadId: msg.downloadId, message: openErr.message }));
+          sftp.end();
+          return;
+        }
+
+        const fileName = msg.remotePath.split("/").pop() || "download";
+        const fileSize = stats.size;
+
+        ws.send(JSON.stringify({
+          type: "download_start",
+          downloadId: msg.downloadId,
+          fileName,
+          fileSize,
+        }));
+
+        activeDownloads.set(msg.downloadId, { sftp, handle, fileName, fileSize });
+
+        readNextChunk(sftp, handle, ws, msg.downloadId, fileSize, 0);
+      });
+    });
+  });
+}
+
+function handleFileTransferMessage(
+  conn: Client,
+  ws: { send: (data: string) => void },
+  msg: Record<string, unknown>,
+  windowId?: string,
+) {
+  switch (msg.type) {
+    case "upload_start":
+      handleUploadStart(conn, ws, msg as { uploadId: string; fileName: string; fileSize: number; destPath: string }, windowId);
+      break;
+    case "upload_chunk":
+      handleUploadChunk(ws, msg as { uploadId: string; data: string; offset: number });
+      break;
+    case "upload_end":
+      handleUploadEnd(ws, msg as { uploadId: string });
+      break;
+    case "download_request":
+      handleDownloadRequest(conn, ws, msg as { downloadId: string; remotePath: string });
+      break;
+  }
+}
+
+function cleanupFileTransfersForSession(_windowId?: string) {
+  for (const [uploadId, upload] of Array.from(activeUploads)) {
+    activeUploads.delete(uploadId);
+    upload.sftp.close(upload.handle, () => {});
+    upload.sftp.end();
+  }
+  for (const [downloadId, download] of Array.from(activeDownloads)) {
+    activeDownloads.delete(downloadId);
+    download.sftp.close(download.handle, () => {});
+    download.sftp.end();
+  }
+}
+
 export function createSSHSocket(
   connection: SSHConnection,
   ws: {
@@ -233,6 +452,8 @@ export function createSSHSocket(
           session.stream.write(parsed.data);
         } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
           session.stream.setWindow(parsed.rows, parsed.cols, 0, 0);
+        } else {
+          handleFileTransferMessage(session.conn, ws, parsed as unknown as Record<string, unknown>, windowId);
         }
       } catch {
         logger.debug(`[SSH] Malformed message from session ${windowId}`);
@@ -324,6 +545,8 @@ export function createSSHSocket(
             stream.write(parsed.data);
           } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
             stream.setWindow(parsed.rows, parsed.cols, 0, 0);
+          } else {
+            handleFileTransferMessage(conn, ws, parsed as unknown as Record<string, unknown>, windowId);
           }
         } catch {
           logger.debug(`[SSH] Malformed message from connection ${connection.id}`);
@@ -388,6 +611,75 @@ export function createSSHSocket(
     } else {
       ws.send(JSON.stringify({ type: "error", message: error.message }));
     }
+    ws.close();
+    return null;
+  }
+
+  return conn;
+}
+
+export function createSFTPConnection(
+  connection: SSHConnection,
+  ws: {
+    send: (data: string) => void;
+    close: () => void;
+    on: (event: string, cb: (msg: unknown) => void) => void;
+  },
+) {
+  logger.info(`[SFTP] Connecting to ${connection.host}:${connection.port} as ${connection.username}`, {
+    connectionId: connection.id,
+    name: connection.name,
+    authType: connection.authType,
+  });
+
+  const conn = new Client();
+
+  let config;
+  try {
+    config = getSSHConfig(connection);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Invalid SSH configuration";
+    ws.send(JSON.stringify({ type: "error", message }));
+    ws.close();
+    return null;
+  }
+
+  conn.on("ready", () => {
+    logger.info(`[SFTP] Ready for connection ${connection.id}`);
+    ws.send(JSON.stringify({ type: "connected" }));
+
+    ws.on("message", (msg: unknown) => {
+      try {
+        const parsed = JSON.parse(msg as string);
+        handleFileTransferMessage(conn, ws, parsed as unknown as Record<string, unknown>);
+      } catch {
+        logger.debug(`[SFTP] Malformed message from connection ${connection.id}`);
+      }
+    });
+  });
+
+  conn.on("error", (err: Error & { code?: string }) => {
+    logger.error(`[SFTP] Connection error for ${connection.id}`, {
+      error: err.message,
+      code: err.code,
+    });
+    ws.send(JSON.stringify({ type: "error", message: err.message }));
+  });
+
+  ws.on("close", () => {
+    logger.info(`[SFTP] WebSocket closed for connection ${connection.id}`);
+    conn.end();
+  });
+
+  conn.on("close", () => {
+    logger.info(`[SFTP] Connection closed for ${connection.id}`);
+  });
+
+  try {
+    conn.connect(config);
+  } catch (err: unknown) {
+    const error = err as Error & { code?: string };
+    ws.send(JSON.stringify({ type: "error", message: error.message }));
     ws.close();
     return null;
   }
