@@ -89,7 +89,12 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       const ratio = clamped / scale;
       const newPosX = mouseX - (mouseX - positionX) * ratio;
       const newPosY = mouseY - (mouseY - positionY) * ratio;
-      (inst.setState ?? inst.instance?.setState)?.call(inst, clamped, newPosX, newPosY);
+      (inst.setState ?? inst.instance?.setState)?.call(
+        inst,
+        clamped,
+        newPosX,
+        newPosY,
+      );
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
@@ -137,10 +142,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       const x = canvasX - app.defaultWidth / 2;
       const y = canvasY - app.defaultHeight / 2;
 
-      if (
-        placingAppId === "ssh" ||
-        placingAppId === "devBrowser"
-      ) {
+      if (placingAppId === "ssh" || placingAppId === "devBrowser") {
         setPendingConnectionApp({ appId: placingAppId, x, y });
         fetchConnections();
         return;
@@ -193,7 +195,8 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
     if (twAny.setup?.panning) twAny.setup.panning.disabled = shouldLockCanvas;
     if (twAny.setup?.wheel) twAny.setup.wheel.disabled = shouldLockCanvas;
-    if (twAny.setup?.pinch) twAny.setup.pinch.disabled = shouldLockCanvas || disablePinch;
+    if (twAny.setup?.pinch)
+      twAny.setup.pinch.disabled = shouldLockCanvas || disablePinch;
   }, [placingAppId, draggingId, focusTargetId, isTerminalFocused]);
 
   useEffect(() => {
@@ -265,13 +268,18 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
   const handleSelectConnection = (conn: { id: number; name: string }) => {
     if (!pendingConnectionApp) return;
-    openApp(pendingConnectionApp.appId, pendingConnectionApp.x, pendingConnectionApp.y, {
-      connectionId: conn.id,
-      title:
-        pendingConnectionApp.appId === "ssh"
-          ? conn.name
-          : `${conn.name} ${registry[pendingConnectionApp.appId].title}`,
-    });
+    openApp(
+      pendingConnectionApp.appId,
+      pendingConnectionApp.x,
+      pendingConnectionApp.y,
+      {
+        connectionId: conn.id,
+        title:
+          pendingConnectionApp.appId === "ssh"
+            ? conn.name
+            : `${conn.name} ${registry[pendingConnectionApp.appId].title}`,
+      },
+    );
     setPendingConnectionApp(null);
   };
 
@@ -324,7 +332,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           animationType: "easeOut",
         }}
         pinch={{
-          step: 5,
+          step: 3,
         }}
         doubleClick={{ disabled: true }}
         trackPadPanning={{
@@ -353,7 +361,11 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
             const inst = canvasTransform.current as any;
             const wrapper = inst?.wrapperComponent as HTMLElement | undefined;
             if (wrapper && inst?.setState) {
-              inst.setState(DEFAULT_SCALE, wrapper.offsetWidth / 2 - 5000 * DEFAULT_SCALE, wrapper.offsetHeight / 2 - 5000 * DEFAULT_SCALE);
+              inst.setState(
+                DEFAULT_SCALE,
+                wrapper.offsetWidth / 2 - 5000 * DEFAULT_SCALE,
+                wrapper.offsetHeight / 2 - 5000 * DEFAULT_SCALE,
+              );
             }
           };
           return (
@@ -487,7 +499,10 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
               {sshLoading && connections.length === 0 ? (
                 <div className="flex flex-col gap-2">
                   {[1, 2].map((i) => (
-                    <div key={i} className="h-14 rounded-lg bg-neutral-800 animate-pulse" />
+                    <div
+                      key={i}
+                      className="h-14 rounded-lg bg-neutral-800 animate-pulse"
+                    />
                   ))}
                 </div>
               ) : connections.length === 0 ? (
