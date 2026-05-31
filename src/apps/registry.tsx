@@ -1007,8 +1007,8 @@ const SSHTerminal = ({
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
         }
-      } catch {
-        term?.write(e.data);
+      } catch (err) {
+        console.warn("[SSHTerminal] Failed to process message:", err);
       }
     };
 
