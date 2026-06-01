@@ -78,13 +78,20 @@ export default function WindowFrame({
 
   const handleScroll = useCallback(
     (direction: "up" | "down") => {
-      const amount = direction === "up" ? -150 : 150;
+      const action = direction === "up" ? "pageup" : "pagedown";
 
-      // Dispatch a custom event that components can listen to
-      const event = new CustomEvent(`app-scroll-${id}`, {
-        detail: { amount, direction },
+      // Dispatch page up/down event for apps that support it
+      const event = new CustomEvent(`app-page-${id}`, {
+        detail: { action },
       });
       window.dispatchEvent(event);
+
+      // Also dispatch old scroll event for compatibility
+      const amount = direction === "up" ? -150 : 150;
+      const scrollEvent = new CustomEvent(`app-scroll-${id}`, {
+        detail: { amount, direction },
+      });
+      window.dispatchEvent(scrollEvent);
 
       // Manual fallback for standard scrollable elements
       if (contentRef.current) {

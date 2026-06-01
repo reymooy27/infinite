@@ -287,11 +287,11 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     const handleScrollEvent = (e: any) => {
       if (!wsRef.current) return;
       const { amount } = e.detail;
-      
+
       // Use center of viewport for scrolling
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      
+
       const centerX = rect.width / 2;
       const centerY = rect.height / 2;
       const { x, y } = getViewportCoords(centerX, centerY);
@@ -307,8 +307,33 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
       );
     };
 
+    const handlePageEvent = (e: any) => {
+      if (!wsRef.current) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const { x, y } = getViewportCoords(centerX, centerY);
+      const deltaY = e.detail.action === "pageup" ? -400 : 400;
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "wheel",
+          deltaX: 0,
+          deltaY,
+          x,
+          y,
+        }),
+      );
+    };
+
     window.addEventListener(`app-scroll-${windowId}`, handleScrollEvent);
-    return () => window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+    window.addEventListener(`app-page-${windowId}`, handlePageEvent);
+    return () => {
+      window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+      window.removeEventListener(`app-page-${windowId}`, handlePageEvent);
+    };
   }, [windowId, getViewportCoords]);
 
   const handleMouseDown = useCallback(
@@ -751,19 +776,16 @@ const SSHTerminal = ({
 
   useEffect(() => {
     const handleScrollEvent = (e: any) => {
-      if (termInstanceRef.current) {
-        const { direction } = e.detail;
-        if (direction === "up") {
-          termInstanceRef.current.scrollLines(-5);
-        } else {
-          termInstanceRef.current.scrollLines(5);
-        }
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        const { action } = e.detail;
+        const key = action === "pageup" ? "\x1b[5~" : "\x1b[6~";
+        wsRef.current.send(JSON.stringify({ type: "data", data: key }));
       }
     };
 
-    window.addEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+    window.addEventListener(`app-page-${windowId}`, handleScrollEvent);
     return () =>
-      window.removeEventListener(`app-scroll-${windowId}`, handleScrollEvent);
+      window.removeEventListener(`app-page-${windowId}`, handleScrollEvent);
   }, [windowId]);
 
   useEffect(() => {
