@@ -972,7 +972,7 @@ const SSHTerminal = ({
       isDragSelection = false;
     };
 
-    const onMouseDown = (e: MouseEvent) => {
+    const onAuxClick = (e: MouseEvent) => {
       if (e.button === 1) {
         e.preventDefault();
         e.stopPropagation();
@@ -982,13 +982,13 @@ const SSHTerminal = ({
     container.addEventListener("touchstart", onTouchStart, { passive: false });
     container.addEventListener("touchmove", onTouchMove, { passive: false });
     container.addEventListener("touchend", onTouchEnd, { passive: false });
-    container.addEventListener("mousedown", onMouseDown);
+    container.addEventListener("auxclick", onAuxClick, true);
 
     return () => {
       container.removeEventListener("touchstart", onTouchStart);
       container.removeEventListener("touchmove", onTouchMove);
       container.removeEventListener("touchend", onTouchEnd);
-      container.removeEventListener("mousedown", onMouseDown);
+      container.removeEventListener("auxclick", onAuxClick, true);
     };
   }, []);
 
