@@ -849,6 +849,14 @@ const SSHTerminal = ({
       }
     });
 
+    term.onTitleChange((newTitle) => {
+      if (!windowId || !newTitle) return;
+      const win = useWindowStore.getState().windows.find((w) => w.id === windowId);
+      if (win && win.metadata?.autoTitle !== false) {
+        useWindowStore.getState().setAutoTitle(windowId, newTitle);
+      }
+    });
+
     const observer = new ResizeObserver(() => fit.fit());
     observer.observe(terminalRef.current);
 

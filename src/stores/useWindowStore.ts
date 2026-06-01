@@ -29,6 +29,7 @@ interface WindowState {
   maximizeWindow: (id: string) => void;
   focusLastWindow: () => void;
   renameWindow: (id: string, title: string) => void;
+  setAutoTitle: (id: string, title: string) => void;
   loadLayout: () => Promise<void>;
   saveLayout: () => Promise<void>;
 }
@@ -184,7 +185,16 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   renameWindow: (id, title) => {
     set((state) => ({
       windows: state.windows.map((w) =>
-        w.id === id ? { ...w, metadata: { ...w.metadata, title } } : w
+        w.id === id ? { ...w, metadata: { ...w.metadata, title, autoTitle: false } } : w
+      ),
+    }));
+    get().saveLayout();
+  },
+
+  setAutoTitle: (id, title) => {
+    set((state) => ({
+      windows: state.windows.map((w) =>
+        w.id === id ? { ...w, metadata: { ...w.metadata, title, autoTitle: true } } : w
       ),
     }));
     get().saveLayout();
