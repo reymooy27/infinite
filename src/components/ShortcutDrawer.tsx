@@ -113,7 +113,7 @@ export function ShortcutDrawer({
 
   return createPortal(
     <div
-      className="fixed z-[99999] bg-neutral-900/95 backdrop-blur-sm border border-neutral-700 rounded-xl overflow-hidden shadow-2xl"
+      className="fixed z-[500] bg-neutral-900/95 backdrop-blur-sm border border-neutral-700 rounded-xl overflow-hidden shadow-2xl"
       style={{ top: pos.top, left: pos.left, width: pos.width }}
     >
       {/* Header */}
