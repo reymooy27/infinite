@@ -4,6 +4,7 @@ import registry from "@/apps/registry";
 import { canvasTransform } from "@/lib/canvasTransform";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import type { AppId } from "@/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
@@ -300,7 +301,8 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
   const isDragging = draggingId !== null;
   const gridColor = isDragging ? "#444" : "#333";
-  const bgColor = isDragging ? "#1e1e2e" : "#1a1a1a";
+  const settingsBg = useSettingsStore((s) => s.bgColor);
+  const bgColor = isDragging ? "#1e1e2e" : settingsBg;
   const placingApp = placingAppId ? registry[placingAppId] : null;
   const pendingAppDefinition = pendingConnectionApp
     ? registry[pendingConnectionApp.appId]

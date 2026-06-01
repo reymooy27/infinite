@@ -54,10 +54,12 @@ interface SettingsState {
   showTerminalShortcuts: boolean;
   showTmuxShortcuts: boolean;
   terminalFontSize: number;
+  bgColor: string;
   quickBarSlots: QuickBarSlot[];
   setShowTerminalShortcuts: (value: boolean) => void;
   setShowTmuxShortcuts: (value: boolean) => void;
   setTerminalFontSize: (value: number) => void;
+  setBgColor: (color: string) => void;
   setQuickBarSlots: (slots: QuickBarSlot[]) => void;
 }
 
@@ -67,11 +69,13 @@ export const useSettingsStore = create<SettingsState>()(
       showTerminalShortcuts: true,
       showTmuxShortcuts: true,
       terminalFontSize: 13,
+      bgColor: "#171717",
       quickBarSlots: DEFAULT_QUICK_BAR,
       setShowTerminalShortcuts: (value) =>
         set({ showTerminalShortcuts: value }),
       setShowTmuxShortcuts: (value) => set({ showTmuxShortcuts: value }),
       setTerminalFontSize: (value) => set({ terminalFontSize: value }),
+      setBgColor: (color) => set({ bgColor: color }),
       setQuickBarSlots: (slots) => set({ quickBarSlots: slots }),
     }),
     {

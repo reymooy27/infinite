@@ -11,12 +11,14 @@ import NavigationIndicator from "@/components/NavigationIndicator";
 import Sidebar from "@/components/Sidebar";
 import WindowFrame from "@/components/WindowFrame";
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 
 export default function App() {
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
   const loadLayout = useWindowStore((s) => s.loadLayout);
+  const bgColor = useSettingsStore((s) => s.bgColor);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -72,9 +74,14 @@ export default function App() {
     };
   }, [windows.length, block, unblock]);
 
+  // Sync body background with app bg color
+  useEffect(() => {
+    document.body.style.backgroundColor = bgColor;
+  }, [bgColor]);
+
   return (
     <ErrorBoundary>
-    <div className="h-[100dvh] bg-neutral-950 overflow-hidden relative select-none touch-none">
+    <div className="h-[100dvh] overflow-hidden relative select-none touch-none" style={{ backgroundColor: bgColor }}>
       <NavigationBlockModal />
       {showOnboarding && (
         <div className="fixed inset-0 z-[99997] bg-black/70 flex items-center justify-center p-6">

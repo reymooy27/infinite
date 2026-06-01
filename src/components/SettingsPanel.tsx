@@ -62,6 +62,8 @@ export default function SettingsPanel({
   const setShowTmuxShortcuts = useSettingsStore((s) => s.setShowTmuxShortcuts);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
+  const bgColor = useSettingsStore((s) => s.bgColor);
+  const setBgColor = useSettingsStore((s) => s.setBgColor);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const setQuickBarSlots = useSettingsStore((s) => s.setQuickBarSlots);
 
@@ -121,6 +123,36 @@ export default function SettingsPanel({
           </button>
         </div>
       </div>
+
+      <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+        <h3 className="text-[13px] font-medium text-neutral-100">Background color</h3>
+        <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+          Choose the app background and canvas color.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {["#171717", "#1a1a1a", "#0a0a0a", "#1e1e2e", "#1a1a2e", "#0d1117", "#0f1923", "#2d1b2e"].map((c) => (
+            <button
+              key={c}
+              onClick={() => setBgColor(c)}
+              className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer ${
+                bgColor === c ? "border-white scale-110" : "border-transparent hover:scale-110"
+              }`}
+              style={{ backgroundColor: c }}
+              title={c}
+            />
+          ))}
+          <label className="relative w-7 h-7 rounded-full border-2 border-dashed border-neutral-600 hover:border-neutral-400 cursor-pointer flex items-center justify-center overflow-hidden">
+            <input
+              type="color"
+              value={bgColor}
+              onChange={(e) => setBgColor(e.target.value)}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <span className="text-neutral-500 text-xs leading-none pointer-events-none">+</span>
+          </label>
+        </div>
+      </div>
+
       <ToggleRow
         title="Terminal button shortcuts"
         description="Show or hide the on-screen terminal shortcut buttons for control keys, arrows, and enter/tab actions."
