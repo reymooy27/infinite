@@ -519,7 +519,7 @@ export default function WindowFrame({
               if (e.key === "Escape") setIsEditing(false);
               e.stopPropagation();
             }}
-            onPointerDown={(e: any) => e.stopPropagation()}
+            onPointerDown={(e: any) => { if (e.button === 1) e.preventDefault(); e.stopPropagation(); }}
             onClick={(e: any) => e.stopPropagation()}
           />
         ) : (
@@ -541,6 +541,9 @@ export default function WindowFrame({
         onPointerDown={(e: any) => {
           handleWindowPointerDown();
           e.stopPropagation();
+        }}
+        onMouseDown={(e: any) => {
+          if (e.button === 1) e.preventDefault();
         }}
         onDoubleClick={handleContentDoubleClick}
         onClick={(e: any) => e.stopPropagation()}

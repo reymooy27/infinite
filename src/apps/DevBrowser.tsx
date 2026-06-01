@@ -415,6 +415,7 @@ export default function DevBrowser({
           onChange={(e) => setInputUrl(e.target.value)}
           placeholder="Enter URL..."
           className="flex-1 px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded-md text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-blue-500"
+          onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
         />
         <button
           type="submit"

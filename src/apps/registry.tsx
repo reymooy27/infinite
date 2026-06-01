@@ -972,14 +972,23 @@ const SSHTerminal = ({
       isDragSelection = false;
     };
 
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 1) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
     container.addEventListener("touchstart", onTouchStart, { passive: false });
     container.addEventListener("touchmove", onTouchMove, { passive: false });
     container.addEventListener("touchend", onTouchEnd, { passive: false });
+    container.addEventListener("mousedown", onMouseDown);
 
     return () => {
       container.removeEventListener("touchstart", onTouchStart);
       container.removeEventListener("touchmove", onTouchMove);
       container.removeEventListener("touchend", onTouchEnd);
+      container.removeEventListener("mousedown", onMouseDown);
     };
   }, []);
 
