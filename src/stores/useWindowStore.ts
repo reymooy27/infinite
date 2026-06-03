@@ -268,19 +268,9 @@ export const useWindowStore = create<WindowState>((set, get) => ({
           windows: normalized,
           topZ,
           focusTargetId: topmost?.id ?? null,
-          fitViewportKey: data.canvasTransform ? 0 : Date.now(),
-          fitViewportWindows: data.canvasTransform ? [] : normalized,
+          fitViewportKey: Date.now(),
+          fitViewportWindows: normalized,
         });
-
-        if (data.canvasTransform) {
-          const { scale, x, y } = data.canvasTransform;
-          requestAnimationFrame(() => {
-            const inst = canvasTransform.current as any;
-            if (inst?.setTransform) {
-              inst.setTransform(x, y, scale, 0);
-            }
-          });
-        }
       }
     } catch (err) {
       console.error("Failed to load project canvas", err);

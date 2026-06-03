@@ -773,6 +773,11 @@ const SSHPane = ({
   isActiveRef.current = isActive;
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
 
+  const focusTerminal = useCallback(() => {
+    if (!isActiveRef.current) return;
+    termInstanceRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
     setIsMobile(mq.matches);
@@ -850,6 +855,7 @@ const SSHPane = ({
     const clipboardAddon = new ClipboardAddon();
     term.loadAddon(clipboardAddon);
     term.open(terminalRef.current);
+    requestAnimationFrame(focusTerminal);
 
     // Restore cached terminal content from previous project switch
     const bufferKey = `${windowId}-${tabId}`;
@@ -924,9 +930,12 @@ const SSHPane = ({
 
   useEffect(() => {
     if (isActive) {
-      requestAnimationFrame(() => fitRef.current?.fit());
+      requestAnimationFrame(() => {
+        fitRef.current?.fit();
+        focusTerminal();
+      });
     }
-  }, [isActive]);
+  }, [focusTerminal, isActive]);
 
   useEffect(() => {
     if (termInstanceRef.current) {
@@ -1062,6 +1071,7 @@ const SSHPane = ({
             t.resize(t.cols + 1, t.rows);
             t.resize(t.cols - 1, t.rows);
           }
+          focusTerminal();
         });
       }
       setStatus("connected");
