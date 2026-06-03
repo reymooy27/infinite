@@ -10,6 +10,8 @@ interface WindowState {
   focusTargetId: string | null;
   placingAppId: AppId | null;
   minimizedWindows: string[];
+  fitViewportKey: number;
+  fitViewportWindows: WindowData[];
   setDragging: (id: string | null) => void;
   clearDragging: () => void;
   setPlacingApp: (appId: AppId | null) => void;
@@ -40,6 +42,7 @@ interface WindowState {
   setActiveTerminalTab: (windowId: string, tabId: string) => void;
   setActiveTabTitle: (windowId: string, tabId: string, title: string) => void;
   markTabNavigated: (windowId: string, tabId: string) => void;
+  consumeFitViewport: () => WindowData[];
 }
 
 const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
@@ -57,6 +60,8 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   focusTargetId: null,
   placingAppId: null,
   minimizedWindows: [],
+  fitViewportKey: 0,
+  fitViewportWindows: [],
 
   setDragging: (id) => set({ draggingId: id }),
   clearDragging: () => {
@@ -259,7 +264,13 @@ export const useWindowStore = create<WindowState>((set, get) => ({
         const topZ = Math.max(0, ...normalized.map((w: any) => w.z || 0));
         const topmost = normalized.reduce((best: any, w: any) =>
           (w.z || 0) > (best?.z || 0) ? w : best, null);
-        set({ windows: normalized, topZ, focusTargetId: topmost?.id ?? null });
+        set({
+          windows: normalized,
+          topZ,
+          focusTargetId: topmost?.id ?? null,
+          fitViewportKey: data.canvasTransform ? 0 : Date.now(),
+          fitViewportWindows: data.canvasTransform ? [] : normalized,
+        });
 
         if (data.canvasTransform) {
           const { scale, x, y } = data.canvasTransform;
@@ -359,5 +370,14 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       }),
     }));
     get().saveLayout();
+  },
+
+  consumeFitViewport: () => {
+    const { fitViewportKey, fitViewportWindows } = get();
+    if (fitViewportKey > 0) {
+      set({ fitViewportKey: 0, fitViewportWindows: [] });
+      return fitViewportWindows;
+    }
+    return [];
   },
 }));

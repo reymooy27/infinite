@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import SSHPanel from "./SSHPanel";
 import AgentPanel from "./AgentPanel";
 import SettingsPanel from "./SettingsPanel";
@@ -50,7 +50,13 @@ const ROOT_ITEMS = [
   },
 ] as const;
 
-export default function Sidebar() {
+export default function Sidebar({
+  openSection,
+  onOpenSectionConsumed,
+}: {
+  openSection?: string | null;
+  onOpenSectionConsumed?: () => void;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [activePage, setActivePage] = useState<
     "root" | "projects" | "ssh" | "agents" | "settings" | "settings-terminal"
@@ -63,13 +69,14 @@ export default function Sidebar() {
   const startY = useRef(0);
   const startTransform = useRef(0);
 
-  const togglePanel = () => {
-    setIsOpen((prev) => {
-      const next = !prev;
-      if (next) setActivePage("root");
-      return next;
-    });
-  };
+  // Open to a specific section on external request
+  useEffect(() => {
+    if (openSection) {
+      setActivePage(openSection as any);
+      setIsOpen(true);
+      onOpenSectionConsumed?.();
+    }
+  }, [openSection, onOpenSectionConsumed]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (e.target instanceof HTMLButtonElement) return;
@@ -127,35 +134,7 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="fixed top-4 left-4 z-[10000] flex items-start gap-0">
-      <button
-        onClick={togglePanel}
-        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 shadow-2xl backdrop-blur-md transition-colors cursor-pointer ${
-          isOpen
-            ? "border-blue-500 bg-blue-600 text-white"
-            : "border-neutral-700 bg-neutral-900/90 text-neutral-300 hover:bg-neutral-800"
-        }`}
-        title="Open menu"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M4 6h16" />
-          <path d="M4 12h16" />
-          <path d="M4 18h16" />
-        </svg>
-        <span className="text-[11px] font-medium">
-          {activeProjectName ?? "Menu"}
-        </span>
-      </button>
-
+    <>
       {isOpen && (
         <>
           <div
@@ -277,6 +256,6 @@ export default function Sidebar() {
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }

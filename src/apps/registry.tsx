@@ -17,6 +17,7 @@ import { useWindowStore } from "@/stores/useWindowStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { buildWsUrl } from "@/lib/ws";
+import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 
 const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -850,6 +851,14 @@ const SSHPane = ({
     term.loadAddon(clipboardAddon);
     term.open(terminalRef.current);
 
+    // Restore cached terminal content from previous project switch
+    const bufferKey = `${windowId}-${tabId}`;
+    const cached = getBuffer(bufferKey);
+    if (cached && cached.length > 0) {
+      term.write(cached.join('\r\n'));
+    }
+    deleteBuffer(bufferKey);
+
     term.onData((data) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "data", data }));
@@ -870,6 +879,18 @@ const SSHPane = ({
     const observer = new ResizeObserver(() => fit.fit());
     observer.observe(terminalRef.current);
 
+    // Periodically save terminal buffer to cache (for project switch persistence)
+    const saveTimer = setInterval(() => {
+      const t = termInstanceRef.current;
+      if (!t) return;
+      const lines: string[] = [];
+      const buffer = t.buffer.active;
+      for (let y = 0; y < buffer.length; y++) {
+        lines.push(buffer.getLine(y)?.translateToString() ?? '');
+      }
+      saveBuffer(bufferKey, lines);
+    }, 3000);
+
     // Force a canvas re-creation after the initial layout completes.
     // This works around a GPU compositing issue where the canvas
     // renderer doesn't paint under CSS transforms until the canvas
@@ -886,6 +907,14 @@ const SSHPane = ({
 
     return () => {
       cancelAnimationFrame(kickRaf);
+      clearInterval(saveTimer);
+      // Save buffer before unmount so content persists across project switches
+      const lines: string[] = [];
+      const buf = term.buffer.active;
+      for (let y = 0; y < buf.length; y++) {
+        lines.push(buf.getLine(y)?.translateToString() ?? '');
+      }
+      saveBuffer(bufferKey, lines);
       observer.disconnect();
       term.dispose();
       termInstanceRef.current = null;
@@ -1056,6 +1085,9 @@ const SSHPane = ({
           // First data from server means the shell is ready — send auto-cd now
           if (!hasAutoNavigatedRef.current) {
             hasAutoNavigatedRef.current = true;
+            if (windowId && tabId) {
+              useWindowStore.getState().markTabNavigated(windowId, tabId);
+            }
             const { projects, activeProjectId } = useProjectStore.getState();
             const dir = projects.find((p) => p.id === activeProjectId)?.directory;
             if (dir && ws.readyState === WebSocket.OPEN) {
@@ -1394,12 +1426,12 @@ const SSHTerminal = ({
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
-      <div className="flex items-center h-7 bg-neutral-950 border-b border-neutral-800 shrink-0 overflow-x-auto scrollbar-none">
+      <div className="flex items-center h-9 bg-neutral-950 border-b border-neutral-800 shrink-0 overflow-x-auto scrollbar-none">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => windowId && setActiveTerminalTab(windowId, tab.id)}
-            className={`flex items-center gap-1 px-2.5 h-full text-[11px] shrink-0 border-r border-neutral-800 transition-colors cursor-pointer ${
+            className={`flex items-center gap-1 px-3 h-full text-xs shrink-0 border-r border-neutral-800 transition-colors cursor-pointer ${
               tab.id === activeTabId
                 ? "text-white bg-[#0a0a0a]"
                 : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
@@ -1433,6 +1465,7 @@ const SSHTerminal = ({
             windowId={windowId}
             connectionId={tab.connectionId ?? connectionId}
             isActive={tab.id === activeTabId}
+            hasNavigated={tab.hasNavigated}
           />
         ))}
       </div>

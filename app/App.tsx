@@ -9,6 +9,7 @@ import FileTransferModal from "@/components/FileTransferModal";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import NavigationIndicator from "@/components/NavigationIndicator";
 import Sidebar from "@/components/Sidebar";
+import ProjectSwitcher from "@/components/ProjectSwitcher";
 import WindowFrame from "@/components/WindowFrame";
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
@@ -23,6 +24,8 @@ export default function App() {
   const bgColor = useSettingsStore((s) => s.bgColor);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [pendingSection, setPendingSection] = useState<string | null>(null);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -80,6 +83,18 @@ export default function App() {
   useEffect(() => {
     document.body.style.backgroundColor = bgColor;
   }, [bgColor]);
+
+  // Keyboard shortcut: Ctrl+Shift+P / Cmd+Shift+P → open project switcher
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        setSwitcherOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   return (
     <ErrorBoundary>
@@ -153,7 +168,15 @@ export default function App() {
           );
         })}
       <NavigationIndicator />
-      <Sidebar />
+      <Sidebar
+        openSection={pendingSection}
+        onOpenSectionConsumed={() => setPendingSection(null)}
+      />
+      <ProjectSwitcher
+        isOpen={switcherOpen}
+        onOpenChange={setSwitcherOpen}
+        onOpenSection={(section) => setPendingSection(section)}
+      />
       <Dock />
       <FileTransferModal />
     </div>

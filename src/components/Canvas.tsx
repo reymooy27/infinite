@@ -69,6 +69,54 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     return () => el.removeEventListener("dblclick", prevent);
   }, []);
 
+  // Auto-fit viewport when a project loads new windows
+  useEffect(() => {
+    const unsub = useWindowStore.subscribe((state, prev) => {
+      if (state.fitViewportKey > 0 && state.fitViewportKey !== prev.fitViewportKey) {
+        const windows = state.fitViewportWindows;
+        if (windows.length === 0) return;
+
+        const inst = canvasTransform.current;
+        const wrapper = (inst as unknown as { wrapperComponent?: HTMLElement })?.wrapperComponent;
+        if (!inst?.setTransform || !wrapper) return;
+
+        const vw = wrapper.offsetWidth;
+        const vh = wrapper.offsetHeight;
+        const padding = 80;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const w of windows) {
+          const winW = w.width || 400;
+          const winH = w.height || 300;
+          if (w.x < minX) minX = w.x;
+          if (w.y < minY) minY = w.y;
+          if (w.x + winW > maxX) maxX = w.x + winW;
+          if (w.y + winH > maxY) maxY = w.y + winH;
+        }
+
+        const boxW = maxX - minX;
+        const boxH = maxY - minY;
+        if (boxW <= 0 || boxH <= 0) return;
+
+        const scale = Math.min(
+          (vw - padding * 2) / boxW,
+          (vh - padding * 2) / boxH,
+          1.2,
+        );
+
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const tx = vw / 2 - centerX * scale;
+        const ty = vh / 2 - centerY * scale;
+
+        inst.setTransform(tx, ty, scale, 200); // 200ms animated transition
+
+        useWindowStore.getState().consumeFitViewport();
+      }
+    });
+    return unsub;
+  }, []);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
