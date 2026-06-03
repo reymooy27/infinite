@@ -60,3 +60,17 @@ model Note {
 
   @@map("notes")
 }
+
+model Project {
+  id              String   @id @default(cuid())
+  name            String
+  userId          String   @default("local-user") @map("user_id")
+  directory       String?  @map("directory")
+  canvasData      Json     @default("{\"windows\":[]}")
+  canvasTransform Json?    @map("canvas_transform")
+  isDefault       Boolean  @default(false) @map("is_default")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("projects")
+}

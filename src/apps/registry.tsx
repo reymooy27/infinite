@@ -1,4 +1,5 @@
 import type { AppDefinition, AppId } from "@/types";
+import { getSSHMetadata } from "@/types";
 import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -14,6 +15,7 @@ import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSSHStore } from "@/stores/useSSHStore";
+import { useProjectStore } from "@/stores/useProjectStore";
 import { buildWsUrl } from "@/lib/ws";
 
 const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
@@ -736,12 +738,18 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   );
 };
 
-const SSHTerminal = ({
+const SSHPane = ({
   connectionId,
   windowId,
+  tabId,
+  isActive,
+  hasNavigated,
 }: {
   connectionId?: number;
   windowId?: string;
+  tabId: string;
+  isActive: boolean;
+  hasNavigated?: boolean;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -760,6 +768,9 @@ const SSHTerminal = ({
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const statusRef = useRef(status);
   statusRef.current = status;
+  const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
+  const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -771,11 +782,13 @@ const SSHTerminal = ({
 
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
-    return buildWsUrl("/ws/ssh", { connectionId, windowId: windowId || "", r: retryKey });
-  }, [connectionId, windowId, retryKey]);
+    const sessionId = tabId ? `${windowId || ""}-${tabId}` : (windowId || "");
+    return buildWsUrl("/ws/ssh", { connectionId, windowId: sessionId, r: retryKey });
+  }, [connectionId, windowId, tabId, retryKey]);
 
   useEffect(() => {
     const handleScrollEvent = (e: any) => {
+      if (!isActiveRef.current) return;
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         const { action } = e.detail;
         const key = action === "pageup" ? "\x1b[5~" : "\x1b[6~";
@@ -850,11 +863,8 @@ const SSHTerminal = ({
     });
 
     term.onTitleChange((newTitle) => {
-      if (!windowId || !newTitle) return;
-      const win = useWindowStore.getState().windows.find((w) => w.id === windowId);
-      if (win && win.metadata?.autoTitle !== false) {
-        useWindowStore.getState().setAutoTitle(windowId, newTitle);
-      }
+      if (!windowId || !newTitle || !tabId) return;
+      useWindowStore.getState().setActiveTabTitle(windowId, tabId, newTitle);
     });
 
     const observer = new ResizeObserver(() => fit.fit());
@@ -882,6 +892,12 @@ const SSHTerminal = ({
       fitRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (isActive) {
+      requestAnimationFrame(() => fitRef.current?.fit());
+    }
+  }, [isActive]);
 
   useEffect(() => {
     if (termInstanceRef.current) {
@@ -1037,6 +1053,15 @@ const SSHTerminal = ({
         const msg = JSON.parse(e.data);
 
         if (msg.type === "data" && term) {
+          // First data from server means the shell is ready — send auto-cd now
+          if (!hasAutoNavigatedRef.current) {
+            hasAutoNavigatedRef.current = true;
+            const { projects, activeProjectId } = useProjectStore.getState();
+            const dir = projects.find((p) => p.id === activeProjectId)?.directory;
+            if (dir && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "data", data: `cd ${dir}\r` }));
+            }
+          }
           const binaryStr = atob(msg.data);
           const bytes = new Uint8Array(binaryStr.length);
           for (let i = 0; i < binaryStr.length; i++) {
@@ -1134,7 +1159,8 @@ const SSHTerminal = ({
 
   return (
     <div
-      className={`relative w-full h-full px-2 bg-[#0a0a0a] ${
+      style={{ visibility: isActive ? "visible" : "hidden", position: "absolute", inset: 0 }}
+      className={`px-2 bg-[#0a0a0a] ${
         isMobile
           ? "pt-2 pb-14"
           : showTerminalShortcuts
@@ -1331,6 +1357,85 @@ const SSHTerminal = ({
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+const SSHTerminal = ({
+  connectionId,
+  windowId,
+}: {
+  connectionId?: number;
+  windowId?: string;
+}) => {
+  const win = useWindowStore((s) => s.windows.find((w) => w.id === windowId));
+  const addTerminalTab = useWindowStore((s) => s.addTerminalTab);
+  const closeTerminalTab = useWindowStore((s) => s.closeTerminalTab);
+  const setActiveTerminalTab = useWindowStore((s) => s.setActiveTerminalTab);
+
+  const sshMeta = win ? getSSHMetadata(win) : null;
+  const tabs = sshMeta?.tabs ?? [{ id: "default", label: "Tab 1", connectionId }];
+  const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "default";
+
+  const handleAddTab = () => {
+    if (!windowId) return;
+    const newTabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    addTerminalTab(windowId, {
+      id: newTabId,
+      label: `Tab ${tabs.length + 1}`,
+      connectionId,
+    });
+  };
+
+  const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
+    e.stopPropagation();
+    if (windowId && tabs.length > 1) closeTerminalTab(windowId, tabId);
+  };
+
+  return (
+    <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
+      <div className="flex items-center h-7 bg-neutral-950 border-b border-neutral-800 shrink-0 overflow-x-auto scrollbar-none">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => windowId && setActiveTerminalTab(windowId, tab.id)}
+            className={`flex items-center gap-1 px-2.5 h-full text-[11px] shrink-0 border-r border-neutral-800 transition-colors cursor-pointer ${
+              tab.id === activeTabId
+                ? "text-white bg-[#0a0a0a]"
+                : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
+            }`}
+          >
+            <span className="max-w-[6rem] truncate">{tab.title ?? tab.label}</span>
+            {tabs.length > 1 && (
+              <span
+                onClick={(e) => handleCloseTab(e, tab.id)}
+                className="ml-0.5 leading-none text-neutral-600 hover:text-white transition-colors"
+              >
+                ×
+              </span>
+            )}
+          </button>
+        ))}
+        <button
+          onClick={handleAddTab}
+          title="New tab"
+          className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer text-base leading-none shrink-0"
+        >
+          +
+        </button>
+      </div>
+
+      <div className="relative flex-1 min-h-0">
+        {tabs.map((tab) => (
+          <SSHPane
+            key={tab.id}
+            tabId={tab.id}
+            windowId={windowId}
+            connectionId={tab.connectionId ?? connectionId}
+            isActive={tab.id === activeTabId}
+          />
+        ))}
+      </div>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { AppId, WindowData } from "@/types";
+import type { AppId, WindowData, TerminalTab } from "@/types";
+import { normalizeWindow } from "@/types";
 import { canvasTransform } from "@/lib/canvasTransform";
 
 interface WindowState {
@@ -32,6 +33,13 @@ interface WindowState {
   setAutoTitle: (id: string, title: string) => void;
   loadLayout: () => Promise<void>;
   saveLayout: () => Promise<void>;
+  loadProjectCanvas: (projectId: string) => Promise<void>;
+  saveProjectCanvas: (projectId: string) => Promise<void>;
+  addTerminalTab: (windowId: string, tab: TerminalTab) => void;
+  closeTerminalTab: (windowId: string, tabId: string) => void;
+  setActiveTerminalTab: (windowId: string, tabId: string) => void;
+  setActiveTabTitle: (windowId: string, tabId: string, title: string) => void;
+  markTabNavigated: (windowId: string, tabId: string) => void;
 }
 
 const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
@@ -202,17 +210,21 @@ export const useWindowStore = create<WindowState>((set, get) => ({
 
   loadLayout: async () => {
     try {
+      const { useProjectStore } = await import("@/stores/useProjectStore");
+      const { activeProjectId } = useProjectStore.getState();
+      if (activeProjectId) {
+        await get().loadProjectCanvas(activeProjectId);
+        return;
+      }
+      // Fallback: legacy /api/layout
       const res = await fetch("/api/layout");
       const data = await res.json();
       if (data.windows) {
-        const topZ = Math.max(0, ...data.windows.map((w: any) => w.z || 0));
-        const topmost = data.windows.reduce((best: any, w: any) =>
+        const normalized = data.windows.map(normalizeWindow);
+        const topZ = Math.max(0, ...normalized.map((w: any) => w.z || 0));
+        const topmost = normalized.reduce((best: any, w: any) =>
           (w.z || 0) > (best?.z || 0) ? w : best, null);
-        set({
-          windows: data.windows,
-          topZ,
-          focusTargetId: topmost?.id ?? null,
-        });
+        set({ windows: normalized, topZ, focusTargetId: topmost?.id ?? null });
       }
     } catch (err) {
       console.error("Failed to load layout", err);
@@ -221,6 +233,12 @@ export const useWindowStore = create<WindowState>((set, get) => ({
 
   saveLayout: async () => {
     try {
+      const { useProjectStore } = await import("@/stores/useProjectStore");
+      const { activeProjectId } = useProjectStore.getState();
+      if (activeProjectId) {
+        await get().saveProjectCanvas(activeProjectId);
+        return;
+      }
       const { windows } = get();
       await fetch("/api/layout", {
         method: "POST",
@@ -230,5 +248,116 @@ export const useWindowStore = create<WindowState>((set, get) => ({
     } catch (err) {
       console.error("Failed to save layout", err);
     }
+  },
+
+  loadProjectCanvas: async (projectId) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/canvas`);
+      const data = await res.json();
+      if (data.windows) {
+        const normalized = data.windows.map(normalizeWindow);
+        const topZ = Math.max(0, ...normalized.map((w: any) => w.z || 0));
+        const topmost = normalized.reduce((best: any, w: any) =>
+          (w.z || 0) > (best?.z || 0) ? w : best, null);
+        set({ windows: normalized, topZ, focusTargetId: topmost?.id ?? null });
+
+        if (data.canvasTransform) {
+          const { scale, x, y } = data.canvasTransform;
+          requestAnimationFrame(() => {
+            const inst = canvasTransform.current as any;
+            if (inst?.setTransform) {
+              inst.setTransform(x, y, scale, 0);
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load project canvas", err);
+    }
+  },
+
+  saveProjectCanvas: async (projectId) => {
+    try {
+      const { windows } = get();
+      const inst = canvasTransform.current as any;
+      const transform = inst?.state
+        ? { scale: inst.state.scale, x: inst.state.positionX, y: inst.state.positionY }
+        : undefined;
+      await fetch(`/api/projects/${projectId}/canvas`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ windows, canvasTransform: transform }),
+      });
+    } catch (err) {
+      console.error("Failed to save project canvas", err);
+    }
+  },
+
+  addTerminalTab: (windowId, tab) => {
+    set((state) => ({
+      windows: state.windows.map((w) => {
+        if (w.id !== windowId || w.appId !== "ssh") return w;
+        const tabs = [...((w.metadata?.tabs as TerminalTab[]) ?? []), tab];
+        return { ...w, metadata: { ...w.metadata, tabs, activeTabId: tab.id } };
+      }),
+    }));
+    get().saveLayout();
+  },
+
+  closeTerminalTab: (windowId, tabId) => {
+    set((state) => ({
+      windows: state.windows.map((w) => {
+        if (w.id !== windowId || w.appId !== "ssh") return w;
+        const tabs = ((w.metadata?.tabs as TerminalTab[]) ?? []).filter((t) => t.id !== tabId);
+        if (tabs.length === 0) return w;
+        const activeTabId =
+          w.metadata?.activeTabId === tabId ? tabs[tabs.length - 1].id : w.metadata?.activeTabId;
+        return { ...w, metadata: { ...w.metadata, tabs, activeTabId } };
+      }),
+    }));
+    get().saveLayout();
+  },
+
+  setActiveTerminalTab: (windowId, tabId) => {
+    set((state) => ({
+      windows: state.windows.map((w) =>
+        w.id === windowId && w.appId === "ssh"
+          ? { ...w, metadata: { ...w.metadata, activeTabId: tabId } }
+          : w
+      ),
+    }));
+  },
+
+  setActiveTabTitle: (windowId, tabId, title) => {
+    set((state) => ({
+      windows: state.windows.map((w) => {
+        if (w.id !== windowId || w.appId !== "ssh") return w;
+        const tabs = ((w.metadata?.tabs as TerminalTab[]) ?? []).map((t) =>
+          t.id === tabId ? { ...t, title } : t
+        );
+        const isActive = w.metadata?.activeTabId === tabId;
+        return {
+          ...w,
+          metadata: {
+            ...w.metadata,
+            tabs,
+            ...(isActive && { title, autoTitle: true }),
+          },
+        };
+      }),
+    }));
+  },
+
+  markTabNavigated: (windowId, tabId) => {
+    set((state) => ({
+      windows: state.windows.map((w) => {
+        if (w.id !== windowId || w.appId !== "ssh") return w;
+        const tabs = ((w.metadata?.tabs as TerminalTab[]) ?? []).map((t) =>
+          t.id === tabId ? { ...t, hasNavigated: true } : t
+        );
+        return { ...w, metadata: { ...w.metadata, tabs } };
+      }),
+    }));
+    get().saveLayout();
   },
 }));

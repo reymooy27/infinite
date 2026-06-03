@@ -144,6 +144,18 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       const y = canvasY - app.defaultHeight / 2;
 
       if (placingAppId === "ssh" || placingAppId === "devBrowser") {
+        const conns = useSSHStore.getState().connections;
+        if (placingAppId === "ssh" && conns.length > 0) {
+          const conn = conns[0];
+          const tabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          openApp("ssh", x, y, {
+            connectionId: conn.id,
+            title: conn.name,
+            tabs: [{ id: tabId, label: "Tab 1", connectionId: conn.id }],
+            activeTabId: tabId,
+          });
+          return;
+        }
         setPendingConnectionApp({ appId: placingAppId, x, y });
         fetchConnections();
         return;
@@ -269,16 +281,19 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
   const handleSelectConnection = (conn: { id: number; name: string }) => {
     if (!pendingConnectionApp) return;
+    const isSsh = pendingConnectionApp.appId === "ssh";
+    const tabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     openApp(
       pendingConnectionApp.appId,
       pendingConnectionApp.x,
       pendingConnectionApp.y,
       {
         connectionId: conn.id,
-        title:
-          pendingConnectionApp.appId === "ssh"
-            ? conn.name
-            : `${conn.name} ${registry[pendingConnectionApp.appId].title}`,
+        title: isSsh ? conn.name : `${conn.name} ${registry[pendingConnectionApp.appId].title}`,
+        ...(isSsh && {
+          tabs: [{ id: tabId, label: "Tab 1", connectionId: conn.id }],
+          activeTabId: tabId,
+        }),
       },
     );
     setPendingConnectionApp(null);

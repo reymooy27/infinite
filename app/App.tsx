@@ -13,11 +13,13 @@ import WindowFrame from "@/components/WindowFrame";
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
+import { useProjectStore } from "@/stores/useProjectStore";
 
 export default function App() {
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
   const loadLayout = useWindowStore((s) => s.loadLayout);
+  const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const bgColor = useSettingsStore((s) => s.bgColor);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -39,8 +41,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadLayout();
-  }, [loadLayout]);
+    fetchProjects();
+  }, [fetchProjects]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {

@@ -4,8 +4,19 @@ import { useCallback, useRef, useState } from "react";
 import SSHPanel from "./SSHPanel";
 import AgentPanel from "./AgentPanel";
 import SettingsPanel from "./SettingsPanel";
+import ProjectsPanel from "./ProjectsPanel";
+import { useProjectStore } from "@/stores/useProjectStore";
 
 const ROOT_ITEMS = [
+  {
+    id: "projects",
+    label: "Projects",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V7z" />
+      </svg>
+    ),
+  },
   {
     id: "ssh",
     label: "SSH Manager",
@@ -42,8 +53,12 @@ const ROOT_ITEMS = [
 export default function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const [activePage, setActivePage] = useState<
-    "root" | "ssh" | "agents" | "settings" | "settings-terminal"
+    "root" | "projects" | "ssh" | "agents" | "settings" | "settings-terminal"
   >("root");
+  const activeProjectName = useProjectStore((s) => {
+    const p = s.projects.find((p) => p.id === s.activeProjectId);
+    return p?.name ?? null;
+  });
   const sheetRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const startTransform = useRef(0);
@@ -86,13 +101,15 @@ export default function Sidebar() {
   const title =
     activePage === "root"
       ? "Menu"
-      : activePage === "ssh"
-        ? "SSH Manager"
-        : activePage === "agents"
-          ? "Agents"
-          : activePage === "settings"
-            ? "Settings"
-            : "Terminal";
+      : activePage === "projects"
+        ? "Projects"
+        : activePage === "ssh"
+          ? "SSH Manager"
+          : activePage === "agents"
+            ? "Agents"
+            : activePage === "settings"
+              ? "Settings"
+              : "Terminal";
 
   const handleClose = () => {
     setIsOpen(false);
@@ -104,7 +121,7 @@ export default function Sidebar() {
       setActivePage("settings");
       return;
     }
-    if (activePage === "ssh" || activePage === "agents" || activePage === "settings") {
+    if (activePage === "ssh" || activePage === "agents" || activePage === "settings" || activePage === "projects") {
       setActivePage("root");
     }
   };
@@ -134,7 +151,9 @@ export default function Sidebar() {
           <path d="M4 12h16" />
           <path d="M4 18h16" />
         </svg>
-        <span className="text-[11px] font-medium">Menu</span>
+        <span className="text-[11px] font-medium">
+          {activeProjectName ?? "Menu"}
+        </span>
       </button>
 
       {isOpen && (
@@ -206,16 +225,23 @@ export default function Sidebar() {
                     {ROOT_ITEMS.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => setActivePage(item.id)}
+                        onClick={() => setActivePage(item.id as any)}
                         className="flex w-full items-center justify-between rounded-lg border border-neutral-700 bg-neutral-800/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:border-neutral-600 hover:bg-neutral-800"
                       >
                         <div className="flex items-center gap-2.5">
                           <span className="scale-90 text-neutral-300">
                             {item.icon}
                           </span>
-                          <span className="text-[13px] font-medium text-neutral-100">
-                            {item.label}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="text-[13px] font-medium text-neutral-100">
+                              {item.label}
+                            </span>
+                            {item.id === "projects" && activeProjectName && (
+                              <span className="text-[11px] text-neutral-500">
+                                {activeProjectName}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <svg
                           width="14"
@@ -235,6 +261,7 @@ export default function Sidebar() {
                   </div>
                 </div>
               )}
+              {activePage === "projects" && <ProjectsPanel />}
               {activePage === "ssh" && <SSHPanel />}
               {activePage === "agents" && <AgentPanel />}
               {(activePage === "settings" ||

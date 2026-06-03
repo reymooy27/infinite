@@ -14,8 +14,8 @@ interface SSHState {
 
 export const useSSHStore = create<SSHState>((set, get) => ({
   connections: [],
-  limit: 3,
-  plan: "free",
+  limit: Infinity,
+  plan: "local",
   loading: false,
   error: null,
 
@@ -25,7 +25,7 @@ export const useSSHStore = create<SSHState>((set, get) => ({
       const res = await fetch("/api/connections");
       if (!res.ok) throw new Error("Failed to fetch connections");
       const data = await res.json();
-      set({ connections: data.connections ?? data, limit: data.limit ?? 3, plan: data.plan ?? "free", loading: false });
+      set({ connections: data.connections ?? data, limit: Infinity, plan: "local", loading: false });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
