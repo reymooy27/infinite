@@ -75,42 +75,53 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (fitViewportKey <= 0 || fitViewportWindows.length === 0) return;
 
-    const inst = canvasTransform.current;
-    const wrapper = (inst as unknown as { wrapperComponent?: HTMLElement })?.wrapperComponent;
-    if (!inst?.setTransform || !wrapper) return;
+    let frame = 0;
+    let attempts = 0;
+    const applyFit = () => {
+      attempts += 1;
 
-    const vw = wrapper.offsetWidth;
-    const vh = wrapper.offsetHeight;
-    const padding = 80;
+      const inst = canvasTransform.current;
+      const wrapper = (inst as unknown as { wrapperComponent?: HTMLElement })?.wrapperComponent;
+      if (!inst?.setTransform || !wrapper || wrapper.offsetWidth === 0 || wrapper.offsetHeight === 0) {
+        if (attempts < 10) frame = requestAnimationFrame(applyFit);
+        return;
+      }
 
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const w of fitViewportWindows) {
-      const winW = w.width || 400;
-      const winH = w.height || 300;
-      if (w.x < minX) minX = w.x;
-      if (w.y < minY) minY = w.y;
-      if (w.x + winW > maxX) maxX = w.x + winW;
-      if (w.y + winH > maxY) maxY = w.y + winH;
-    }
+      const vw = wrapper.offsetWidth;
+      const vh = wrapper.offsetHeight;
+      const padding = 80;
 
-    const boxW = maxX - minX;
-    const boxH = maxY - minY;
-    if (boxW <= 0 || boxH <= 0) return;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const w of fitViewportWindows) {
+        const winW = w.width || 400;
+        const winH = w.height || 300;
+        if (w.x < minX) minX = w.x;
+        if (w.y < minY) minY = w.y;
+        if (w.x + winW > maxX) maxX = w.x + winW;
+        if (w.y + winH > maxY) maxY = w.y + winH;
+      }
 
-    const scale = Math.min(
-      (vw - padding * 2) / boxW,
-      (vh - padding * 2) / boxH,
-      1.2,
-    );
+      const boxW = maxX - minX;
+      const boxH = maxY - minY;
+      if (boxW <= 0 || boxH <= 0) return;
 
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-    const tx = vw / 2 - centerX * scale;
-    const ty = vh / 2 - centerY * scale;
+      const scale = Math.min(
+        (vw - padding * 2) / boxW,
+        (vh - padding * 2) / boxH,
+        1.2,
+      );
 
-    inst.setTransform(tx, ty, scale, 200);
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      const tx = vw / 2 - centerX * scale;
+      const ty = vh / 2 - centerY * scale;
 
-    useWindowStore.getState().consumeFitViewport();
+      inst.setTransform(tx, ty, scale, 0);
+      useWindowStore.getState().consumeFitViewport();
+    };
+
+    frame = requestAnimationFrame(applyFit);
+    return () => cancelAnimationFrame(frame);
   }, [fitViewportKey, fitViewportWindows]);
 
   useEffect(() => {

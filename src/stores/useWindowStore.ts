@@ -264,12 +264,16 @@ export const useWindowStore = create<WindowState>((set, get) => ({
         const topZ = Math.max(0, ...normalized.map((w: any) => w.z || 0));
         const topmost = normalized.reduce((best: any, w: any) =>
           (w.z || 0) > (best?.z || 0) ? w : best, null);
+        const visibleTopmost = normalized
+          .filter((w: WindowData) => !w.minimized && !w.maximized)
+          .reduce((best: WindowData | null, w: WindowData) =>
+            (w.z || 0) > (best?.z || 0) ? w : best, null);
         set({
           windows: normalized,
           topZ,
           focusTargetId: topmost?.id ?? null,
           fitViewportKey: Date.now(),
-          fitViewportWindows: normalized,
+          fitViewportWindows: visibleTopmost ? [visibleTopmost] : normalized,
         });
       }
     } catch (err) {
