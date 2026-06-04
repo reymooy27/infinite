@@ -1053,6 +1053,7 @@ const SSHPane = ({
     const fit = fitRef.current;
 
     const ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
     wsRef.current = ws;
     setStatus("connecting");
 
@@ -1089,6 +1090,24 @@ const SSHPane = ({
 
     ws.onmessage = (e) => {
       try {
+        if (e.data instanceof ArrayBuffer) {
+          if (term) {
+            if (!hasAutoNavigatedRef.current) {
+              hasAutoNavigatedRef.current = true;
+              if (windowId && tabId) {
+                useWindowStore.getState().markTabNavigated(windowId, tabId);
+              }
+              const { projects, activeProjectId } = useProjectStore.getState();
+              const dir = projects.find((p) => p.id === activeProjectId)?.directory;
+              if (dir && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "data", data: `cd ${dir}\r` }));
+              }
+            }
+            term.write(new Uint8Array(e.data));
+          }
+          return;
+        }
+
         const msg = JSON.parse(e.data);
 
         if (msg.type === "data" && term) {

@@ -27,11 +27,13 @@ interface ActiveSession {
   conn: Client;
   stream: ClientChannel;
   ws?: {
-    send: (data: string) => void;
+    send: (data: string | Buffer) => void;
     close: () => void;
     on: (event: string, cb: (msg: unknown) => void) => void;
   };
   cleanupTimer?: ReturnType<typeof setTimeout>;
+  pendingChunks?: Buffer[];
+  flushScheduled?: boolean;
 }
 
 interface ActiveTunnel {
@@ -423,7 +425,7 @@ function cleanupFileTransfersForSession(_windowId?: string) {
 export function createSSHSocket(
   connection: SSHConnection,
   ws: {
-    send: (data: string) => void;
+    send: (data: string | Buffer) => void;
     close: () => void;
     on: (event: string, cb: (msg: unknown) => void) => void;
   },
@@ -526,17 +528,26 @@ export function createSSHSocket(
 
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
 
-      stream.on("data", (data: Buffer) => {
-        session.ws?.send(
-          JSON.stringify({ type: "data", data: data.toString("base64") }),
-        );
-      });
+      const flushPending = () => {
+        const chunks = session.pendingChunks;
+        session.pendingChunks = [];
+        session.flushScheduled = false;
+        if (chunks && chunks.length > 0 && session.ws) {
+          session.ws.send(chunks.length === 1 ? chunks[0] : Buffer.concat(chunks));
+        }
+      };
 
-      stream.stderr.on("data", (data: Buffer) => {
-        session.ws?.send(
-          JSON.stringify({ type: "data", data: data.toString("base64") }),
-        );
-      });
+      const enqueue = (data: Buffer) => {
+        if (!session.pendingChunks) session.pendingChunks = [];
+        session.pendingChunks.push(data);
+        if (!session.flushScheduled) {
+          session.flushScheduled = true;
+          process.nextTick(flushPending);
+        }
+      };
+
+      stream.on("data", enqueue);
+      stream.stderr.on("data", enqueue);
 
       ws.on("message", (msg: unknown) => {
         try {
