@@ -835,6 +835,7 @@ const SSHPane = ({
       fontFamily: '"JetBrains Mono", "JetBrainsMono Nerd Font", monospace',
       allowProposedApi: true,
       cursorBlink: true,
+      scrollback: 3000,
     });
     termInstanceRef.current = term;
 
@@ -855,6 +856,7 @@ const SSHPane = ({
     const clipboardAddon = new ClipboardAddon();
     term.loadAddon(clipboardAddon);
     term.open(terminalRef.current);
+
     requestAnimationFrame(focusTerminal);
 
     // Restore cached terminal content from previous project switch

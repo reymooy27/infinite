@@ -1,13 +1,23 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import { WebSocketServer } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
-import { createSSHSocket, ensureLocalTunnel, createSFTPConnection } from "./lib/ssh.js";
+import {
+  attachAgentProxySession,
+  clearAgentProxySession,
+  createSSHSocket,
+  createSFTPConnection,
+  detachAgentProxySession,
+  ensureLocalTunnel,
+  getAgentProxySession,
+  setAgentProxySessionExpireHandler,
+  setAgentProxySessionHandlers,
+} from "./lib/ssh.js";
 import { logger } from "./lib/logger.js";
 
 const LOCAL_USER_ID = "local-user";
@@ -16,9 +26,8 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({
   noServer: true,
-  pingInterval: 15000,
-  pingTimeout: 5000,
 });
+const agentRegistry = new Map<string, WebSocket>();
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:7890")
   .split(",")
@@ -81,7 +90,6 @@ app.post("/api/tunnels", async (req, res) => {
 
 // Per-user active SSH session tracking
 const userSessions = new Map<string, Set<import("ws").WebSocket>>();
-const MAX_SESSIONS_PER_USER = 5;
 
 app.post("/api/agents/online", (req, res) => {
   const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
@@ -201,25 +209,35 @@ function proxyThroughAgent(
   connection: Awaited<ReturnType<typeof loadConnection>>,
   windowId: string,
 ) {
-  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  logger.info(
-    `[Agent] Proxying session ${sessionId} for connection ${connection.id}`,
-  );
+  const existing = windowId ? getAgentProxySession(windowId) : undefined;
+  const sessionId =
+    existing?.sessionId ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const session = windowId
+    ? attachAgentProxySession(windowId, connection.agentId!, sessionId, browserWs)
+    : null;
 
-  // Tell agent to open SSH connection
-  agentWs.send(
-    JSON.stringify({
-      type: "ssh",
-      sessionId,
-      host: connection.host,
-      port: connection.port,
-      username: connection.username,
-      authType: connection.authType,
-      password: connection.password,
-      privateKey: connection.privateKey,
-      windowId,
-    }),
-  );
+  logger.info(`[Agent] Proxying session ${sessionId} for connection ${connection.id}`, {
+    reused: Boolean(existing),
+    windowId,
+  });
+
+  if (!existing) {
+    agentWs.send(
+      JSON.stringify({
+        type: "ssh",
+        sessionId,
+        host: connection.host,
+        port: connection.port,
+        username: connection.username,
+        authType: connection.authType,
+        password: connection.password,
+        privateKey: connection.privateKey,
+        windowId,
+      }),
+    );
+  } else {
+    browserWs.send(JSON.stringify({ type: "connected", resumed: true }));
+  }
 
   // Browser → Agent
   browserWs.on("message", (data) => {
@@ -240,70 +258,79 @@ function proxyThroughAgent(
     }
   });
 
-  // Agent → Browser (filter by sessionId)
-  const onAgentMessage = (raw: Buffer) => {
-    try {
-      const msg = JSON.parse(raw.toString());
-      if (msg.sessionId !== sessionId) return;
-      if (msg.type === "data") {
-        const payload =
-          msg.encoding === "base64"
-            ? Buffer.from(msg.data, "base64")
-            : msg.data;
-        if (browserWs.readyState === WebSocket.OPEN) browserWs.send(payload);
-      } else if (msg.type === "error" || msg.type === "close") {
-        if (browserWs.readyState === WebSocket.OPEN) {
-          browserWs.send(
-            JSON.stringify({ type: msg.type, message: msg.message }),
-          );
-          browserWs.close();
+  let onAgentMessage: ((raw: Buffer) => void) | undefined;
+  if (existing?.onAgentMessage) {
+    onAgentMessage = existing.onAgentMessage;
+  } else {
+    onAgentMessage = (raw: Buffer) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.sessionId !== sessionId) return;
+        const targetWs = windowId ? getAgentProxySession(windowId)?.ws : browserWs;
+        if (msg.type === "data") {
+          const payload =
+            msg.encoding === "base64"
+              ? Buffer.from(msg.data, "base64")
+              : msg.data;
+          if (targetWs) targetWs.send(payload);
+        } else if (msg.type === "error" || msg.type === "close") {
+          if (targetWs) {
+            targetWs.send(JSON.stringify({ type: msg.type, message: msg.message }));
+            targetWs.close();
+          }
+          if (windowId) clearAgentProxySession(windowId);
+        } else {
+          if (targetWs) targetWs.send(JSON.stringify(msg));
         }
-      } else {
-        // Forward control messages (connected, resize ack, etc.)
-        if (browserWs.readyState === WebSocket.OPEN)
-          browserWs.send(JSON.stringify(msg));
-      }
-    } catch {}
-  };
-
-  agentWs.on("message", onAgentMessage);
+      } catch {}
+    };
+    agentWs.on("message", onAgentMessage);
+  }
 
   browserWs.on("close", () => {
-    agentWs.off("message", onAgentMessage);
-    if (agentWs.readyState === WebSocket.OPEN) {
-      agentWs.send(JSON.stringify({ type: "close", sessionId }));
+    if (windowId) {
+      detachAgentProxySession(windowId);
+    } else {
+      if (onAgentMessage) agentWs.off("message", onAgentMessage);
+      if (agentWs.readyState === WebSocket.OPEN) {
+        agentWs.send(JSON.stringify({ type: "close", sessionId }));
+      }
     }
   });
 
+  if (windowId && session && onAgentMessage) {
+    const onAgentClose = () => {
+      const targetWs = getAgentProxySession(windowId)?.ws;
+      if (targetWs) {
+        targetWs.send(JSON.stringify({ type: "error", message: "Agent disconnected" }));
+        targetWs.close();
+      }
+      agentWs.off("message", onAgentMessage);
+      clearAgentProxySession(windowId);
+    };
+
+    setAgentProxySessionHandlers(windowId, { onAgentClose, onAgentMessage });
+    setAgentProxySessionExpireHandler(windowId, () => {
+      agentWs.off("message", onAgentMessage);
+      if (agentWs.readyState === WebSocket.OPEN) {
+        agentWs.send(JSON.stringify({ type: "close", sessionId }));
+      }
+    });
+
+    if (!existing) agentWs.on("close", onAgentClose);
+    return;
+  }
+
   agentWs.on("close", () => {
     if (browserWs.readyState === WebSocket.OPEN) {
-      browserWs.send(
-        JSON.stringify({ type: "error", message: "Agent disconnected" }),
-      );
+      browserWs.send(JSON.stringify({ type: "error", message: "Agent disconnected" }));
       browserWs.close();
     }
   });
 }
 
-// WS upgrade rate limit: per-IP, 10 attempts per minute
-const wsUpgradeAttempts = new Map<string, { count: number; resetAt: number }>();
-
 server.on("upgrade", (req: IncomingMessage, socket, head) => {
   const pathname = req.url ? new URL(req.url, "http://localhost").pathname : "";
-  const ip = req.socket.remoteAddress || "unknown";
-
-  // Rate limit upgrades
-  const now = Date.now();
-  const entry = wsUpgradeAttempts.get(ip);
-  if (entry && entry.resetAt > now) {
-    if (entry.count >= 10) {
-      socket.destroy();
-      return;
-    }
-    entry.count++;
-  } else {
-    wsUpgradeAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
-  }
 
   if (pathname === "/ws/ssh" || pathname === "/ws/agent" || pathname === "/ws/sftp") {
     wss.handleUpgrade(req, socket, head, (ws) => {
@@ -373,15 +400,7 @@ wss.on("connection", async (ws, req) => {
   // SSH endpoint
   const userId = getUserIdFromSession(req);
 
-  // Enforce per-user session limit
   const sessions = userSessions.get(userId) || new Set();
-  if (sessions.size >= MAX_SESSIONS_PER_USER) {
-    ws.send(
-      JSON.stringify({ type: "error", message: "Too many active sessions" }),
-    );
-    ws.close(4008, "Session limit reached");
-    return;
-  }
   sessions.add(ws);
   userSessions.set(userId, sessions);
   ws.on("close", () => {

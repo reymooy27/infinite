@@ -32,8 +32,20 @@ interface ActiveSession {
     on: (event: string, cb: (msg: unknown) => void) => void;
   };
   cleanupTimer?: ReturnType<typeof setTimeout>;
-  pendingChunks?: Buffer[];
-  flushScheduled?: boolean;
+}
+
+interface AgentProxySession {
+  sessionId: string;
+  agentId: string;
+  ws?: {
+    send: (data: string | Buffer) => void;
+    close: () => void;
+    on: (event: string, cb: (msg: unknown) => void) => void;
+  };
+  cleanupTimer?: ReturnType<typeof setTimeout>;
+  onExpire?: () => void;
+  onAgentClose?: () => void;
+  onAgentMessage?: (raw: Buffer) => void;
 }
 
 interface ActiveTunnel {
@@ -43,8 +55,9 @@ interface ActiveTunnel {
 }
 
 const sessions = new Map<string, ActiveSession>();
+const agentSessions = new Map<string, AgentProxySession>();
 const tunnels = new Map<string, ActiveTunnel>();
-const SESSION_TIMEOUT = 1000 * 60 * 30; // 30 minutes
+const SESSION_TIMEOUT = 1000 * 60 * 60 * 8; // 8 hours
 const CHUNK_SIZE = 64 * 1024; // 64KB for file transfer chunks
 
 interface ActiveUpload {
@@ -97,8 +110,8 @@ function getSSHConfig(connection: SSHConnection) {
     port: connection.port || 22,
     username: connection.username,
     readyTimeout: 15000,
-    keepaliveInterval: 10000,
-    keepaliveCountMax: 3,
+    keepaliveInterval: 30000,
+    keepaliveCountMax: 10,
   };
 
   if (connection.authType === "key" && connection.privateKey) {
@@ -528,26 +541,12 @@ export function createSSHSocket(
 
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
 
-      const flushPending = () => {
-        const chunks = session.pendingChunks;
-        session.pendingChunks = [];
-        session.flushScheduled = false;
-        if (chunks && chunks.length > 0 && session.ws) {
-          session.ws.send(chunks.length === 1 ? chunks[0] : Buffer.concat(chunks));
-        }
-      };
-
-      const enqueue = (data: Buffer) => {
-        if (!session.pendingChunks) session.pendingChunks = [];
-        session.pendingChunks.push(data);
-        if (!session.flushScheduled) {
-          session.flushScheduled = true;
-          process.nextTick(flushPending);
-        }
-      };
-
-      stream.on("data", enqueue);
-      stream.stderr.on("data", enqueue);
+      stream.on("data", (data: Buffer) => {
+        session.ws?.send(data);
+      });
+      stream.stderr.on("data", (data: Buffer) => {
+        session.ws?.send(data);
+      });
 
       ws.on("message", (msg: unknown) => {
         try {
@@ -627,6 +626,81 @@ export function createSSHSocket(
   }
 
   return conn;
+}
+
+export function getAgentProxySession(windowId: string) {
+  return agentSessions.get(windowId);
+}
+
+export function attachAgentProxySession(
+  windowId: string,
+  agentId: string,
+  sessionId: string,
+  ws: {
+    send: (data: string | Buffer) => void;
+    close: () => void;
+    on: (event: string, cb: (msg: unknown) => void) => void;
+  },
+) {
+  const existing = agentSessions.get(windowId);
+  if (existing) {
+    if (existing.cleanupTimer) {
+      clearTimeout(existing.cleanupTimer);
+      existing.cleanupTimer = undefined;
+    }
+    existing.ws = ws;
+    return existing;
+  }
+
+  const session: AgentProxySession = {
+    agentId,
+    sessionId,
+    ws,
+  };
+  agentSessions.set(windowId, session);
+  return session;
+}
+
+export function detachAgentProxySession(windowId: string) {
+  const session = agentSessions.get(windowId);
+  if (!session) return;
+
+  session.ws = undefined;
+  if (session.cleanupTimer) clearTimeout(session.cleanupTimer);
+  session.cleanupTimer = setTimeout(() => {
+    logger.info(`[Agent] Cleaning up idle proxied session ${windowId}`);
+    session.onExpire?.();
+    agentSessions.delete(windowId);
+  }, SESSION_TIMEOUT);
+}
+
+export function clearAgentProxySession(windowId: string) {
+  const session = agentSessions.get(windowId);
+  if (!session) return;
+  if (session.cleanupTimer) clearTimeout(session.cleanupTimer);
+  agentSessions.delete(windowId);
+}
+
+export function setAgentProxySessionExpireHandler(
+  windowId: string,
+  onExpire: () => void,
+) {
+  const session = agentSessions.get(windowId);
+  if (!session) return;
+  session.onExpire = onExpire;
+}
+
+export function setAgentProxySessionHandlers(
+  windowId: string,
+  handlers: {
+    onAgentClose: () => void;
+    onAgentMessage: (raw: Buffer) => void;
+  },
+) {
+  const session = agentSessions.get(windowId);
+  if (!session) return;
+  session.onAgentClose = handlers.onAgentClose;
+  session.onAgentMessage = handlers.onAgentMessage;
 }
 
 export function createSFTPConnection(
