@@ -787,6 +787,11 @@ const SSHPane = ({
     for (let y = 0; y < buffer.length; y++) {
       lines.push(buffer.getLine(y)?.translateToString() ?? "");
     }
+
+    while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+      lines.pop();
+    }
+
     saveBuffer(bufferKeyRef.current, lines);
   }, []);
 
@@ -811,8 +816,6 @@ const SSHPane = ({
     forceTerminalRepaint();
     setRetryKey((k) => k + 1);
   }, [forceTerminalRepaint, snapshotTerminalBuffer]);
-
-  const hasBootstrappedRef = useRef(false);
 
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
@@ -866,15 +869,6 @@ const SSHPane = ({
     return () =>
       document.removeEventListener("visibilitychange", handleVisibility);
   }, [snapshotTerminalBuffer]);
-
-  useEffect(() => {
-    if (!hasBootstrappedRef.current) {
-      hasBootstrappedRef.current = true;
-      requestAnimationFrame(() => {
-        refreshTerminal();
-      });
-    }
-  }, [refreshTerminal]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -953,14 +947,7 @@ const SSHPane = ({
 
     // Periodically save terminal buffer to cache (for project switch persistence)
     const saveTimer = setInterval(() => {
-      const t = termInstanceRef.current;
-      if (!t) return;
-      const lines: string[] = [];
-      const buffer = t.buffer.active;
-      for (let y = 0; y < buffer.length; y++) {
-        lines.push(buffer.getLine(y)?.translateToString() ?? '');
-      }
-      saveBuffer(bufferKeyRef.current, lines);
+      snapshotTerminalBuffer();
     }, 3000);
 
     // Force a canvas re-creation after the initial layout completes.
@@ -975,18 +962,13 @@ const SSHPane = ({
       cancelAnimationFrame(kickRaf);
       clearInterval(saveTimer);
       // Save buffer before unmount so content persists across project switches
-      const lines: string[] = [];
-      const buf = term.buffer.active;
-      for (let y = 0; y < buf.length; y++) {
-        lines.push(buf.getLine(y)?.translateToString() ?? '');
-      }
-      saveBuffer(bufferKeyRef.current, lines);
+      snapshotTerminalBuffer();
       observer.disconnect();
       term.dispose();
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, [focusTerminal, forceTerminalRepaint]);
+  }, [focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer]);
 
   useEffect(() => {
     if (isActive) {
