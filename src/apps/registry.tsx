@@ -5,7 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Code2, Copy, Download, FileText, Monitor, Upload } from "lucide-react";
+import { Code2, Copy, Download, FileText, Monitor, RefreshCw, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
@@ -767,11 +767,52 @@ const SSHPane = ({
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
+  const bufferKeyRef = useRef(`${windowId}-${tabId}`);
   const statusRef = useRef(status);
   statusRef.current = status;
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
+
+  useEffect(() => {
+    bufferKeyRef.current = `${windowId}-${tabId}`;
+  }, [windowId, tabId]);
+
+  const snapshotTerminalBuffer = useCallback(() => {
+    const term = termInstanceRef.current;
+    if (!term) return;
+
+    const lines: string[] = [];
+    const buffer = term.buffer.active;
+    for (let y = 0; y < buffer.length; y++) {
+      lines.push(buffer.getLine(y)?.translateToString() ?? "");
+    }
+    saveBuffer(bufferKeyRef.current, lines);
+  }, []);
+
+  const forceTerminalRepaint = useCallback(() => {
+    const term = termInstanceRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+
+    fit.fit();
+    if (term.rows > 0) {
+      term.refresh(0, term.rows - 1);
+    }
+    if (term.cols > 0 && term.rows > 0) {
+      term.resize(term.cols + 1, term.rows);
+      term.resize(term.cols - 1, term.rows);
+      term.refresh(0, term.rows - 1);
+    }
+  }, []);
+
+  const refreshTerminal = useCallback(() => {
+    snapshotTerminalBuffer();
+    forceTerminalRepaint();
+    setRetryKey((k) => k + 1);
+  }, [forceTerminalRepaint, snapshotTerminalBuffer]);
+
+  const hasBootstrappedRef = useRef(false);
 
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
@@ -809,6 +850,10 @@ const SSHPane = ({
 
   useEffect(() => {
     const handleVisibility = () => {
+      if (document.hidden) {
+        snapshotTerminalBuffer();
+        return;
+      }
       if (!document.hidden) {
         const ws = wsRef.current;
         const isStale = !ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING;
@@ -820,7 +865,25 @@ const SSHPane = ({
     document.addEventListener("visibilitychange", handleVisibility);
     return () =>
       document.removeEventListener("visibilitychange", handleVisibility);
-  }, []);
+  }, [snapshotTerminalBuffer]);
+
+  useEffect(() => {
+    if (!hasBootstrappedRef.current) {
+      hasBootstrappedRef.current = true;
+      requestAnimationFrame(() => {
+        refreshTerminal();
+      });
+    }
+  }, [refreshTerminal]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      snapshotTerminalBuffer();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [snapshotTerminalBuffer]);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -860,12 +923,11 @@ const SSHPane = ({
     requestAnimationFrame(focusTerminal);
 
     // Restore cached terminal content from previous project switch
-    const bufferKey = `${windowId}-${tabId}`;
-    const cached = getBuffer(bufferKey);
+    const cached = getBuffer(bufferKeyRef.current);
     if (cached && cached.length > 0) {
       term.write(cached.join('\r\n'));
     }
-    deleteBuffer(bufferKey);
+    deleteBuffer(bufferKeyRef.current);
 
     term.onData((data) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -884,7 +946,9 @@ const SSHPane = ({
       useWindowStore.getState().setActiveTabTitle(windowId, tabId, newTitle);
     });
 
-    const observer = new ResizeObserver(() => fit.fit());
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(forceTerminalRepaint);
+    });
     observer.observe(terminalRef.current);
 
     // Periodically save terminal buffer to cache (for project switch persistence)
@@ -896,7 +960,7 @@ const SSHPane = ({
       for (let y = 0; y < buffer.length; y++) {
         lines.push(buffer.getLine(y)?.translateToString() ?? '');
       }
-      saveBuffer(bufferKey, lines);
+      saveBuffer(bufferKeyRef.current, lines);
     }, 3000);
 
     // Force a canvas re-creation after the initial layout completes.
@@ -904,13 +968,7 @@ const SSHPane = ({
     // renderer doesn't paint under CSS transforms until the canvas
     // is recreated (e.g. on manual resize).
     let kickRaf = 0;
-    const kickCanvas = () => {
-      const t = termInstanceRef.current;
-      if (t && t.cols > 0 && t.rows > 0) {
-        t.resize(t.cols + 1, t.rows);
-        t.resize(t.cols - 1, t.rows);
-      }
-    };
+    const kickCanvas = () => forceTerminalRepaint();
     kickRaf = requestAnimationFrame(kickCanvas);
 
     return () => {
@@ -922,29 +980,29 @@ const SSHPane = ({
       for (let y = 0; y < buf.length; y++) {
         lines.push(buf.getLine(y)?.translateToString() ?? '');
       }
-      saveBuffer(bufferKey, lines);
+      saveBuffer(bufferKeyRef.current, lines);
       observer.disconnect();
       term.dispose();
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, []);
+  }, [focusTerminal, forceTerminalRepaint]);
 
   useEffect(() => {
     if (isActive) {
       requestAnimationFrame(() => {
-        fitRef.current?.fit();
+        forceTerminalRepaint();
         focusTerminal();
       });
     }
-  }, [focusTerminal, isActive]);
+  }, [focusTerminal, forceTerminalRepaint, isActive]);
 
   useEffect(() => {
     if (termInstanceRef.current) {
       termInstanceRef.current.options.fontSize = terminalFontSize;
-      fitRef.current?.fit();
+      forceTerminalRepaint();
     }
-  }, [terminalFontSize]);
+  }, [forceTerminalRepaint, terminalFontSize]);
 
   useEffect(() => {
     const container = terminalRef.current;
@@ -1069,11 +1127,7 @@ const SSHPane = ({
           }),
         );
         requestAnimationFrame(() => {
-          const t = termInstanceRef.current;
-          if (t && t.cols > 0 && t.rows > 0) {
-            t.resize(t.cols + 1, t.rows);
-            t.resize(t.cols - 1, t.rows);
-          }
+          forceTerminalRepaint();
           focusTerminal();
         });
       }
@@ -1087,8 +1141,16 @@ const SSHPane = ({
       }
     }, 20000);
 
-    ws.onclose = () => { clearInterval(pingInterval); setStatus("disconnected"); };
-    ws.onerror = () => { clearInterval(pingInterval); setStatus("error"); };
+    ws.onclose = () => {
+      clearInterval(pingInterval);
+      snapshotTerminalBuffer();
+      setStatus("disconnected");
+    };
+    ws.onerror = () => {
+      clearInterval(pingInterval);
+      snapshotTerminalBuffer();
+      setStatus("error");
+    };
 
     ws.onmessage = (e) => {
       try {
@@ -1141,9 +1203,10 @@ const SSHPane = ({
 
     return () => {
       clearInterval(pingInterval);
+      snapshotTerminalBuffer();
       ws.close();
     };
-  }, [wsUrl]);
+  }, [focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
 
   const sendShortcut = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -1400,10 +1463,10 @@ const SSHPane = ({
             <div className="text-center">
               <p className="text-red-400 mb-4">Connection error</p>
               <button
-                onClick={() => setRetryKey((k) => k + 1)}
+                onClick={refreshTerminal}
                 className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md transition-colors text-xs"
               >
-                Reconnect
+                Refresh
               </button>
             </div>
           )}
@@ -1411,10 +1474,10 @@ const SSHPane = ({
             <div className="text-center">
               <p className="text-neutral-400 mb-4">Disconnected</p>
               <button
-                onClick={() => setRetryKey((k) => k + 1)}
+                onClick={refreshTerminal}
                 className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md transition-colors text-xs"
               >
-                Reconnect
+                Refresh
               </button>
             </div>
           )}
@@ -1439,6 +1502,7 @@ const SSHTerminal = ({
   const sshMeta = win ? getSSHMetadata(win) : null;
   const tabs = sshMeta?.tabs ?? [{ id: "default", label: "Tab 1", connectionId }];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "default";
+  const [paneRefreshKey, setPaneRefreshKey] = useState(0);
 
   const handleAddTab = () => {
     if (!windowId) return;
@@ -1453,6 +1517,10 @@ const SSHTerminal = ({
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
     if (windowId && tabs.length > 1) closeTerminalTab(windowId, tabId);
+  };
+
+  const handleRefresh = () => {
+    setPaneRefreshKey((k) => k + 1);
   };
 
   return (
@@ -1480,6 +1548,13 @@ const SSHTerminal = ({
           </button>
         ))}
         <button
+          onClick={handleRefresh}
+          title="Refresh terminal"
+          className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer shrink-0"
+        >
+          <RefreshCw size={14} />
+        </button>
+        <button
           onClick={handleAddTab}
           title="New tab"
           className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer text-base leading-none shrink-0"
@@ -1491,7 +1566,7 @@ const SSHTerminal = ({
       <div className="relative flex-1 min-h-0">
         {tabs.map((tab) => (
           <SSHPane
-            key={tab.id}
+            key={`${tab.id}-${paneRefreshKey}`}
             tabId={tab.id}
             windowId={windowId}
             connectionId={tab.connectionId ?? connectionId}
