@@ -32,6 +32,8 @@ interface ActiveSession {
     on: (event: string, cb: (msg: unknown) => void) => void;
   };
   cleanupTimer?: ReturnType<typeof setTimeout>;
+  recentOutput: Buffer[];
+  recentOutputBytes: number;
 }
 
 interface AgentProxySession {
@@ -59,6 +61,7 @@ const agentSessions = new Map<string, AgentProxySession>();
 const tunnels = new Map<string, ActiveTunnel>();
 const SESSION_TIMEOUT = 1000 * 60 * 60 * 8; // 8 hours
 const CHUNK_SIZE = 64 * 1024; // 64KB for file transfer chunks
+const MAX_RECENT_OUTPUT_BYTES = 256 * 1024;
 
 interface ActiveUpload {
   sftp: SFTPWrapper;
@@ -77,6 +80,27 @@ interface ActiveDownload {
 
 const activeUploads = new Map<string, ActiveUpload>();
 const activeDownloads = new Map<string, ActiveDownload>();
+
+function appendRecentOutput(session: ActiveSession, data: Buffer) {
+  session.recentOutput.push(data);
+  session.recentOutputBytes += data.length;
+
+  while (
+    session.recentOutputBytes > MAX_RECENT_OUTPUT_BYTES &&
+    session.recentOutput.length > 1
+  ) {
+    const dropped = session.recentOutput.shift();
+    if (!dropped) break;
+    session.recentOutputBytes -= dropped.length;
+  }
+}
+
+function replayRecentOutput(session: ActiveSession) {
+  if (!session.ws || session.recentOutput.length === 0) return;
+  for (const chunk of session.recentOutput) {
+    session.ws.send(chunk);
+  }
+}
 
 function validatePrivateKey(keyStr: string): {
   valid: boolean;
@@ -458,6 +482,7 @@ export function createSSHSocket(
 
     // Send connected status immediately
     ws.send(JSON.stringify({ type: "connected" }));
+    replayRecentOutput(session);
 
     // Re-attach listeners
     ws.on("message", (msg: unknown) => {
@@ -536,15 +561,23 @@ export function createSSHSocket(
         return;
       }
 
-      const session: ActiveSession = { conn, stream, ws };
+      const session: ActiveSession = {
+        conn,
+        stream,
+        ws,
+        recentOutput: [],
+        recentOutputBytes: 0,
+      };
       if (windowId) sessions.set(windowId, session);
 
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
 
       stream.on("data", (data: Buffer) => {
+        appendRecentOutput(session, data);
         session.ws?.send(data);
       });
       stream.stderr.on("data", (data: Buffer) => {
+        appendRecentOutput(session, data);
         session.ws?.send(data);
       });
 
