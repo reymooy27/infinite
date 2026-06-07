@@ -219,6 +219,7 @@ export default function Dock() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const dockRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
@@ -233,7 +234,6 @@ export default function Dock() {
   }, []);
 
   const handleDockPointerDown = (e: React.PointerEvent) => {
-    if (e.target instanceof HTMLButtonElement) return;
     const el = dockRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -242,6 +242,7 @@ export default function Dock() {
     dragOriginRef.current = { x: pos.x, y: pos.y };
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     isDraggingRef.current = true;
+    setIsDragging(true);
     el.setPointerCapture(e.pointerId);
   };
 
@@ -264,6 +265,7 @@ export default function Dock() {
   const handleDockPointerUp = (e: React.PointerEvent) => {
     if (!isDraggingRef.current) return;
     isDraggingRef.current = false;
+    setIsDragging(false);
     try {
       dockRef.current?.releasePointerCapture(e.pointerId);
     } catch {}
@@ -473,7 +475,9 @@ export default function Dock() {
         onPointerMove={isMobile ? handleDockPointerMove : undefined}
         onPointerUp={isMobile ? handleDockPointerUp : undefined}
       >
-      <div className="flex gap-1 sm:gap-2 p-0 bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl items-center">
+      <div className={`flex gap-1 sm:gap-2 p-0 bg-neutral-900/90 backdrop-blur-md border rounded-xl shadow-2xl items-center transition-colors ${
+        isDragging ? 'border-blue-500' : 'border-neutral-700'
+      }`}>
         {DOCK_APPS.map((appId) => {
           const app = registry[appId];
           const isOpen = windows.some((w) => w.appId === appId);
@@ -481,7 +485,6 @@ export default function Dock() {
           return (
             <button
               key={appId}
-              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => {
                 if (isPlacing) {
                   clearPlacing();
@@ -511,7 +514,6 @@ export default function Dock() {
           <div className="w-px h-6 sm:h-8 bg-neutral-700 mx-0.5 sm:mx-1" />
             <div className="relative" ref={menuRef}>
               <button
-                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => { setShowWinMenu((v) => !v); setShowFileTransfer(false); }}
                 className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
                   showWinMenu
@@ -560,7 +562,6 @@ export default function Dock() {
         {/* File transfer button */}
         <div className="relative" ref={fileTransferRef}>
           <button
-            onPointerDown={(e) => e.stopPropagation()}
             onClick={() => { setShowFileTransfer((v) => !v); setShowWinMenu(false); }}
             className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
               showFileTransfer
