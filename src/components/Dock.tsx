@@ -217,6 +217,58 @@ export default function Dock() {
   const ftDragStartY = useRef(0);
   const ftDragDelta = useRef(0);
 
+  const [isMobile, setIsMobile] = useState(false);
+  const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const dragOriginRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = (e?: MediaQueryList | MediaQueryListEvent) => setIsMobile(e?.matches ?? mq.matches);
+    update(mq);
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const handleDockPointerDown = (e: React.PointerEvent) => {
+    if (e.target instanceof HTMLButtonElement) return;
+    const el = dockRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pos = { x: rect.left, y: rect.top };
+    setDockPos(pos);
+    dragOriginRef.current = { x: pos.x, y: pos.y };
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    isDraggingRef.current = true;
+    el.setPointerCapture(e.pointerId);
+  };
+
+  const handleDockPointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    const el = dockRef.current;
+    if (!el) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const dw = el.offsetWidth;
+    const dh = el.offsetHeight;
+    setDockPos({
+      x: Math.max(0, Math.min(vw - dw, dragOriginRef.current.x + dx)),
+      y: Math.max(0, Math.min(vh - dh, dragOriginRef.current.y + dy)),
+    });
+  };
+
+  const handleDockPointerUp = (e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    try {
+      dockRef.current?.releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+
   const sshConnections = useSSHStore((s) => s.connections);
   const fetchConnections = useSSHStore((s) => s.fetchConnections);
 
@@ -404,7 +456,23 @@ export default function Dock() {
         </div>
       )}
 
-      <div className="fixed bottom-1 left-1/2 -translate-x-1/2 z-[9999] flex items-center p-3 sm:p-4">
+      <div
+        ref={dockRef}
+        className={`flex items-center p-3 sm:p-4 ${
+          isMobile ? 'touch-none select-none cursor-grab active:cursor-grabbing' : ''
+        }`}
+        style={{
+          position: 'fixed',
+          zIndex: 9999,
+          ...(isMobile && dockPos
+            ? { left: dockPos.x, top: dockPos.y }
+            : { bottom: 4, left: '50%', transform: 'translateX(-50%)' }
+          ),
+        }}
+        onPointerDown={isMobile ? handleDockPointerDown : undefined}
+        onPointerMove={isMobile ? handleDockPointerMove : undefined}
+        onPointerUp={isMobile ? handleDockPointerUp : undefined}
+      >
       <div className="flex gap-1 sm:gap-2 p-0 bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-xl shadow-2xl items-center">
         {DOCK_APPS.map((appId) => {
           const app = registry[appId];
@@ -413,6 +481,7 @@ export default function Dock() {
           return (
             <button
               key={appId}
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => {
                 if (isPlacing) {
                   clearPlacing();
@@ -442,6 +511,7 @@ export default function Dock() {
           <div className="w-px h-6 sm:h-8 bg-neutral-700 mx-0.5 sm:mx-1" />
             <div className="relative" ref={menuRef}>
               <button
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => { setShowWinMenu((v) => !v); setShowFileTransfer(false); }}
                 className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
                   showWinMenu
@@ -490,6 +560,7 @@ export default function Dock() {
         {/* File transfer button */}
         <div className="relative" ref={fileTransferRef}>
           <button
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={() => { setShowFileTransfer((v) => !v); setShowWinMenu(false); }}
             className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
               showFileTransfer
