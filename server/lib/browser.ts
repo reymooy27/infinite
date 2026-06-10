@@ -1,17 +1,18 @@
-import type { Browser, Page } from "puppeteer";
+import type { Browser, CDPSession, KeyInput, Page } from "puppeteer";
 import { WebSocket } from "ws";
 import { logger } from "./logger.js";
 
-const ACTIVE_INTERVAL_MS = 100;
-const IDLE_INTERVAL_MS = 500;
-const IDLE_THRESHOLD_MS = 2000;
 const SESSION_CLEANUP_DELAY_MS = 30_000;
-const JPEG_QUALITY = 70;
+const JPEG_QUALITY = 65;
+const BROWSER_USER_DATA_DIR =
+  process.env.BROWSER_USER_DATA_DIR || "/tmp/infinite-browser-profile";
 
 interface BrowserSession {
   page: Page;
+  client: CDPSession;
   ws: WebSocket | null;
-  frameTimer: ReturnType<typeof setInterval> | null;
+  screencastActive: boolean;
+  screencastListenerAttached: boolean;
   cleanupTimer: ReturnType<typeof setTimeout> | null;
   lastActivityAt: number;
 }
@@ -24,11 +25,23 @@ class BrowserManager {
     const puppeteer = (await import("puppeteer")).default;
     this.browser = await puppeteer.launch({
       headless: true,
+      userDataDir: BROWSER_USER_DATA_DIR,
+      ignoreDefaultArgs: ["--enable-automation"],
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
-        "--disable-gpu",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-client-side-phishing-detection",
+        "--disable-default-apps",
+        "--disable-features=Translate,BackForwardCache",
+        "--disable-popup-blocking",
+        "--disable-renderer-backgrounding",
+        "--metrics-recording-only",
+        "--no-default-browser-check",
+        "--no-first-run",
       ],
     });
     logger.info("[browser] Puppeteer launched");
@@ -48,7 +61,7 @@ class BrowserManager {
       }
       existing.ws = ws;
       this.attachListeners(ws, existing, windowId);
-      this.startStreaming(existing);
+      await this.startScreencast(existing);
       logger.info("[browser] Session reattached", { windowId });
       return;
     }
@@ -58,12 +71,26 @@ class BrowserManager {
     }
 
     const page = await this.browser!.newPage();
+    const client = await page.createCDPSession();
     await page.setViewport({ width, height });
+    await page.setBypassCSP(true).catch(() => {});
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, "webdriver", {
+        get: () => undefined,
+      });
+    });
+    await page.setUserAgent(
+      await this.browser!.userAgent().then((ua) =>
+        ua.replace(/\sHeadlessChrome\//, " Chrome/"),
+      ),
+    );
 
     const session: BrowserSession = {
       page,
+      client,
       ws,
-      frameTimer: null,
+      screencastActive: false,
+      screencastListenerAttached: false,
       cleanupTimer: null,
       lastActivityAt: Date.now(),
     };
@@ -73,12 +100,15 @@ class BrowserManager {
       if (frame === page.mainFrame()) {
         this.send(session, { type: "url", url: page.url() });
         this.send(session, { type: "loading", loading: false });
-        this.sendFrame(session);
       }
     });
 
     page.on("load", () => {
       this.send(session, { type: "loading", loading: false });
+      this.send(session, { type: "title", title: "" });
+      page.title()
+        .then((title) => this.send(session, { type: "title", title }))
+        .catch(() => {});
     });
 
     page.on("request", (req) => {
@@ -88,7 +118,7 @@ class BrowserManager {
     });
 
     this.attachListeners(ws, session, windowId);
-    this.startStreaming(session);
+    await this.startScreencast(session);
     logger.info("[browser] Session created", { windowId, width, height });
   }
 
@@ -109,7 +139,7 @@ class BrowserManager {
 
     ws.on("close", () => {
       session.ws = null;
-      this.stopStreaming(session);
+      this.stopScreencast(session).catch(() => {});
       session.cleanupTimer = setTimeout(() => {
         this.destroySession(windowId);
       }, SESSION_CLEANUP_DELAY_MS);
@@ -132,13 +162,15 @@ class BrowserManager {
         const url = raw.startsWith("http://") || raw.startsWith("https://")
           ? raw
           : `https://${raw}`;
-        page.goto(url).catch(() => {});
+        this.navigate(page, url, session);
         break;
       }
       case "resize": {
         const w = Number(msg.width) || 1024;
         const h = Number(msg.height) || 768;
-        page.setViewport({ width: w, height: h }).catch(() => {});
+        page.setViewport({ width: w, height: h })
+          .then(() => this.restartScreencast(session))
+          .catch(() => {});
         break;
       }
       case "click": {
@@ -164,11 +196,11 @@ class BrowserManager {
         break;
       }
       case "keydown": {
-        page.keyboard.down(String(msg.key)).catch(() => {});
+        page.keyboard.down(String(msg.key) as KeyInput).catch(() => {});
         break;
       }
       case "keyup": {
-        page.keyboard.up(String(msg.key)).catch(() => {});
+        page.keyboard.up(String(msg.key) as KeyInput).catch(() => {});
         break;
       }
       case "text": {
@@ -176,7 +208,9 @@ class BrowserManager {
         break;
       }
       case "refresh": {
-        page.reload().catch(() => {});
+        page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch((err) => {
+          this.send(session, { type: "error", message: this.errorMessage(err) });
+        });
         break;
       }
       case "goBack": {
@@ -190,37 +224,53 @@ class BrowserManager {
     }
   }
 
-  private startStreaming(session: BrowserSession): void {
-    this.stopStreaming(session);
-    const tick = async () => {
-      if (!session.ws || session.ws.readyState !== WebSocket.OPEN) return;
-      await this.sendFrame(session);
-      const idle = Date.now() - session.lastActivityAt > IDLE_THRESHOLD_MS;
-      const delay = idle ? IDLE_INTERVAL_MS : ACTIVE_INTERVAL_MS;
-      session.frameTimer = setTimeout(tick, delay) as unknown as ReturnType<typeof setInterval>;
-    };
-    session.frameTimer = setTimeout(tick, ACTIVE_INTERVAL_MS) as unknown as ReturnType<typeof setInterval>;
-  }
-
-  private stopStreaming(session: BrowserSession): void {
-    if (session.frameTimer) {
-      clearTimeout(session.frameTimer as unknown as ReturnType<typeof setTimeout>);
-      session.frameTimer = null;
-    }
-  }
-
-  private async sendFrame(session: BrowserSession): Promise<void> {
-    if (!session.ws || session.ws.readyState !== WebSocket.OPEN) return;
-    try {
-      const buf = await session.page.screenshot({
-        type: "jpeg",
-        quality: JPEG_QUALITY,
+  private navigate(page: Page, url: string, session: BrowserSession): void {
+    this.send(session, { type: "loading", loading: true });
+    page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })
+      .catch((err) => {
+        this.send(session, { type: "error", message: this.errorMessage(err) });
+      })
+      .finally(() => {
+        this.send(session, { type: "loading", loading: false });
       });
-      const data = Buffer.isBuffer(buf) ? buf.toString("base64") : Buffer.from(buf).toString("base64");
-      this.send(session, { type: "frame", data });
-    } catch {
-      // page may be closing
+  }
+
+  private async startScreencast(session: BrowserSession): Promise<void> {
+    if (session.screencastActive) return;
+    if (!session.screencastListenerAttached) {
+      session.client.on("Page.screencastFrame", (event) => {
+        session.client
+          .send("Page.screencastFrameAck", { sessionId: event.sessionId })
+          .catch(() => {});
+        this.send(session, { type: "frame", data: event.data });
+      });
+      session.screencastListenerAttached = true;
     }
+    await session.client.send("Page.startScreencast", {
+      format: "jpeg",
+      quality: JPEG_QUALITY,
+      everyNthFrame: 1,
+    });
+    session.screencastActive = true;
+  }
+
+  private async stopScreencast(session: BrowserSession): Promise<void> {
+    if (!session.screencastActive) return;
+    try {
+      await session.client.send("Page.stopScreencast");
+    } catch {
+      // page may already be closed
+    }
+    session.screencastActive = false;
+  }
+
+  private async restartScreencast(session: BrowserSession): Promise<void> {
+    await this.stopScreencast(session);
+    await this.startScreencast(session);
+  }
+
+  private errorMessage(err: unknown): string {
+    return err instanceof Error ? err.message : "Page failed to load";
   }
 
   private send(session: BrowserSession, payload: unknown): void {
@@ -235,7 +285,12 @@ class BrowserManager {
   private async destroySession(windowId: string): Promise<void> {
     const session = this.sessions.get(windowId);
     if (!session) return;
-    this.stopStreaming(session);
+    await this.stopScreencast(session);
+    try {
+      await session.client.detach();
+    } catch {
+      // ignore
+    }
     try {
       await session.page.close();
     } catch {

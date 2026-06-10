@@ -26,6 +26,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
   const lastClickRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
+  const lastNavigatedUrlRef = useRef("");
   const frameCountRef = useRef(0);
   const clickRippleRef = useRef<{ x: number; y: number; id: number } | null>(null);
   const rippleIdRef = useRef(0);
@@ -48,7 +49,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
 
   const wsUrl = useMemo(() => {
     return buildWsUrl("/ws/browser", { width, height, windowId: windowId || "", r: retryKey });
-  }, [width, height, windowId, retryKey]);
+  }, [windowId, retryKey]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -83,12 +84,6 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
     return () => disconnect();
   }, [disconnect]);
 
-  useEffect(() => {
-    if (retryKey > 0 || (url && !isConnected && !error)) {
-      connect();
-    }
-  }, [wsUrl, retryKey]);
-
   const connect = useCallback(
     () => {
       if (!wsUrl) return;
@@ -99,10 +94,12 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
       ws.onopen = () => {
         setIsConnected(true);
         setWsStatus("connected");
-        setIsLoading(true);
         setError(null);
         frameCountRef.current = 0;
+        ws.send(JSON.stringify({ type: "resize", width, height }));
         if (url) {
+          setIsLoading(true);
+          lastNavigatedUrlRef.current = url;
           ws.send(JSON.stringify({ type: "navigate", url }));
         }
       };
@@ -175,8 +172,31 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
         setIsLoading(false);
       };
     },
-    [disconnect, wsUrl, width, height],
+    [disconnect, wsUrl, url, width, height],
   );
+
+  useEffect(() => {
+    if (!isConnected && !error && (url || retryKey > 0)) {
+      connect();
+    }
+  }, [url, isConnected, error, retryKey, connect]);
+
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (
+      !url ||
+      !isConnected ||
+      !ws ||
+      ws.readyState !== WebSocket.OPEN ||
+      lastNavigatedUrlRef.current === url
+    ) {
+      return;
+    }
+
+    setIsLoading(true);
+    lastNavigatedUrlRef.current = url;
+    ws.send(JSON.stringify({ type: "navigate", url }));
+  }, [url, isConnected]);
 
   const navigate = useCallback(
     (target: string) => {
