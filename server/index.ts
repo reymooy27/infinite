@@ -209,6 +209,7 @@ function proxyThroughAgent(
   agentWs: WebSocket,
   connection: Awaited<ReturnType<typeof loadConnection>>,
   windowId: string,
+  initialDirectory?: string,
 ) {
   const existing = windowId ? getAgentProxySession(windowId) : undefined;
   const sessionId =
@@ -234,6 +235,7 @@ function proxyThroughAgent(
         password: connection.password,
         privateKey: connection.privateKey,
         windowId,
+        initialDirectory,
       }),
     );
   } else {
@@ -423,6 +425,7 @@ wss.on("connection", async (ws, req) => {
 
   const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
   const windowId = u.searchParams.get("windowId") || "";
+  const initialDirectory = u.searchParams.get("directory") || undefined;
 
   logger.info(
     `[WS] SSH connection, connectionId: ${connId}, userId: ${userId}`,
@@ -445,7 +448,7 @@ wss.on("connection", async (ws, req) => {
         ws.close();
         return;
       }
-      proxyThroughAgent(ws, agentWs, connection, windowId);
+      proxyThroughAgent(ws, agentWs, connection, windowId, initialDirectory);
       return;
     }
 
@@ -453,6 +456,7 @@ wss.on("connection", async (ws, req) => {
       connection,
       ws as Parameters<typeof createSSHSocket>[1],
       windowId,
+      initialDirectory,
     );
   } catch (err) {
     const message =

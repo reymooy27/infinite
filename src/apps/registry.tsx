@@ -787,6 +787,10 @@ const SSHPane = ({
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
+  const projectDirectory = useProjectStore((s) => {
+    const project = s.projects.find((p) => p.id === s.activeProjectId);
+    return project?.directory;
+  });
   const bufferKeyRef = useRef(`${windowId}-${tabId}`);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -853,8 +857,13 @@ const SSHPane = ({
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
     const sessionId = tabId ? `${windowId || ""}-${tabId}` : (windowId || "");
-    return buildWsUrl("/ws/ssh", { connectionId, windowId: sessionId, r: retryKey });
-  }, [connectionId, windowId, tabId, retryKey]);
+    return buildWsUrl("/ws/ssh", {
+      connectionId,
+      directory: projectDirectory || "",
+      windowId: sessionId,
+      r: retryKey,
+    });
+  }, [connectionId, projectDirectory, windowId, tabId, retryKey]);
 
   useEffect(() => {
     const handleScrollEvent = (e: any) => {
@@ -1163,11 +1172,6 @@ const SSHPane = ({
               if (windowId && tabId) {
                 useWindowStore.getState().markTabNavigated(windowId, tabId);
               }
-              const { projects, activeProjectId } = useProjectStore.getState();
-              const dir = projects.find((p) => p.id === activeProjectId)?.directory;
-              if (dir && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "data", data: `cd ${dir}\r` }));
-              }
             }
             term.write(new Uint8Array(e.data));
           }
@@ -1182,11 +1186,6 @@ const SSHPane = ({
             hasAutoNavigatedRef.current = true;
             if (windowId && tabId) {
               useWindowStore.getState().markTabNavigated(windowId, tabId);
-            }
-            const { projects, activeProjectId } = useProjectStore.getState();
-            const dir = projects.find((p) => p.id === activeProjectId)?.directory;
-            if (dir && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: "data", data: `cd ${dir}\r` }));
             }
           }
           const binaryStr = atob(msg.data);

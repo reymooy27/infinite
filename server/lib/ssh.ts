@@ -23,6 +23,10 @@ interface WebSocketMessage {
   rows?: number;
 }
 
+function quoteShellArg(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 interface ActiveSession {
   conn: Client;
   stream: ClientChannel;
@@ -466,7 +470,8 @@ export function createSSHSocket(
     close: () => void;
     on: (event: string, cb: (msg: unknown) => void) => void;
   },
-  windowId?: string
+  windowId?: string,
+  initialDirectory?: string,
 ) {
   if (windowId && sessions.has(windowId)) {
     const session = sessions.get(windowId)!;
@@ -571,6 +576,10 @@ export function createSSHSocket(
       if (windowId) sessions.set(windowId, session);
 
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
+
+      if (initialDirectory) {
+        stream.write(`cd -- ${quoteShellArg(initialDirectory)}\r`);
+      }
 
       stream.on("data", (data: Buffer) => {
         appendRecentOutput(session, data);
