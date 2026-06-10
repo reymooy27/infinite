@@ -105,7 +105,7 @@ export default function WindowFrame({
   );
 
   const z = win?.z ?? 1;
-  const scale = (canvasTransform.current as any)?.state?.scale ?? 1;
+  const scale = canvasTransform.getState()?.scale ?? 1;
   const isActive = focusTargetId === id;
   const isMaximized = win?.maximized;
   const isMinimized = win?.minimized;
@@ -127,7 +127,7 @@ export default function WindowFrame({
   }, []);
 
   const getViewBounds = useCallback(() => {
-    const inst = canvasTransform.current as any;
+    const inst = canvasTransform.getInstance() as any;
     if (!inst) return { x: 0, y: 0, width: 1000, height: 800 };
     const wrapper = inst.wrapperComponent;
     if (!wrapper) return { x: 0, y: 0, width: 1000, height: 800 };

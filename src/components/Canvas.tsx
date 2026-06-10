@@ -80,8 +80,8 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     const applyFit = () => {
       attempts += 1;
 
-      const inst = canvasTransform.current;
-      const wrapper = (inst as unknown as { wrapperComponent?: HTMLElement })?.wrapperComponent;
+      const inst = canvasTransform.getInstance();
+      const wrapper = inst?.wrapperComponent;
       if (!inst?.setTransform || !wrapper || wrapper.offsetWidth === 0 || wrapper.offsetHeight === 0) {
         if (attempts < 10) frame = requestAnimationFrame(applyFit);
         return;
@@ -131,7 +131,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       e.stopPropagation();
-      const inst = canvasTransform.current as any;
+      const inst = canvasTransform.getInstance() as any;
       if (!inst?.state) return;
       const wrapper = inst.wrapperComponent as HTMLElement | undefined;
       if (!wrapper) return;
@@ -171,32 +171,14 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent) => {
       if (!placingAppId) return;
-      const inst = canvasTransform.current;
-      if (!inst) return;
-      const wrapper = (inst as unknown as { wrapperComponent?: HTMLElement })
-        .wrapperComponent;
-      if (!wrapper) return;
-
-      const rect = wrapper.getBoundingClientRect();
-      const screenX = e.clientX - rect.left;
-      const screenY = e.clientY - rect.top;
-      const state = (
-        inst as unknown as {
-          state?: { scale: number; positionX: number; positionY: number };
-        }
-      ).state;
-      const scale = state?.scale ?? 1;
-      const posX = state?.positionX ?? 0;
-      const posY = state?.positionY ?? 0;
-
-      const canvasX = (screenX - posX) / scale;
-      const canvasY = (screenY - posY) / scale;
+      const point = canvasTransform.screenToCanvas(e.clientX, e.clientY);
+      if (!point) return;
 
       const app = registry[placingAppId];
       if (!app) return;
 
-      const x = canvasX - app.defaultWidth / 2;
-      const y = canvasY - app.defaultHeight / 2;
+      const x = point.x - app.defaultWidth / 2;
+      const y = point.y - app.defaultHeight / 2;
 
       if (placingAppId === "ssh" || placingAppId === "devBrowser") {
         const conns = useSSHStore.getState().connections;
@@ -222,9 +204,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    const wrapper = (
-      canvasTransform.current as unknown as { wrapperComponent?: HTMLElement }
-    )?.wrapperComponent;
+    const wrapper = canvasTransform.getInstance()?.wrapperComponent;
     if (!wrapper) return;
     if (placingAppId) {
       wrapper.style.cursor = "crosshair";
@@ -430,7 +410,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         {({ zoomIn, zoomOut, resetTransform }) => {
           zoomRef.current = { zoomIn, zoomOut };
           const handleReset = () => {
-            const inst = canvasTransform.current as any;
+            const inst = canvasTransform.getInstance() as any;
             const wrapper = inst?.wrapperComponent as HTMLElement | undefined;
             if (wrapper && inst?.setState) {
               inst.setState(

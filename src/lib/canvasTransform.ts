@@ -1,20 +1,80 @@
 import type { WindowData } from "@/types";
 
+type TransformState = {
+  scale?: number;
+  positionX?: number;
+  positionY?: number;
+};
+
+type TransformInstance = {
+  state?: TransformState;
+  wrapperComponent?: HTMLElement;
+  setState?: (scale: number, positionX: number, positionY: number) => void;
+  setTransform?: (
+    positionX: number,
+    positionY: number,
+    scale: number,
+    animationTime?: number,
+  ) => void;
+  instance?: TransformInstance;
+};
+
+const getInstance = (): TransformInstance | null => {
+  const current = canvasTransform.current as TransformInstance | null;
+  return current?.instance ?? current ?? null;
+};
+
+const getWrapper = (inst: TransformInstance | null): HTMLElement | null =>
+  inst?.wrapperComponent ?? null;
+
 export const canvasTransform = {
   current: null as any,
+  getInstance,
+  getState: () => getInstance()?.state ?? null,
+  getViewportCenter: () => {
+    const inst = getInstance();
+    const wrapper = getWrapper(inst);
+    const state = inst?.state;
+    if (!wrapper || !state) return null;
+
+    const scale = state.scale ?? 1;
+    if (scale <= 0 || !isFinite(scale)) return null;
+
+    return {
+      x: (wrapper.offsetWidth / 2 - (state.positionX ?? 0)) / scale,
+      y: (wrapper.offsetHeight / 2 - (state.positionY ?? 0)) / scale,
+      scale,
+    };
+  },
+  screenToCanvas: (clientX: number, clientY: number) => {
+    const inst = getInstance();
+    const wrapper = getWrapper(inst);
+    const state = inst?.state;
+    if (!wrapper || !state) return null;
+
+    const scale = state.scale ?? 1;
+    if (scale <= 0 || !isFinite(scale)) return null;
+
+    const rect = wrapper.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left - (state.positionX ?? 0)) / scale,
+      y: (clientY - rect.top - (state.positionY ?? 0)) / scale,
+      scale,
+    };
+  },
   resetZoom: () => {
-    const inst = canvasTransform.current;
+    const inst = getInstance();
     if (inst?.setState) {
-      const wrapper = (inst as unknown as { wrapperComponent?: HTMLElement })?.wrapperComponent;
+      const wrapper = getWrapper(inst);
       if (wrapper) {
         inst.setState(1, wrapper.offsetWidth / 2 - 5000, wrapper.offsetHeight / 2 - 5000);
       }
     }
   },
   centerOnWindow: (win: { x: number; y: number; width?: number; height?: number }) => {
-    const inst = canvasTransform.current;
+    const inst = getInstance();
     if (!inst?.state) return;
-    const wrapper = (inst as unknown as { wrapperComponent?: HTMLElement })?.wrapperComponent;
+    const wrapper = getWrapper(inst);
     if (!wrapper) return;
     const vw = wrapper.offsetWidth;
     const vh = wrapper.offsetHeight;
@@ -28,8 +88,8 @@ export const canvasTransform = {
     inst.setState?.(scale, tx, ty);
   },
   fitToWindows: (windows: WindowData[]) => {
-    const inst = canvasTransform.current;
-    const wrapper = (inst as unknown as { wrapperComponent?: HTMLElement })?.wrapperComponent;
+    const inst = getInstance();
+    const wrapper = getWrapper(inst);
     if (!inst?.setTransform || !wrapper || windows.length === 0) return;
 
     const vw = wrapper.offsetWidth;

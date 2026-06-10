@@ -15,7 +15,7 @@ export default function NavigationIndicator() {
     let prevKey = "";
 
     const check = () => {
-      const inst = canvasTransform.current as any;
+      const inst = canvasTransform.getInstance();
       if (!inst?.state?.scale) {
         raf = requestAnimationFrame(check);
         return;
