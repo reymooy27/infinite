@@ -9,7 +9,7 @@ import { useWindowStore } from "@/stores/useWindowStore";
 import { canvasTransform } from "@/lib/canvasTransform";
 import type { AppId } from "@/types";
 
-const DOCK_APPS: AppId[] = ["notes", "devBrowser", "ssh"];
+const DOCK_APPS: AppId[] = ["notes", "devBrowser", "ssh", "browserCanvas"];
 
 function WindowList({
   windows,

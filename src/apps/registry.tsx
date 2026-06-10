@@ -5,7 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Code2, Copy, Download, FileText, Monitor, RefreshCw, Upload } from "lucide-react";
+import { Copy, Download, FileTerminal, Globe, Monitor, NotepadText, RefreshCw, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
@@ -1565,7 +1565,7 @@ export const registry: Record<AppId, AppDefinition> = {
   notes: {
     id: "notes",
     title: "Notes",
-    icon: <FileText />,
+    icon: <NotepadText />,
     component: Notes as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
@@ -1576,7 +1576,7 @@ export const registry: Record<AppId, AppDefinition> = {
   ssh: {
     id: "ssh",
     title: "SSH",
-    icon: <Monitor />,
+    icon: <FileTerminal />,
     component: SSHTerminal as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
@@ -1587,13 +1587,24 @@ export const registry: Record<AppId, AppDefinition> = {
   devBrowser: {
     id: "devBrowser",
     title: "Dev Browser",
-    icon: <Code2 />,
+    icon: <Globe />,
     component: DevBrowser as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
     }>,
     defaultWidth: 1024,
     defaultHeight: 768,
+  },
+  browserCanvas: {
+    id: "browserCanvas",
+    title: "Browser",
+    icon: <Monitor />,
+    component: BrowserCanvas as React.ComponentType<{
+      connectionId?: number;
+      windowId?: string;
+    }>,
+    defaultWidth: 1280,
+    defaultHeight: 800,
   },
 };
 

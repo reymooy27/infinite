@@ -49,6 +49,7 @@ const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
   notes: { width: 600, height: 450 },
   ssh: { width: 400, height: 350 },
   devBrowser: { width: 1024, height: 768 },
+  browserCanvas: { width: 1280, height: 800 },
 };
 
 let windowCounter = 0;
