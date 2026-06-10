@@ -9,6 +9,7 @@ type TransformState = {
 type TransformInstance = {
   state?: TransformState;
   wrapperComponent?: HTMLElement;
+  contentComponent?: HTMLElement;
   setState?: (scale: number, positionX: number, positionY: number) => void;
   setTransform?: (
     positionX: number,
@@ -19,6 +20,8 @@ type TransformInstance = {
   instance?: TransformInstance;
 };
 
+type TransformListener = (state: TransformState) => void;
+
 const getInstance = (): TransformInstance | null => {
   const current = canvasTransform.current as TransformInstance | null;
   return current?.instance ?? current ?? null;
@@ -27,10 +30,41 @@ const getInstance = (): TransformInstance | null => {
 const getWrapper = (inst: TransformInstance | null): HTMLElement | null =>
   inst?.wrapperComponent ?? null;
 
+const listeners = new Set<TransformListener>();
+
+const applyTransform = (
+  inst: TransformInstance | null,
+  positionX: number,
+  positionY: number,
+  scale: number,
+) => {
+  if (!inst) return false;
+  if (inst?.setTransform) {
+    inst.setTransform(positionX, positionY, scale, 0);
+    return true;
+  }
+  if (inst?.setState) {
+    if (!inst.contentComponent) return false;
+    inst.setState(scale, positionX, positionY);
+    return true;
+  }
+  return false;
+};
+
 export const canvasTransform = {
   current: null as any,
   getInstance,
   getState: () => getInstance()?.state ?? null,
+  subscribe: (listener: TransformListener) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  },
+  notify: (state: TransformState) => {
+    listeners.forEach((listener) => listener(state));
+  },
+  applyTransform,
   getViewportCenter: () => {
     const inst = getInstance();
     const wrapper = getWrapper(inst);
@@ -64,10 +98,15 @@ export const canvasTransform = {
   },
   resetZoom: () => {
     const inst = getInstance();
-    if (inst?.setState) {
+    if (inst?.setTransform || inst?.setState) {
       const wrapper = getWrapper(inst);
       if (wrapper) {
-        inst.setState(1, wrapper.offsetWidth / 2 - 5000, wrapper.offsetHeight / 2 - 5000);
+        applyTransform(
+          inst,
+          wrapper.offsetWidth / 2 - 5000,
+          wrapper.offsetHeight / 2 - 5000,
+          1,
+        );
       }
     }
   },
@@ -85,7 +124,7 @@ export const canvasTransform = {
     const scale = inst.state.scale || 1;
     const tx = vw / 2 - winCenterX * scale;
     const ty = vh / 2 - winCenterY * scale;
-    inst.setState?.(scale, tx, ty);
+    applyTransform(inst, tx, ty, scale);
   },
   fitToWindows: (windows: WindowData[]) => {
     const inst = getInstance();
@@ -122,6 +161,6 @@ export const canvasTransform = {
     const tx = vw / 2 - centerX * scale;
     const ty = vh / 2 - centerY * scale;
 
-    inst.setTransform(tx, ty, scale, 0);
+    applyTransform(inst, tx, ty, scale);
   },
 };

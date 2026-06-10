@@ -51,14 +51,29 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     ).instance?.wrapperComponent;
     if (!wrapper) return;
     canvasTransform.current = (tw as any).instance ?? tw;
-    const vw = wrapper.offsetWidth;
-    const vh = wrapper.offsetHeight;
-    ((canvasTransform.current as any)?.setState ?? (tw as any)?.setState)?.(
-      DEFAULT_SCALE,
-      vw / 2 - 5000 * DEFAULT_SCALE,
-      vh / 2 - 5000 * DEFAULT_SCALE,
-    );
+    let frame = 0;
+    let attempts = 0;
+    const applyInitialTransform = () => {
+      attempts += 1;
+      const inst = canvasTransform.getInstance();
+      const currentWrapper = inst?.wrapperComponent;
+      if (!currentWrapper || currentWrapper.offsetWidth === 0 || currentWrapper.offsetHeight === 0) {
+        if (attempts < 20) frame = requestAnimationFrame(applyInitialTransform);
+        return;
+      }
+      const applied = canvasTransform.applyTransform(
+        inst,
+        currentWrapper.offsetWidth / 2 - 5000 * DEFAULT_SCALE,
+        currentWrapper.offsetHeight / 2 - 5000 * DEFAULT_SCALE,
+        DEFAULT_SCALE,
+      );
+      if (!applied && attempts < 20) {
+        frame = requestAnimationFrame(applyInitialTransform);
+      }
+    };
+    frame = requestAnimationFrame(applyInitialTransform);
     return () => {
+      cancelAnimationFrame(frame);
       canvasTransform.current = null;
     };
   }, []);
@@ -145,12 +160,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       const ratio = clamped / scale;
       const newPosX = mouseX - (mouseX - positionX) * ratio;
       const newPosY = mouseY - (mouseY - positionY) * ratio;
-      (inst.setState ?? inst.instance?.setState)?.call(
-        inst,
-        clamped,
-        newPosX,
-        newPosY,
-      );
+      canvasTransform.applyTransform(inst, newPosX, newPosY, clamped);
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
@@ -283,7 +293,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       const scale = state?.scale ?? 1;
       const tx = middlePanStart.current.tx + dx;
       const ty = middlePanStart.current.ty + dy;
-      ((tw as any).instance ?? tw)?.setState?.(scale, tx, ty);
+      canvasTransform.applyTransform((tw as any).instance ?? tw, tx, ty, scale);
     };
 
     const onMouseUp = () => {
@@ -393,6 +403,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         onTransform={({ state }) => {
           const newScale = state.scale;
           scaleRef.current = newScale;
+          canvasTransform.notify(state);
           if (newScale !== lastScale.current) {
             setIsZooming(true);
             lastScale.current = newScale;
@@ -412,11 +423,12 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           const handleReset = () => {
             const inst = canvasTransform.getInstance() as any;
             const wrapper = inst?.wrapperComponent as HTMLElement | undefined;
-            if (wrapper && inst?.setState) {
-              inst.setState(
-                DEFAULT_SCALE,
+            if (wrapper && (inst?.setTransform || inst?.setState)) {
+              canvasTransform.applyTransform(
+                inst,
                 wrapper.offsetWidth / 2 - 5000 * DEFAULT_SCALE,
                 wrapper.offsetHeight / 2 - 5000 * DEFAULT_SCALE,
+                DEFAULT_SCALE,
               );
             }
           };

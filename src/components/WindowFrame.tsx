@@ -69,6 +69,9 @@ export default function WindowFrame({
   const [isMobile, setIsMobile] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
+  const [canvasScale, setCanvasScale] = useState(
+    () => canvasTransform.getState()?.scale ?? 1,
+  );
   const frameRef = useRef<any>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const pointerDownTime = useRef<number>(0);
@@ -105,7 +108,6 @@ export default function WindowFrame({
   );
 
   const z = win?.z ?? 1;
-  const scale = canvasTransform.getState()?.scale ?? 1;
   const isActive = focusTargetId === id;
   const isMaximized = win?.maximized;
   const isMinimized = win?.minimized;
@@ -124,6 +126,12 @@ export default function WindowFrame({
     return () => {
       mediaQuery.removeEventListener("change", updateIsMobile);
     };
+  }, []);
+
+  useEffect(() => {
+    return canvasTransform.subscribe((state) => {
+      setCanvasScale(state.scale ?? 1);
+    });
   }, []);
 
   const getViewBounds = useCallback(() => {
@@ -459,7 +467,7 @@ export default function WindowFrame({
       minWidth={MIN_WIDTH}
       minHeight={MIN_HEIGHT}
       style={{ zIndex: z, display: "flex", willChange: "transform" }}
-      scale={scale}
+      scale={canvasScale}
       dragHandleClassName="window-drag-handle"
       disableDragging={false}
       enableResizing={resizeConfig}
