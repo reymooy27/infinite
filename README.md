@@ -43,7 +43,13 @@ The frontend handles UI and local API routes. The Express server handles:
 
 ## Environment
 
-Create a root `.env` file:
+Copy the example file first:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env`:
 
 ```env
 DATABASE_URL=postgresql://infinite:infinite@localhost:5432/infinite
@@ -61,7 +67,7 @@ Notes:
 - `NEXT_PUBLIC_WS_URL`: optional; leave empty for local development, set it when frontend and WS server are on different origins
 - `ALLOWED_ORIGINS`: origins allowed to call the Express/WebSocket server
 
-The repo also includes [server/.env.example](/home/rey/project/infinite/server/.env.example:1), but the current app reads its important runtime env from the root `.env`.
+The repo also includes [server/.env.example](/home/rey/project/infinite/server/.env.example:1), but the current app reads its important runtime env from the root [.env.example](/home/rey/project/infinite/.env.example:1) and `.env`.
 
 Generate a secure encryption secret:
 
