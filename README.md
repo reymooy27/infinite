@@ -1,141 +1,267 @@
-# Infinite — Spatial UI Dev Tool
+# Infinite
 
-A browser-based workspace with an infinite canvas, draggable windows, and integrated developer tools.
+Infinite is a browser-based spatial workspace for development tools. It gives you an infinite canvas with draggable windows for SSH sessions, notes, a remote browser, and project context.
 
-## Features
+## What It Does
 
-- **Infinite Canvas** — Pan and zoom across a 10000x10000 workspace
-- **Window System** — Draggable and resizable windows with macOS-style controls
-- **Built-in Apps** — Notes, Code Editor, Terminal, Browser, SSH Client
-- **Real Browser** — Remote-controlled Chromium via Puppeteer WebSocket
-- **SSH Terminal** — Full terminal sessions with xterm.js
-- **Layout Persistence** — Window positions saved to PostgreSQL
+- Infinite canvas with pan/zoom and persistent window layouts
+- SSH connections inside draggable xterm.js windows
+- Optional SSH relay agent for private networks, Tailscale, or LAN-only hosts
+- Remote browser windows backed by Puppeteer
+- Notes and project-oriented workspace state stored in PostgreSQL
 
 ## Stack
 
-- **Next.js 16** (App Router)
-- **Tailwind CSS v4**
-- **Zustand** — Window focus / z-index state
-- **GSAP + ScrollTrigger** — Animation
-- **react-zoom-pan-pinch** — Infinite canvas
-- **react-rnd** — Draggable/resizable windows
-- **xterm.js** — SSH terminal emulator
-- **Puppeteer** — Headless browser for remote browsing
-- **Prisma** — PostgreSQL ORM
+- Next.js 16
+- React 19
+- Tailwind CSS v4
+- Express + WebSocket
+- Prisma + PostgreSQL
+- xterm.js
+- ssh2
+- Puppeteer
 
 ## Architecture
 
-```
-app/                    Next.js frontend
-├── App.tsx             Root layout + window orchestration
-├── page.tsx            Root page
-├── api/                API routes (layout, ssh connections)
-├── layout.tsx          Metadata, fonts
-└── globals.css         Tailwind v4 + custom fonts
+This repo runs two app processes in development:
 
-src/
-├── apps/registry.tsx   App definitions (CodeEditor, Terminal, Notes, Browser, SSH)
-├── components/
-│   ├── Canvas.tsx       Infinite canvas + zoom controls
-│   ├── WindowFrame.tsx  Draggable/resizable window chrome
-│   ├── Dock.tsx         Bottom dock with app icons
-│   ├── Sidebar.tsx      SSH connection panel
-│   └── ...
-├── stores/
-│   ├── useWindowStore.ts   Window state (open/close/minimize/maximize/restore)
-│   └── useSSHStore.ts     SSH connection state
-├── types/index.ts         TypeScript types
-└── lib/                   Utilities (encryption, prisma, logger)
+- Next.js frontend on `http://localhost:3000`
+- Express/WebSocket server on `http://localhost:7891`
 
-server/                 Custom Node.js server
-├── index.ts            Express + WebSocket (port 3001)
-└── lib/
-    ├── ssh.ts          SSH session management via ssh2
-    └── browser.ts      Puppeteer browser pool
+The frontend handles UI and local API routes. The Express server handles:
 
-prisma/
-└── schema.prisma       PostgreSQL schema (Connection, Layout models)
-```
+- SSH WebSocket sessions
+- Browser session control
+- agent relay connections
+- online agent status checks
 
-## Getting Started
-
-### Prerequisites
+## Requirements
 
 - Node.js 20+
-- PostgreSQL database
+- PostgreSQL
+- npm
 
-### Setup
+## Environment
+
+Create a root `.env` file:
+
+```env
+DATABASE_URL=postgresql://infinite:infinite@localhost:5432/infinite
+DIRECT_URL=postgresql://infinite:infinite@localhost:5432/infinite
+ENCRYPTION_SECRET=replace-with-64-char-random-hex
+NEXT_PUBLIC_WS_URL=
+ALLOWED_ORIGINS=http://localhost:3000
+```
+
+Notes:
+
+- `DATABASE_URL`: main Prisma/app database connection
+- `DIRECT_URL`: direct database connection for Prisma operations
+- `ENCRYPTION_SECRET`: used to encrypt saved SSH passwords and private keys
+- `NEXT_PUBLIC_WS_URL`: optional; leave empty for local development, set it when frontend and WS server are on different origins
+- `ALLOWED_ORIGINS`: origins allowed to call the Express/WebSocket server
+
+The repo also includes [server/.env.example](/home/rey/project/infinite/server/.env.example:1), but the current app reads its important runtime env from the root `.env`.
+
+Generate a secure encryption secret:
 
 ```bash
-# Install dependencies
+openssl rand -hex 32
+```
+
+## Install
+
+```bash
 npm install
+npx prisma db push
+```
 
-# Configure environment
-cp .env.example .env.local
-# Edit .env.local with your DATABASE_URL and WS_URL
+`npm install` also runs:
 
-# Run database migrations
-npx prisma migrate dev
+- `patch-package`
+- `prisma generate`
 
-# Start development
+## Run Locally
+
+```bash
 npm run dev
 ```
 
-The development command (`npm run dev`) runs both Next.js dev server and the WebSocket server concurrently.
+That starts:
 
-### Environment Variables
+- Next.js on port `3000`
+- the SSH/browser relay server on port `7891`
 
-| Variable       | Description                     | Default               |
-| -------------- | ------------------------------- | --------------------- |
-| `DATABASE_URL` | PostgreSQL connection string    | `postgresql://...`    |
-| `WS_URL`       | WebSocket server URL (optional) | `ws://localhost:7891` |
+Open:
 
-## App Descriptions
+```text
+http://localhost:3000
+```
 
-| App             | Description                                                                   |
-| --------------- | ----------------------------------------------------------------------------- |
-| **Notes**       | Simple notepad                                                                |
-| **Code Editor** | Text editor with line numbers                                                 |
-| **Terminal**    | Simulated terminal (date, whoami, ls, neofetch, clear, help)                  |
-| **Browser**     | Remote Chromium via Puppeteer; supports URL bar, navigation, scroll, keyboard |
-| **SSH**         | Real SSH sessions via xterm.js + WebSocket                                    |
+## Build
 
-## Window Operations
+```bash
+npm run build
+```
 
-- **Drag** title bar to move
-- **Resize** corners/edges
-- **Traffic lights** — minimize (yellow), maximize (green), close (red)
-- **Zoom** — Ctrl+scroll or use zoom controls (top-left of canvas)
-- **Pan** — Middle-mouse drag or Ctrl+arrow keys
+## Lint
 
-## Database Schema
+```bash
+npm run lint
+```
 
-### Connection
+## Database
 
-Stores SSH connection credentials (encrypted via AES-256-GCM).
+Main models in [prisma/schema.prisma](/home/rey/project/infinite/prisma/schema.prisma:1):
 
-| Field                 | Type    | Description           |
-| --------------------- | ------- | --------------------- |
-| `id`                  | Int     | Primary key           |
-| `name`                | String  | Display name          |
-| `host`                | String  | SSH host              |
-| `port`                | Int     | SSH port (default 22) |
-| `username`            | String  | SSH username          |
-| `authType`            | String  | "password" or "key"   |
-| `passwordEncrypted`   | String? | Encrypted password    |
-| `privateKeyEncrypted` | String? | Encrypted private key |
+- `Connection`: saved SSH targets and encrypted credentials
+- `Layout`: saved canvas/window state
+- `Agent`: relay agents for private-network SSH
+- `Project`: project workspace state
+- `Note`: notes
+- `Bookmark`: saved URLs
 
-### Layout
+For local development this app uses a fixed local user id, so no auth setup is currently required.
 
-Stores window layout state (position, size, z-index, maximized/minimized flags).
+## How To Use
+
+### 1. Start the App
+
+Run:
+
+```bash
+npm run dev
+```
+
+Then open `http://localhost:3000`.
+
+### 2. Add an SSH Connection
+
+In the SSH panel:
+
+1. Click `Add Connection`
+2. Fill in:
+   - name
+   - host
+   - port
+   - username
+   - auth method: password or private key
+3. Leave the route as `Via Fly server (public IP)` if the target is publicly reachable from the relay server
+4. Save and click `Connect`
+
+This opens an SSH terminal window on the canvas.
+
+### 3. Use the Remote Browser
+
+If a saved connection supports it, use the `Dev` button beside that SSH connection to open the browser window attached to the same backend connection.
+
+## Agent Mode
+
+The agent exists for SSH targets that are not publicly reachable.
+
+Examples:
+
+- a machine on your home LAN
+- a private cloud VM
+- a host only reachable through Tailscale or another VPN
+
+### How Agent Mode Works
+
+Without an agent:
+
+- the server connects directly to `host:port`
+
+With an agent:
+
+- a small Node.js process runs on a machine that can reach the private host
+- that process connects back to Infinite over WebSocket
+- Infinite tells that process to open the SSH session on its behalf
+
+### When To Use It
+
+Use an agent when the SSH target is reachable from your machine or private network, but not reachable from the public relay server.
+
+### Create an Agent
+
+In the Agent panel:
+
+1. Click `Create Agent`
+2. Copy the generated command
+3. Run that command on the machine that has network access to the target host
+
+The command looks like:
+
+```bash
+INFINITE_TOKEN=... INFINITE_SERVER=ws://localhost:7891 node agent/index.js
+```
+
+When connected successfully, the agent will show as `online`.
+
+### Run the Agent Manually
+
+You can also run it yourself from this repo:
+
+```bash
+cd agent
+npm install
+INFINITE_TOKEN=your-token INFINITE_SERVER=ws://localhost:7891 node index.js
+```
+
+Required environment variables:
+
+- `INFINITE_TOKEN`: generated by the app when you create the agent
+- `INFINITE_SERVER`: WebSocket base URL for the relay server, for example `ws://localhost:7891` or `wss://your-domain`
+
+### Use an Agent for a Connection
+
+When creating an SSH connection, choose:
+
+```text
+Via agent: <agent name>
+```
+
+instead of the default direct route.
+
+Important:
+
+- the `host` field must be resolvable from the machine running the agent
+- the agent machine must itself be able to reach the SSH target
 
 ## Scripts
 
 ```bash
-npm run dev          # Start dev server + WebSocket server
-npm run build         # Production build
-npm run lint          # ESLint
-npx prisma studio     # Database GUI
-npx prisma migrate   # Run migrations
+npm run dev
+npm run build
+npm run start
+npm run lint
+npm run db:push
+npm run db:migrate
+npm run db:studio
 ```
 
+## Important Files
+
+- [src/App.jsx](/home/rey/project/infinite/src/App.jsx:1): top-level workspace layout
+- [src/components/Canvas.jsx](/home/rey/project/infinite/src/components/Canvas.jsx:1): infinite canvas wrapper
+- [src/components/WindowFrame.jsx](/home/rey/project/infinite/src/components/WindowFrame.jsx:1): draggable/resizable window shell
+- [src/apps/registry.tsx](/home/rey/project/infinite/src/apps/registry.tsx:1): app registry including SSH terminal wiring
+- [src/components/SSHPanel.tsx](/home/rey/project/infinite/src/components/SSHPanel.tsx:1): saved SSH connections UI
+- [src/components/AgentPanel.tsx](/home/rey/project/infinite/src/components/AgentPanel.tsx:1): create/list agent UI
+- [server/index.ts](/home/rey/project/infinite/server/index.ts:1): Express + WebSocket relay server
+- [server/lib/ssh.ts](/home/rey/project/infinite/server/lib/ssh.ts:1): SSH session handling and agent proxy logic
+- [agent/index.js](/home/rey/project/infinite/agent/index.js:1): relay agent process
+
+## Open Source Notes
+
+Current state:
+
+- local-user only, no multi-user auth flow
+- credentials are encrypted at rest using `ENCRYPTION_SECRET`
+- the agent is a plain Node.js script, not yet packaged as a standalone installer
+
+If you publish this publicly, document your deployment topology clearly:
+
+- where the Next.js app runs
+- where the WebSocket relay server runs
+- which hosts the relay can access directly
+- when users should use agent mode instead
