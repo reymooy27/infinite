@@ -52,8 +52,6 @@ const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
   browserCanvas: { width: 1280, height: 800 },
 };
 
-let windowCounter = 0;
-
 export const useWindowStore = create<WindowState>((set, get) => ({
   windows: [],
   topZ: 0,
@@ -213,10 +211,12 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       const res = await fetch("/api/layout");
       const data = await res.json();
       if (data.windows) {
-        const normalized = data.windows.map(normalizeWindow);
-        const topZ = Math.max(0, ...normalized.map((w: any) => w.z || 0));
-        const topmost = normalized.reduce((best: any, w: any) =>
-          (w.z || 0) > (best?.z || 0) ? w : best, null);
+        const normalized: WindowData[] = data.windows.map(normalizeWindow);
+        const topZ = Math.max(0, ...normalized.map((w) => w.z || 0));
+        const topmost = normalized.reduce<WindowData | null>(
+          (best, w) => ((w.z || 0) > (best?.z || 0) ? w : best),
+          null,
+        );
         set({ windows: normalized, topZ, focusTargetId: topmost?.id ?? null });
       }
     } catch (err) {
@@ -248,10 +248,12 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       const res = await fetch(`/api/projects/${projectId}/canvas`);
       const data = await res.json();
       if (data.windows) {
-        const normalized = data.windows.map(normalizeWindow);
-        const topZ = Math.max(0, ...normalized.map((w: any) => w.z || 0));
-        const topmost = normalized.reduce((best: any, w: any) =>
-          (w.z || 0) > (best?.z || 0) ? w : best, null);
+        const normalized: WindowData[] = data.windows.map(normalizeWindow);
+        const topZ = Math.max(0, ...normalized.map((w) => w.z || 0));
+        const topmost = normalized.reduce<WindowData | null>(
+          (best, w) => ((w.z || 0) > (best?.z || 0) ? w : best),
+          null,
+        );
         const visibleTopmost = normalized
           .filter((w: WindowData) => !w.minimized && !w.maximized)
           .reduce((best: WindowData | null, w: WindowData) =>

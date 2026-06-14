@@ -19,27 +19,18 @@ import { useProjectStore } from "@/stores/useProjectStore";
 export default function App() {
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
-  const loadLayout = useWindowStore((s) => s.loadLayout);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const bgColor = useSettingsStore((s) => s.bgColor);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !localStorage.getItem("infinite-onboarded");
+  });
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(console.error);
-    }
-  }, []);
-
-  useEffect(() => {
-    setIsMobile(window.innerWidth < 768);
-  }, []);
-
-  useEffect(() => {
-    if (!localStorage.getItem("infinite-onboarded")) {
-      setShowOnboarding(true);
     }
   }, []);
 

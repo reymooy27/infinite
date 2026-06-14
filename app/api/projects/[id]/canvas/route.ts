@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { LOCAL_USER_ID } from "@/lib/auth";
 
+type ProjectCanvasData = {
+  windows?: unknown[];
+};
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -10,8 +14,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       select: { canvasData: true, canvasTransform: true },
     });
     if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const canvasData = project.canvasData as ProjectCanvasData | null;
     return NextResponse.json({
-      windows: (project.canvasData as any)?.windows ?? [],
+      windows: Array.isArray(canvasData?.windows) ? canvasData.windows : [],
       canvasTransform: project.canvasTransform ?? null,
     });
   } catch {

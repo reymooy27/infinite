@@ -95,7 +95,7 @@ function closeSession(sessionId) {
 }
 
 function openSSHSession(msg) {
-  const { sessionId, host, port, username, authType, password, privateKey, windowId } = msg;
+  const { sessionId, host, port, username, authType, password, privateKey } = msg;
   console.log(`[Agent] Opening SSH session ${sessionId} → ${username}@${host}:${port}`);
 
   const client = new SSHClient();

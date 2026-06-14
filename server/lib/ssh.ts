@@ -542,8 +542,8 @@ export function createSSHSocket(
     return null;
   }
 
-  let initialCols = 80;
-  let initialRows = 24;
+  const initialCols = 80;
+  const initialRows = 24;
 
   conn.on("ready", () => {
     logger.info(`[SSH] Shell ready for connection ${connection.id}`);

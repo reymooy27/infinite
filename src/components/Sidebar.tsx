@@ -7,6 +7,14 @@ import SettingsPanel from "./SettingsPanel";
 import ProjectsPanel from "./ProjectsPanel";
 import { useProjectStore } from "@/stores/useProjectStore";
 
+type SidebarPage =
+  | "root"
+  | "projects"
+  | "ssh"
+  | "agents"
+  | "settings"
+  | "settings-terminal";
+
 const ROOT_ITEMS = [
   {
     id: "projects",
@@ -58,9 +66,7 @@ export default function Sidebar({
   onOpenSectionConsumed?: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activePage, setActivePage] = useState<
-    "root" | "projects" | "ssh" | "agents" | "settings" | "settings-terminal"
-  >("root");
+  const [activePage, setActivePage] = useState<SidebarPage>("root");
   const activeProjectName = useProjectStore((s) => {
     const p = s.projects.find((p) => p.id === s.activeProjectId);
     return p?.name ?? null;
@@ -69,12 +75,23 @@ export default function Sidebar({
   const startY = useRef(0);
   const startTransform = useRef(0);
 
+  const isSidebarPage = (value: string): value is SidebarPage =>
+    value === "root" ||
+    value === "projects" ||
+    value === "ssh" ||
+    value === "agents" ||
+    value === "settings" ||
+    value === "settings-terminal";
+
   // Open to a specific section on external request
   useEffect(() => {
-    if (openSection) {
-      setActivePage(openSection as any);
-      setIsOpen(true);
-      onOpenSectionConsumed?.();
+    if (openSection && isSidebarPage(openSection)) {
+      const frame = requestAnimationFrame(() => {
+        setActivePage(openSection);
+        setIsOpen(true);
+        onOpenSectionConsumed?.();
+      });
+      return () => cancelAnimationFrame(frame);
     }
   }, [openSection, onOpenSectionConsumed]);
 
@@ -204,7 +221,7 @@ export default function Sidebar({
                     {ROOT_ITEMS.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => setActivePage(item.id as any)}
+                        onClick={() => setActivePage(item.id)}
                         className="flex w-full items-center justify-between rounded-lg border border-neutral-700 bg-neutral-800/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:border-neutral-600 hover:bg-neutral-800"
                       >
                         <div className="flex items-center gap-2.5">

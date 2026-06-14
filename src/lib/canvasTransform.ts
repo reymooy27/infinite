@@ -52,7 +52,7 @@ const applyTransform = (
 };
 
 export const canvasTransform = {
-  current: null as any,
+  current: null as TransformInstance | null,
   getInstance,
   getState: () => getInstance()?.state ?? null,
   subscribe: (listener: TransformListener) => {
