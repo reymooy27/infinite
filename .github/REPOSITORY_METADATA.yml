@@ -1,0 +1,41 @@
+# GitHub repository metadata
+#
+# GitHub does not allow setting repository metadata (description, topics,
+# homepage, social preview) via files in the repo. This file is a reference
+# for the maintainer when configuring the repo on github.com.
+#
+# Apply these on:
+#   https://github.com/reymooy27/infinite/settings
+#
+# ---- Description (single line, <= 350 chars) ----
+description: >-
+  Browser-based spatial workspace for developers: infinite canvas with
+  draggable SSH terminals, remote browser windows, notes, and project
+  context, all backed by a WebSocket relay and an optional agent for
+  private-network hosts.
+
+# ---- Homepage (optional) ----
+# homepage: https://infinite.example.com
+
+# ---- Topics (up to 20, lowercase, hyphenated) ----
+topics:
+  - nextjs
+  - react
+  - tailwindcss
+  - typescript
+  - prisma
+  - postgresql
+  - websocket
+  - express
+  - ssh
+  - xterm
+  - puppeteer
+  - developer-tools
+  - workspace
+  - self-hosted
+  - tailscale
+  - docker
+
+# ---- Social preview ----
+# Upload a 1280x640 PNG at:
+#   https://github.com/reymooy27/infinite/settings/social_preview
