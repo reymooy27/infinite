@@ -38,4 +38,4 @@ USER nextjs
 EXPOSE 7890
 ENV PORT=7890
 ENV HOSTNAME="0.0.0.0"
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node server.js"]

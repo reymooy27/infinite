@@ -25,98 +25,141 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 - ssh2
 - Puppeteer
 
-## Architecture
+## Quick Start (Docker — recommended)
 
-This repo runs two app processes in development:
+The fastest way to try Infinite. Runs the database, frontend, and relay
+server in one command:
 
-- Next.js frontend on `http://localhost:3000`
-- Express/WebSocket server on `http://localhost:7891`
+```bash
+docker compose up -d --build
+```
 
-The frontend handles UI and local API routes. The Express server handles:
+Open: <http://localhost:7890>
 
-- SSH WebSocket sessions
-- Browser session control
-- agent relay connections
-- online agent status checks
+Ports:
 
-## Requirements
+- frontend: `http://localhost:7890`
+- relay server: `http://localhost:7891`
+- database: `localhost:5432` (`infinite` / `infinite` / `infinite`)
+
+The frontend container runs `prisma db push` on startup, so the database
+schema is created automatically. No `.env` file is required for the Docker
+setup.
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
+Wipe the database volume too:
+
+```bash
+docker compose down -v
+```
+
+## Manual Install (local development)
+
+Use this path if you want to run the app directly with Node.js instead of
+Docker.
+
+### Requirements
 
 - Node.js 20+
-- PostgreSQL
+- PostgreSQL 14+ running on `localhost:5432`
 - npm
 
-## Environment
+> Note: `npm install` downloads Puppeteer's bundled Chromium (~300 MB). If
+> you're on Alpine, behind a strict proxy, or low on disk, see
+> [Puppeteer troubleshooting](#puppeteer-troubleshooting) below.
 
-Copy the example file first:
+### 1. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env`:
-
-```env
-DATABASE_URL=postgresql://infinite:infinite@localhost:5432/infinite
-DIRECT_URL=postgresql://infinite:infinite@localhost:5432/infinite
-ENCRYPTION_SECRET=replace-with-64-char-random-hex
-NEXT_PUBLIC_WS_URL=
-ALLOWED_ORIGINS=http://localhost:3000
-```
-
-Notes:
-
-- `DATABASE_URL`: main Prisma/app database connection
-- `DIRECT_URL`: direct database connection for Prisma operations
-- `ENCRYPTION_SECRET`: used to encrypt saved SSH passwords and private keys
-- `NEXT_PUBLIC_WS_URL`: optional; leave empty for local development, set it when frontend and WS server are on different origins
-- `ALLOWED_ORIGINS`: origins allowed to call the Express/WebSocket server
-
-The repo also includes [server/.env.example](/home/rey/project/infinite/server/.env.example:1), but the current app reads its important runtime env from the root [.env.example](/home/rey/project/infinite/.env.example:1) and `.env`.
-
-Generate a secure encryption secret:
+Generate a 64-character hex secret for encrypting saved SSH credentials:
 
 ```bash
 openssl rand -hex 32
 ```
 
-## Install
+Put the output in `.env` as `ENCRYPTION_SECRET`. A complete `.env` looks
+like:
+
+```env
+DATABASE_URL=postgresql://infinite:infinite@localhost:5432/infinite
+DIRECT_URL=postgresql://infinite:infinite@localhost:5432/infinite
+ENCRYPTION_SECRET=<paste-your-generated-secret-here>
+NEXT_PUBLIC_WS_URL=
+ALLOWED_ORIGINS=http://localhost:3000
+```
+
+Variable reference:
+
+- `DATABASE_URL`: main Prisma/app database connection
+- `DIRECT_URL`: direct database connection for Prisma operations
+- `ENCRYPTION_SECRET`: encrypts saved SSH passwords and private keys
+  — **if you lose this, saved credentials cannot be recovered**
+- `NEXT_PUBLIC_WS_URL`: leave empty for local dev; set to your relay server
+  URL when the frontend and WS server run on different origins
+- `ALLOWED_ORIGINS`: origins allowed to call the Express/WebSocket server
+
+### 2. Set up the database
+
+The default `.env.example` expects a PostgreSQL role `infinite` with password
+`infinite` and a database named `infinite`. Pick one:
+
+**Option A — run Postgres in Docker (easiest if you don't have Postgres
+installed):**
+
+```bash
+docker run -d --name infinite-pg \
+  -e POSTGRES_USER=infinite \
+  -e POSTGRES_PASSWORD=infinite \
+  -e POSTGRES_DB=infinite \
+  -p 5432:5432 \
+  postgres:16-alpine
+```
+
+**Option B — use a native Postgres install:**
+
+```bash
+# macOS (Homebrew)
+brew services start postgresql@16
+createuser infinite -P        # enter "infinite" as the password when prompted
+createdb infinite -O infinite
+
+# Debian / Ubuntu
+sudo -u postgres psql -c "CREATE USER infinite WITH PASSWORD 'infinite';"
+sudo -u postgres psql -c "CREATE DATABASE infinite OWNER infinite;"
+```
+
+### 3. Install dependencies and push the schema
 
 ```bash
 npm install
-npx prisma db push
+npm run db:push
 ```
 
-`npm install` also runs:
+`npm install` also runs `patch-package` and `prisma generate` via
+`postinstall`, so you don't need to run them manually.
 
-- `patch-package`
-- `prisma generate`
-
-## Run Locally
+### 4. Run the app
 
 ```bash
 npm run dev
 ```
 
-That starts:
+That starts the Next.js frontend on `http://localhost:3000` and the
+Express/WebSocket relay server on `http://localhost:7891`. Open
+`http://localhost:3000`.
 
-- Next.js on port `3000`
-- the SSH/browser relay server on port `7891`
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-## Build
+## Build and Lint
 
 ```bash
 npm run build
-```
-
-## Lint
-
-```bash
 npm run lint
 ```
 
@@ -131,21 +174,12 @@ Main models in [prisma/schema.prisma](/home/rey/project/infinite/prisma/schema.p
 - `Note`: notes
 - `Bookmark`: saved URLs
 
-For local development this app uses a fixed local user id, so no auth setup is currently required.
+For local development this app uses a fixed local user id, so no auth setup
+is currently required.
 
 ## How To Use
 
-### 1. Start the App
-
-Run:
-
-```bash
-npm run dev
-```
-
-Then open `http://localhost:3000`.
-
-### 2. Add an SSH Connection
+### 1. Add an SSH connection
 
 In the SSH panel:
 
@@ -156,14 +190,17 @@ In the SSH panel:
    - port
    - username
    - auth method: password or private key
-3. Leave the route as `Via Fly server (public IP)` if the target is publicly reachable from the relay server
+3. Leave the route as `Via Fly server (public IP)` if the target is publicly
+   reachable from the relay server
 4. Save and click `Connect`
 
 This opens an SSH terminal window on the canvas.
 
-### 3. Use the Remote Browser
+### 2. Use the remote browser
 
-If a saved connection supports it, use the `Dev` button beside that SSH connection to open the browser window attached to the same backend connection.
+If a saved connection supports it, use the `Dev` button beside that SSH
+connection to open the browser window attached to the same backend
+connection.
 
 ## Agent Mode
 
@@ -189,7 +226,8 @@ With an agent:
 
 ### When To Use It
 
-Use an agent when the SSH target is reachable from your machine or private network, but not reachable from the public relay server.
+Use an agent when the SSH target is reachable from your machine or private
+network, but not reachable from the public relay server.
 
 ### Create an Agent
 
@@ -197,7 +235,8 @@ In the Agent panel:
 
 1. Click `Create Agent`
 2. Copy the generated command
-3. Run that command on the machine that has network access to the target host
+3. Run that command on the machine that has network access to the target
+   host
 
 The command looks like:
 
@@ -220,7 +259,8 @@ INFINITE_TOKEN=your-token INFINITE_SERVER=ws://localhost:7891 node index.js
 Required environment variables:
 
 - `INFINITE_TOKEN`: generated by the app when you create the agent
-- `INFINITE_SERVER`: WebSocket base URL for the relay server, for example `ws://localhost:7891` or `wss://your-domain`
+- `INFINITE_SERVER`: WebSocket base URL for the relay server, for example
+  `ws://localhost:7891` or `wss://your-domain`
 
 ### Use an Agent for a Connection
 
@@ -236,6 +276,34 @@ Important:
 
 - the `host` field must be resolvable from the machine running the agent
 - the agent machine must itself be able to reach the SSH target
+
+## Puppeteer troubleshooting
+
+`npm install` pulls Puppeteer, which downloads a bundled Chromium build. If
+it fails:
+
+- Disk full or low memory: Puppeteer needs ~300 MB free.
+- Behind a proxy: set `HTTPS_PROXY` and `PUPPETEER_DOWNLOAD_BASE_URL` to a
+  mirror.
+- Don't want Chromium downloaded: set `PUPPETEER_SKIP_DOWNLOAD=true` in
+  `.env`. The remote browser feature will not work until Chromium is
+  installed manually.
+- Need a system Chrome: set
+  `PUPPETEER_EXECUTABLE_PATH=/path/to/chrome` in `.env`.
+
+## Architecture
+
+This repo runs two app processes in development:
+
+- Next.js frontend on `http://localhost:3000`
+- Express/WebSocket server on `http://localhost:7891`
+
+The frontend handles UI and local API routes. The Express server handles:
+
+- SSH WebSocket sessions
+- Browser session control
+- agent relay connections
+- online agent status checks
 
 ## Scripts
 
@@ -272,43 +340,13 @@ Infinite has three components, plus an optional agent:
 | `db`       | PostgreSQL 16          | `5432`       | Persisted state (connections, layouts, notes, projects, agents)   |
 | `agent`    | Standalone Node.js     | outbound WS  | Optional proxy that runs where the SSH target is reachable        |
 
-The `frontend` and `server` can run on the same host or different hosts. The
-`server` is the only component that needs direct network access to SSH
-targets. The `frontend` only talks to the `server` over HTTP and WebSocket.
+The `frontend` and `server` can run on the same host or different hosts.
+The `server` is the only component that needs direct network access to
+SSH targets. The `frontend` only talks to the `server` over HTTP and
+WebSocket.
 
-### Local Development (single host)
-
-```bash
-npm install
-cp .env.example .env
-npm run db:push
-npm run dev
-```
-
-The Next.js app binds to `3000` and the relay server to `7891` on `localhost`.
-
-### Docker Compose (single host)
-
-The included `docker-compose.yml` starts the database, the Next.js frontend,
-and the Express relay server together:
-
-```bash
-docker compose up -d --build
-```
-
-Ports:
-
-- frontend: `http://localhost:7890`
-- server:   `http://localhost:7891`
-- database: `localhost:5432`
-
-If you put the `frontend` behind a TLS-terminating reverse proxy and the
-`server` on a different origin, set:
-
-```env
-NEXT_PUBLIC_WS_URL=wss://your-ws-host
-ALLOWED_ORIGINS=https://your-frontend-host
-```
+For local single-host Docker, see [Quick Start](#quick-start-docker--recommended).
+For local single-host Node.js, see [Manual Install](#manual-install-local-development).
 
 ### Split Host (frontend on Vercel, server elsewhere)
 
@@ -350,36 +388,6 @@ Suggested setup:
 4. If the relay host is behind Tailscale, use the Tailscale hostname in
    `NEXT_PUBLIC_WS_URL` so both ends speak over the tailnet.
 
-### Agent Mode
-
-Use the agent when the SSH target is reachable from a machine on your private
-network (LAN, Tailscale, WireGuard, cloud VPC) but not from the public relay
-server.
-
-Topology:
-
-```text
-Browser -> Vercel (frontend) -> Relay server (public)
-                                   |
-                                   | WebSocket (wss)
-                                   v
-                              Agent host  -->  SSH target
-                          (your laptop / VPS)
-```
-
-Steps:
-
-1. In the Agent panel, create an agent and copy the generated command.
-2. Run that command on the machine that has network access to the SSH
-   target. The agent opens an outbound WebSocket to the relay, so it does
-   not need any inbound port open.
-3. In the SSH connection settings, select `Via agent: <name>` instead of the
-   default direct route.
-
-The `agent/` directory is a standalone Node.js project with its own
-`package.json`. It is not yet packaged as a single binary; run it with Node
-directly or wrap it with your own installer (systemd, launchd, etc.).
-
 ### Reverse Proxy (nginx example)
 
 A minimal nginx config that fronts the frontend on `443` and proxies
@@ -407,7 +415,7 @@ server {
 }
 ```
 
-Adapt the WebSocket path prefix to whatever your `server/index.ts` listens on.
+Adapt the WebSocket path prefix to whatever `server/index.ts` listens on.
 
 ### Systemd (single host)
 
@@ -423,12 +431,12 @@ sudo systemctl enable --now infinite
 
 ## Security Notes
 
-- Infinite is currently a single-user app. There is no auth flow; it assumes
-  it is running on a trusted network or behind a reverse proxy that handles
-  authentication.
+- Infinite is currently a single-user app. There is no auth flow; it
+  assumes it is running on a trusted network or behind a reverse proxy that
+  handles authentication.
 - SSH credentials (passwords and private keys) are encrypted at rest with
   `ENCRYPTION_SECRET`. Treat that secret like a database password: if you
   lose it, saved credentials cannot be recovered.
 - The relay server can open arbitrary TCP connections to any host you
-  configure. Restrict network access to the relay (firewall, Tailscale ACL,
-  Cloudflare Tunnel policy) so only trusted clients can reach it.
+  configure. Restrict network access to the relay (firewall, Tailscale
+  ACL, Cloudflare Tunnel policy) so only trusted clients can reach it.
