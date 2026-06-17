@@ -1,5 +1,9 @@
 # Infinite
 
+> Browser-based spatial workspace for developers: infinite canvas, draggable
+> SSH terminals, remote browser windows, and project context, all in one
+> place.
+
 Infinite is a browser-based spatial workspace for development tools. It gives you an infinite canvas with draggable windows for SSH sessions, notes, a remote browser, and project context.
 
 ## What It Does
@@ -257,17 +261,174 @@ npm run db:studio
 - [server/lib/ssh.ts](/home/rey/project/infinite/server/lib/ssh.ts:1): SSH session handling and agent proxy logic
 - [agent/index.js](/home/rey/project/infinite/agent/index.js:1): relay agent process
 
-## Open Source Notes
+## Deployment
 
-Current state:
+Infinite has three components, plus an optional agent:
 
-- local-user only, no multi-user auth flow
-- credentials are encrypted at rest using `ENCRYPTION_SECRET`
-- the agent is a plain Node.js script, not yet packaged as a standalone installer
+| Component  | Process                | Default port | Role                                                              |
+| ---------- | ---------------------- | ------------ | ----------------------------------------------------------------- |
+| `frontend` | Next.js 16 (App Router) | `3000` (dev) / `7890` (docker) | UI, API routes, Prisma client                  |
+| `server`   | Express + WebSocket    | `7891`       | SSH sessions, browser control, agent relay, status checks         |
+| `db`       | PostgreSQL 16          | `5432`       | Persisted state (connections, layouts, notes, projects, agents)   |
+| `agent`    | Standalone Node.js     | outbound WS  | Optional proxy that runs where the SSH target is reachable        |
 
-If you publish this publicly, document your deployment topology clearly:
+The `frontend` and `server` can run on the same host or different hosts. The
+`server` is the only component that needs direct network access to SSH
+targets. The `frontend` only talks to the `server` over HTTP and WebSocket.
 
-- where the Next.js app runs
-- where the WebSocket relay server runs
-- which hosts the relay can access directly
-- when users should use agent mode instead
+### Local Development (single host)
+
+```bash
+npm install
+cp .env.example .env
+npm run db:push
+npm run dev
+```
+
+The Next.js app binds to `3000` and the relay server to `7891` on `localhost`.
+
+### Docker Compose (single host)
+
+The included `docker-compose.yml` starts the database, the Next.js frontend,
+and the Express relay server together:
+
+```bash
+docker compose up -d --build
+```
+
+Ports:
+
+- frontend: `http://localhost:7890`
+- server:   `http://localhost:7891`
+- database: `localhost:5432`
+
+If you put the `frontend` behind a TLS-terminating reverse proxy and the
+`server` on a different origin, set:
+
+```env
+NEXT_PUBLIC_WS_URL=wss://your-ws-host
+ALLOWED_ORIGINS=https://your-frontend-host
+```
+
+### Split Host (frontend on Vercel, server elsewhere)
+
+`vercel.json` is preconfigured to deploy the Next.js app to Vercel. Point
+`NEXT_PUBLIC_WS_URL` at the public URL of the relay server. Run the relay
+server on a host that:
+
+- has a stable public address (or is reachable through Tailscale, Cloudflare
+  Tunnel, WireGuard, etc.)
+- can reach the SSH targets you want to expose
+
+Suggested setup:
+
+1. Deploy the frontend:
+
+   ```bash
+   vercel deploy --prod
+   ```
+
+2. Run the relay server on a separate machine (VPS, home lab, etc.) with
+   `Dockerfile.server`. The example runs on port `7891`:
+
+   ```bash
+   docker build -f Dockerfile.server -t infinite-server .
+   docker run -d \
+     --name infinite-server \
+     -p 7891:7891 \
+     -e DATABASE_URL=... \
+     -e DIRECT_URL=... \
+     -e ENCRYPTION_SECRET=... \
+     -e PORT=7891 \
+     -e ALLOWED_ORIGINS=https://your-vercel-app.vercel.app \
+     infinite-server
+   ```
+
+3. Set `NEXT_PUBLIC_WS_URL` in the Vercel project to
+   `wss://relay.example.com`.
+
+4. If the relay host is behind Tailscale, use the Tailscale hostname in
+   `NEXT_PUBLIC_WS_URL` so both ends speak over the tailnet.
+
+### Agent Mode
+
+Use the agent when the SSH target is reachable from a machine on your private
+network (LAN, Tailscale, WireGuard, cloud VPC) but not from the public relay
+server.
+
+Topology:
+
+```text
+Browser -> Vercel (frontend) -> Relay server (public)
+                                   |
+                                   | WebSocket (wss)
+                                   v
+                              Agent host  -->  SSH target
+                          (your laptop / VPS)
+```
+
+Steps:
+
+1. In the Agent panel, create an agent and copy the generated command.
+2. Run that command on the machine that has network access to the SSH
+   target. The agent opens an outbound WebSocket to the relay, so it does
+   not need any inbound port open.
+3. In the SSH connection settings, select `Via agent: <name>` instead of the
+   default direct route.
+
+The `agent/` directory is a standalone Node.js project with its own
+`package.json`. It is not yet packaged as a single binary; run it with Node
+directly or wrap it with your own installer (systemd, launchd, etc.).
+
+### Reverse Proxy (nginx example)
+
+A minimal nginx config that fronts the frontend on `443` and proxies
+WebSocket upgrades to the relay on `7891`:
+
+```nginx
+server {
+  listen 443 ssl http2;
+  server_name infinite.example.com;
+
+  ssl_certificate     /etc/letsencrypt/live/infinite.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/infinite.example.com/privkey.pem;
+
+  location / {
+    proxy_pass http://127.0.0.1:7890;
+  }
+
+  location /ws/ {
+    proxy_pass http://127.0.0.1:7891;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 86400;
+  }
+}
+```
+
+Adapt the WebSocket path prefix to whatever your `server/index.ts` listens on.
+
+### Systemd (single host)
+
+`infinite.service` and `ecosystem.config.cjs` are provided for running
+`next start` and the relay under PM2 or systemd on a single host. Edit
+`infinite.service` to match your install path and user before enabling it:
+
+```bash
+sudo cp infinite.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now infinite
+```
+
+## Security Notes
+
+- Infinite is currently a single-user app. There is no auth flow; it assumes
+  it is running on a trusted network or behind a reverse proxy that handles
+  authentication.
+- SSH credentials (passwords and private keys) are encrypted at rest with
+  `ENCRYPTION_SECRET`. Treat that secret like a database password: if you
+  lose it, saved credentials cannot be recovered.
+- The relay server can open arbitrary TCP connections to any host you
+  configure. Restrict network access to the relay (firewall, Tailscale ACL,
+  Cloudflare Tunnel policy) so only trusted clients can reach it.
