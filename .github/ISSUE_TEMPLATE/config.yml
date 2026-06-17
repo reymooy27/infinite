@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/reymooy27/infinite/discussions
+    about: Ask questions and share ideas with the community.
+  - name: Security issues
+    url: mailto:gdrrey@gmail.com
+    about: Report security vulnerabilities privately by email.
