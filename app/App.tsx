@@ -24,6 +24,7 @@ export default function App() {
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const bgColor = useSettingsStore((s) => s.bgColor);
   const focusMode = useSettingsStore((s) => s.focusMode);
+  const focusModeWindowId = useSettingsStore((s) => s.focusModeWindowId);
   const [showOnboarding, setShowOnboarding] = useState(() => {
     if (typeof window === "undefined") return false;
     return !localStorage.getItem("infinite-onboarded");
@@ -96,20 +97,31 @@ export default function App() {
         };
       }
     } else if (wasInFocus && !focusMode) {
-      // Exiting focus mode — restore canvas transform after Canvas mounts
+      // Exiting focus mode — prefer returning to the active focus-mode window.
       const saved = savedTransformRef.current;
-      const visibleWindows = useWindowStore.getState().windows.filter(
+      const state = useWindowStore.getState();
+      const activeFocusWindow = focusModeWindowId
+        ? state.windows.find((w) => w.id === focusModeWindowId)
+        : null;
+      const visibleWindows = state.windows.filter(
         (w) => !w.minimized && !w.maximized,
       );
       const restore = () => {
+        if (activeFocusWindow) {
+          state.focusWindow(activeFocusWindow.id);
+          return canvasTransform.centerOnWindow(activeFocusWindow);
+        }
+
         const inst = canvasTransform.getInstance();
         if (!inst) return false;
         if (saved) {
-          canvasTransform.applyTransform(inst, saved.x, saved.y, saved.scale);
-        } else if (visibleWindows.length > 0) {
-          canvasTransform.fitToWindows(visibleWindows);
+          return canvasTransform.applyTransform(inst, saved.x, saved.y, saved.scale);
         }
-        return true;
+        if (visibleWindows.length > 0) {
+          canvasTransform.fitToWindows(visibleWindows);
+          return true;
+        }
+        return false;
       };
       // Retry until Canvas is mounted and instance is ready
       let attempts = 0;
@@ -119,7 +131,7 @@ export default function App() {
       };
       requestAnimationFrame(tryRestore);
     }
-  }, [focusMode]);
+  }, [focusMode, focusModeWindowId]);
 
   // Keyboard shortcuts
   useEffect(() => {
