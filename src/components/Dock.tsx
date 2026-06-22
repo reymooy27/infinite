@@ -6,6 +6,7 @@ import registry from "@/apps/registry";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import { canvasTransform } from "@/lib/canvasTransform";
 import type { AppId } from "@/types";
 
@@ -320,6 +321,9 @@ export default function Dock() {
     } catch {}
   };
 
+  const focusMode = useSettingsStore((s) => s.focusMode);
+  const setFocusMode = useSettingsStore((s) => s.setFocusMode);
+
   const minimized = windows.filter((w) => w.minimized);
   const hasWindows = windows.length > 0;
 
@@ -592,6 +596,23 @@ export default function Dock() {
             </div>
           )}
         </div>
+
+        {/* Focus mode toggle */}
+        <button
+          onClick={() => setFocusMode(!focusMode)}
+          title={focusMode ? "Switch to canvas mode" : "Focus mode (terminal only)"}
+          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+            focusMode
+              ? "bg-blue-600 text-white"
+              : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+          }`}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M7 8l4 4-4 4" />
+            <path d="M13 16h4" />
+          </svg>
+        </button>
       </div>
     </div>
     </>

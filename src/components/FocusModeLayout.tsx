@@ -1,0 +1,241 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { RefreshCw, LayoutGrid, Settings, Plus, X, Terminal } from "lucide-react";
+import { SSHPane } from "@/apps/registry";
+import ProjectSwitcher from "@/components/ProjectSwitcher";
+import SettingsPanel from "@/components/SettingsPanel";
+import { useWindowStore } from "@/stores/useWindowStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
+import { getSSHMetadata } from "@/types";
+
+interface FocusModeLayoutProps {
+  switcherOpen: boolean;
+  setSwitcherOpen: (open: boolean) => void;
+  onOpenSection: (section: string) => void;
+}
+
+export default function FocusModeLayout({
+  switcherOpen,
+  setSwitcherOpen,
+  onOpenSection,
+}: FocusModeLayoutProps) {
+  const windows = useWindowStore((s) => s.windows);
+  const addTerminalTab = useWindowStore((s) => s.addTerminalTab);
+  const closeTerminalTab = useWindowStore((s) => s.closeTerminalTab);
+  const setActiveTerminalTab = useWindowStore((s) => s.setActiveTerminalTab);
+  const focusModeWindowId = useSettingsStore((s) => s.focusModeWindowId);
+  const setFocusModeWindowId = useSettingsStore((s) => s.setFocusModeWindowId);
+  const setFocusMode = useSettingsStore((s) => s.setFocusMode);
+  const bgColor = useSettingsStore((s) => s.bgColor);
+
+  const [paneRefreshKey, setPaneRefreshKey] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<"root" | "terminal">("terminal");
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const settingsBtnRef = useRef<HTMLButtonElement>(null);
+
+  const sshWindows = windows.filter((w) => w.appId === "ssh");
+  const activeWindow =
+    sshWindows.find((w) => w.id === focusModeWindowId) ??
+    sshWindows[0] ??
+    null;
+
+  // Keep focusModeWindowId in sync when active window changes/closes
+  useEffect(() => {
+    if (activeWindow && activeWindow.id !== focusModeWindowId) {
+      setFocusModeWindowId(activeWindow.id);
+    }
+    if (!activeWindow && focusModeWindowId) {
+      setFocusModeWindowId(null);
+    }
+  }, [activeWindow, focusModeWindowId, setFocusModeWindowId]);
+
+  const sshMeta = activeWindow ? getSSHMetadata(activeWindow) : null;
+  const tabs = sshMeta?.tabs ?? [];
+  const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "";
+  const connectionId = activeWindow?.metadata?.connectionId as number | undefined;
+
+  const handleAddTab = () => {
+    if (!activeWindow) return;
+    const newTabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    addTerminalTab(activeWindow.id, {
+      id: newTabId,
+      label: `Tab ${tabs.length + 1}`,
+      connectionId,
+    });
+  };
+
+  const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
+    e.stopPropagation();
+    if (!activeWindow || tabs.length <= 1) return;
+    closeTerminalTab(activeWindow.id, tabId);
+  };
+
+  // Close settings on outside click
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        settingsRef.current &&
+        !settingsRef.current.contains(e.target as Node) &&
+        settingsBtnRef.current &&
+        !settingsBtnRef.current.contains(e.target as Node)
+      ) {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler, true);
+    return () => document.removeEventListener("mousedown", handler, true);
+  }, [settingsOpen]);
+
+  return (
+    <div className="flex flex-col h-full w-full" style={{ backgroundColor: bgColor }}>
+      {/* Header */}
+      <div className="flex items-center h-10 shrink-0 bg-neutral-950 border-b border-neutral-800 px-1 gap-1">
+        {/* Left: Project switcher */}
+        <div className="shrink-0 relative z-[10001]">
+          <ProjectSwitcher
+            embedded
+            isOpen={switcherOpen}
+            onOpenChange={setSwitcherOpen}
+            onOpenSection={onOpenSection}
+          />
+        </div>
+
+        {/* Center: Tab bar */}
+        <div className="flex-1 min-w-0 flex items-center h-full overflow-x-auto scrollbar-none">
+          {sshWindows.length > 1 && (
+            <div className="flex items-center h-full border-r border-neutral-800 pr-1 mr-1 gap-0.5 shrink-0">
+              {sshWindows.map((win) => (
+                <button
+                  key={win.id}
+                  onClick={() => setFocusModeWindowId(win.id)}
+                  className={`px-2 py-1 rounded text-[11px] shrink-0 transition-colors cursor-pointer ${
+                    win.id === activeWindow?.id
+                      ? "bg-neutral-800 text-white"
+                      : "text-neutral-500 hover:text-neutral-300"
+                  }`}
+                >
+                  {(win.metadata?.title as string) ?? "Terminal"}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => activeWindow && setActiveTerminalTab(activeWindow.id, tab.id)}
+              className={`flex items-center gap-1 px-3 h-full text-xs shrink-0 border-r border-neutral-800 transition-colors cursor-pointer ${
+                tab.id === activeTabId
+                  ? "text-white bg-neutral-900/50"
+                  : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/30"
+              }`}
+            >
+              <span className="max-w-[6rem] truncate">{tab.title ?? tab.label}</span>
+              {tabs.length > 1 && (
+                <span
+                  onClick={(e) => handleCloseTab(e, tab.id)}
+                  className="ml-0.5 leading-none text-neutral-600 hover:text-white transition-colors"
+                >
+                  ×
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Right: Toolbar */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button
+            onClick={handleAddTab}
+            disabled={!activeWindow}
+            title="New tab"
+            className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800"
+          >
+            <Plus size={14} />
+          </button>
+          <button
+            onClick={() => setPaneRefreshKey((k) => k + 1)}
+            disabled={!activeWindow}
+            title="Refresh terminal"
+            className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800"
+          >
+            <RefreshCw size={14} />
+          </button>
+
+          {/* Settings */}
+          <div className="relative">
+            <button
+              ref={settingsBtnRef}
+              onClick={() => {
+                setSettingsPage("terminal");
+                setSettingsOpen((prev) => !prev);
+              }}
+              title="Terminal settings"
+              className={`p-1.5 transition-colors cursor-pointer rounded ${
+                settingsOpen
+                  ? "text-white bg-neutral-800"
+                  : "text-neutral-500 hover:text-white hover:bg-neutral-800"
+              }`}
+            >
+              <Settings size={14} />
+            </button>
+            {settingsOpen && (
+              <div
+                ref={settingsRef}
+                className="absolute top-full right-0 mt-1 w-72 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl z-[10000] overflow-y-auto"
+                style={{ maxHeight: "min(480px, calc(100vh - 60px))" }}
+              >
+                <SettingsPanel
+                  currentPage={settingsPage}
+                  onOpenTerminal={() => setSettingsPage("terminal")}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Switch to Canvas mode */}
+          <button
+            onClick={() => setFocusMode(false)}
+            title="Switch to canvas mode"
+            className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer rounded hover:bg-neutral-800"
+          >
+            <LayoutGrid size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Terminal area */}
+      <div className="relative flex-1 min-h-0">
+        {activeWindow ? (
+          tabs.map((tab) => (
+            <SSHPane
+              key={`${tab.id}-${paneRefreshKey}`}
+              tabId={tab.id}
+              windowId={activeWindow.id}
+              connectionId={tab.connectionId ?? connectionId}
+              isActive={tab.id === activeTabId}
+              hasNavigated={tab.hasNavigated}
+            />
+          ))
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full gap-4 text-neutral-600">
+            <Terminal size={48} strokeWidth={1} />
+            <div className="text-center">
+              <p className="text-sm text-neutral-400 mb-1">No terminal open</p>
+              <p className="text-xs text-neutral-600 mb-4">Add an SSH connection to get started</p>
+              <button
+                onClick={() => onOpenSection("ssh")}
+                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                Open SSH Manager
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

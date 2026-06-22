@@ -759,7 +759,7 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   );
 };
 
-const SSHPane = ({
+export const SSHPane = ({
   connectionId,
   windowId,
   tabId,

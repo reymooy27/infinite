@@ -7,6 +7,7 @@ interface ProjectSwitcherProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenSection: (section: string) => void;
+  embedded?: boolean;
 }
 
 const SIDEBAR_SECTIONS = [
@@ -19,6 +20,7 @@ export default function ProjectSwitcher({
   isOpen,
   onOpenChange,
   onOpenSection,
+  embedded = false,
 }: ProjectSwitcherProps) {
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -118,15 +120,19 @@ export default function ProjectSwitcher({
     `${base} ${focusedIdx === index ? "bg-neutral-800 text-neutral-100" : ""}`;
 
   return (
-    <div className="fixed top-4 left-4 z-[10000]">
+    <div className={embedded ? "relative" : "fixed top-4 left-4 z-[10000]"}>
       {/* Trigger button */}
       <button
         ref={buttonRef}
         onClick={handleButtonClick}
-        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 shadow-2xl backdrop-blur-md transition-colors cursor-pointer ${
+        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-colors cursor-pointer ${
+          embedded ? "" : "shadow-2xl backdrop-blur-md"
+        } ${
           isOpen
             ? "border-blue-500 bg-blue-600 text-white"
-            : "border-neutral-700 bg-neutral-900/90 text-neutral-300 hover:bg-neutral-800"
+            : embedded
+              ? "border-neutral-700 bg-neutral-800 text-neutral-200 hover:bg-neutral-700 hover:text-white"
+              : "border-neutral-700 bg-neutral-900/90 text-neutral-300 hover:bg-neutral-800"
         }`}
         title={isOpen ? "Close menu" : "Switch project"}
       >

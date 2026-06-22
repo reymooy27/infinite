@@ -64,7 +64,7 @@ export default function AgentPanel() {
   };
 
   const copyToken = (token: string, id: string) => {
-    navigator.clipboard.writeText(token);
+    navigator.clipboard?.writeText(token).catch(() => {});
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };

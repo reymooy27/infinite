@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import FileTransferModal from "@/components/FileTransferModal";
+import FocusModeLayout from "@/components/FocusModeLayout";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import NavigationIndicator from "@/components/NavigationIndicator";
 import Sidebar from "@/components/Sidebar";
@@ -15,18 +16,22 @@ import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useProjectStore } from "@/stores/useProjectStore";
+import { canvasTransform } from "@/lib/canvasTransform";
 
 export default function App() {
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const bgColor = useSettingsStore((s) => s.bgColor);
+  const focusMode = useSettingsStore((s) => s.focusMode);
   const [showOnboarding, setShowOnboarding] = useState(() => {
     if (typeof window === "undefined") return false;
     return !localStorage.getItem("infinite-onboarded");
   });
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
+  const savedTransformRef = useRef<{ x: number; y: number; scale: number } | null>(null);
+  const prevFocusModeRef = useRef(focusMode);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -75,12 +80,58 @@ export default function App() {
     document.body.style.backgroundColor = bgColor;
   }, [bgColor]);
 
-  // Keyboard shortcut: Ctrl+Shift+P / Cmd+Shift+P → open project switcher
+  // Save/restore canvas transform when toggling focus mode
+  useEffect(() => {
+    const wasInFocus = prevFocusModeRef.current;
+    prevFocusModeRef.current = focusMode;
+
+    if (!wasInFocus && focusMode) {
+      // Entering focus mode — save current canvas transform
+      const state = canvasTransform.getState();
+      if (state?.scale != null && state.positionX != null && state.positionY != null) {
+        savedTransformRef.current = {
+          x: state.positionX,
+          y: state.positionY,
+          scale: state.scale,
+        };
+      }
+    } else if (wasInFocus && !focusMode) {
+      // Exiting focus mode — restore canvas transform after Canvas mounts
+      const saved = savedTransformRef.current;
+      const visibleWindows = useWindowStore.getState().windows.filter(
+        (w) => !w.minimized && !w.maximized,
+      );
+      const restore = () => {
+        const inst = canvasTransform.getInstance();
+        if (!inst) return false;
+        if (saved) {
+          canvasTransform.applyTransform(inst, saved.x, saved.y, saved.scale);
+        } else if (visibleWindows.length > 0) {
+          canvasTransform.fitToWindows(visibleWindows);
+        }
+        return true;
+      };
+      // Retry until Canvas is mounted and instance is ready
+      let attempts = 0;
+      const tryRestore = () => {
+        if (restore() || attempts++ > 30) return;
+        requestAnimationFrame(tryRestore);
+      };
+      requestAnimationFrame(tryRestore);
+    }
+  }, [focusMode]);
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "p" || e.key === "P")) {
-        e.preventDefault();
-        setSwitcherOpen((prev) => !prev);
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
+        if (e.key === "p" || e.key === "P") {
+          e.preventDefault();
+          setSwitcherOpen((prev) => !prev);
+        } else if (e.key === "f" || e.key === "F") {
+          e.preventDefault();
+          useSettingsStore.getState().setFocusMode(!useSettingsStore.getState().focusMode);
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -109,66 +160,76 @@ export default function App() {
           </div>
         </div>
       )}
-      <Canvas>
-        {windows
-          .filter((w) => !w.minimized && !w.maximized)
-          .map((win) => {
-            const app = registry[win.appId];
-            if (!app) return null;
-            const AppComponent = app.component;
-            return (
-              <WindowFrame
-                key={win.id}
-                id={win.id}
-                title={(win.metadata?.title as string) || app.title}
-                defaultX={win.x}
-                defaultY={win.y}
-                defaultWidth={app.defaultWidth}
-                defaultHeight={app.defaultHeight}
-              >
-                <AppComponent
-                  connectionId={win.metadata?.connectionId as number}
-                  windowId={win.id}
-                />
-              </WindowFrame>
-            );
-          })}
-      </Canvas>
-      {windows
-        .filter((w) => !w.minimized && w.maximized)
-        .map((win) => {
-          const app = registry[win.appId];
-          if (!app) return null;
-          const AppComponent = app.component;
-          return (
-            <WindowFrame
-              key={win.id}
-              id={win.id}
-              title={(win.metadata?.title as string) || app.title}
-              defaultX={win.x}
-              defaultY={win.y}
-              defaultWidth={app.defaultWidth}
-              defaultHeight={app.defaultHeight}
-            >
-              <AppComponent
-                key={`${win.id}-${win.maximized}`}
-                connectionId={win.metadata?.connectionId as number}
-                windowId={win.id}
-              />
-            </WindowFrame>
-          );
-        })}
-      <NavigationIndicator />
+      {focusMode ? (
+        <FocusModeLayout
+          switcherOpen={switcherOpen}
+          setSwitcherOpen={setSwitcherOpen}
+          onOpenSection={(section) => setPendingSection(section)}
+        />
+      ) : (
+        <>
+          <Canvas>
+            {windows
+              .filter((w) => !w.minimized && !w.maximized)
+              .map((win) => {
+                const app = registry[win.appId];
+                if (!app) return null;
+                const AppComponent = app.component;
+                return (
+                  <WindowFrame
+                    key={win.id}
+                    id={win.id}
+                    title={(win.metadata?.title as string) || app.title}
+                    defaultX={win.x}
+                    defaultY={win.y}
+                    defaultWidth={app.defaultWidth}
+                    defaultHeight={app.defaultHeight}
+                  >
+                    <AppComponent
+                      connectionId={win.metadata?.connectionId as number}
+                      windowId={win.id}
+                    />
+                  </WindowFrame>
+                );
+              })}
+          </Canvas>
+          {windows
+            .filter((w) => !w.minimized && w.maximized)
+            .map((win) => {
+              const app = registry[win.appId];
+              if (!app) return null;
+              const AppComponent = app.component;
+              return (
+                <WindowFrame
+                  key={win.id}
+                  id={win.id}
+                  title={(win.metadata?.title as string) || app.title}
+                  defaultX={win.x}
+                  defaultY={win.y}
+                  defaultWidth={app.defaultWidth}
+                  defaultHeight={app.defaultHeight}
+                >
+                  <AppComponent
+                    key={`${win.id}-${win.maximized}`}
+                    connectionId={win.metadata?.connectionId as number}
+                    windowId={win.id}
+                  />
+                </WindowFrame>
+              );
+            })}
+          <NavigationIndicator />
+          <ProjectSwitcher
+            isOpen={switcherOpen}
+            onOpenChange={setSwitcherOpen}
+            onOpenSection={(section) => setPendingSection(section)}
+          />
+          <Dock />
+        </>
+      )}
       <Sidebar
         openSection={pendingSection}
         onOpenSectionConsumed={() => setPendingSection(null)}
       />
-      <ProjectSwitcher
-        isOpen={switcherOpen}
-        onOpenChange={setSwitcherOpen}
-        onOpenSection={(section) => setPendingSection(section)}
-      />
-      <Dock />
       <FileTransferModal />
     </div>
     </ErrorBoundary>
