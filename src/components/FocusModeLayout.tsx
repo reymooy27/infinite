@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, LayoutGrid, Settings, Plus, X, Terminal } from "lucide-react";
+import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
+import { canvasTransform } from "@/lib/canvasTransform";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { getSSHMetadata } from "@/types";
@@ -28,12 +29,16 @@ export default function FocusModeLayout({
   const setFocusModeWindowId = useSettingsStore((s) => s.setFocusModeWindowId);
   const setFocusMode = useSettingsStore((s) => s.setFocusMode);
   const bgColor = useSettingsStore((s) => s.bgColor);
+  const focusWindow = useWindowStore((s) => s.focusWindow);
 
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<"root" | "terminal">("terminal");
+  const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
+  const tabPanelRef = useRef<HTMLDivElement>(null);
+  const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
 
   const sshWindows = windows.filter((w) => w.appId === "ssh");
   const activeWindow =
@@ -55,6 +60,14 @@ export default function FocusModeLayout({
   const tabs = sshMeta?.tabs ?? [];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "";
   const connectionId = activeWindow?.metadata?.connectionId as number | undefined;
+
+  const handleExitFocusMode = () => {
+    if (activeWindow) {
+      focusWindow(activeWindow.id);
+      canvasTransform.centerOnWindow(activeWindow);
+    }
+    setFocusMode(false);
+  };
 
   const handleAddTab = () => {
     if (!activeWindow) return;
@@ -89,6 +102,24 @@ export default function FocusModeLayout({
     return () => document.removeEventListener("mousedown", handler, true);
   }, [settingsOpen]);
 
+  // Close tab panel on outside click (exclude toggle button so its own onClick can toggle)
+  useEffect(() => {
+    if (!tabPanelOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        tabPanelRef.current &&
+        !tabPanelRef.current.contains(target) &&
+        tabToggleBtnRef.current &&
+        !tabToggleBtnRef.current.contains(target)
+      ) {
+        setTabPanelOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler, true);
+    return () => document.removeEventListener("mousedown", handler, true);
+  }, [tabPanelOpen]);
+
   return (
     <div className="flex flex-col h-full w-full" style={{ backgroundColor: bgColor }}>
       {/* Header */}
@@ -103,59 +134,10 @@ export default function FocusModeLayout({
           />
         </div>
 
-        {/* Center: Tab bar */}
-        <div className="flex-1 min-w-0 flex items-center h-full overflow-x-auto scrollbar-none">
-          {sshWindows.length > 1 && (
-            <div className="flex items-center h-full border-r border-neutral-800 pr-1 mr-1 gap-0.5 shrink-0">
-              {sshWindows.map((win) => (
-                <button
-                  key={win.id}
-                  onClick={() => setFocusModeWindowId(win.id)}
-                  className={`px-2 py-1 rounded text-[11px] shrink-0 transition-colors cursor-pointer ${
-                    win.id === activeWindow?.id
-                      ? "bg-neutral-800 text-white"
-                      : "text-neutral-500 hover:text-neutral-300"
-                  }`}
-                >
-                  {(win.metadata?.title as string) ?? "Terminal"}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => activeWindow && setActiveTerminalTab(activeWindow.id, tab.id)}
-              className={`flex items-center gap-1 px-3 h-full text-xs shrink-0 border-r border-neutral-800 transition-colors cursor-pointer ${
-                tab.id === activeTabId
-                  ? "text-white bg-neutral-900/50"
-                  : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/30"
-              }`}
-            >
-              <span className="max-w-[6rem] truncate">{tab.title ?? tab.label}</span>
-              {tabs.length > 1 && (
-                <span
-                  onClick={(e) => handleCloseTab(e, tab.id)}
-                  className="ml-0.5 leading-none text-neutral-600 hover:text-white transition-colors"
-                >
-                  ×
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        <div className="flex-1" />
 
         {/* Right: Toolbar */}
         <div className="flex items-center gap-0.5 shrink-0">
-          <button
-            onClick={handleAddTab}
-            disabled={!activeWindow}
-            title="New tab"
-            className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800"
-          >
-            <Plus size={14} />
-          </button>
           <button
             onClick={() => setPaneRefreshKey((k) => k + 1)}
             disabled={!activeWindow}
@@ -198,7 +180,7 @@ export default function FocusModeLayout({
 
           {/* Switch to Canvas mode */}
           <button
-            onClick={() => setFocusMode(false)}
+            onClick={handleExitFocusMode}
             title="Switch to canvas mode"
             className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer rounded hover:bg-neutral-800"
           >
@@ -206,6 +188,61 @@ export default function FocusModeLayout({
           </button>
         </div>
       </div>
+
+      {/* Tab bar row — always visible below header */}
+      {activeWindow && (
+        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center gap-2">
+          <button
+            ref={tabToggleBtnRef}
+            onClick={() => setTabPanelOpen((p) => !p)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border ${
+              tabPanelOpen
+                ? "bg-neutral-800 text-white border-neutral-700"
+                : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
+            }`}
+          >
+            <span className="max-w-[8rem] truncate">
+              {tabs.find(t => t.id === activeTabId)?.title ?? tabs.find(t => t.id === activeTabId)?.label ?? "Tab"}
+            </span>
+            <ChevronDown size={11} className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+      )}
+
+      {/* Tab list panel */}
+      {tabPanelOpen && (
+        <div ref={tabPanelRef} className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1.5 flex flex-col gap-0.5">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              onClick={() => { if (activeWindow) setActiveTerminalTab(activeWindow.id, tab.id); setTabPanelOpen(false); }}
+              className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
+                tab.id === activeTabId
+                  ? "bg-neutral-800 text-white"
+                  : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
+              }`}
+            >
+              <span className="truncate">{tab.title ?? tab.label}</span>
+              {tabs.length > 1 && (
+                <span
+                  onClick={(e) => { handleCloseTab(e, tab.id); setTabPanelOpen(false); }}
+                  className="ml-2 shrink-0 text-neutral-600 hover:text-white transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                >
+                  ×
+                </span>
+              )}
+            </div>
+          ))}
+          {/* Add tab inside dropdown */}
+          <div
+            onClick={() => { handleAddTab(); setTabPanelOpen(false); }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors text-neutral-500 hover:bg-neutral-800 hover:text-white border-t border-neutral-800 mt-0.5 pt-2"
+          >
+            <Plus size={12} />
+            <span>New tab</span>
+          </div>
+        </div>
+      )}
 
       {/* Terminal area */}
       <div className="relative flex-1 min-h-0">

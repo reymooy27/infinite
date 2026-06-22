@@ -22,6 +22,13 @@ type TransformInstance = {
 
 type TransformListener = (state: TransformState) => void;
 
+type PendingCenterTarget = {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+};
+
 const getInstance = (): TransformInstance | null => {
   const current = canvasTransform.current as TransformInstance | null;
   return current?.instance ?? current ?? null;
@@ -31,6 +38,7 @@ const getWrapper = (inst: TransformInstance | null): HTMLElement | null =>
   inst?.wrapperComponent ?? null;
 
 const listeners = new Set<TransformListener>();
+let pendingCenterTarget: PendingCenterTarget | null = null;
 
 const applyTransform = (
   inst: TransformInstance | null,
@@ -53,6 +61,10 @@ const applyTransform = (
 
 export const canvasTransform = {
   current: null as TransformInstance | null,
+  setCurrent: (inst: TransformInstance | null) => {
+    canvasTransform.current = inst;
+    canvasTransform.flushPendingCenter();
+  },
   getInstance,
   getState: () => getInstance()?.state ?? null,
   subscribe: (listener: TransformListener) => {
@@ -65,6 +77,19 @@ export const canvasTransform = {
     listeners.forEach((listener) => listener(state));
   },
   applyTransform,
+  flushPendingCenter: () => {
+    if (!pendingCenterTarget) return false;
+    const inst = getInstance();
+    const wrapper = getWrapper(inst);
+    if (!inst?.state || !wrapper || wrapper.offsetWidth === 0 || wrapper.offsetHeight === 0) {
+      return false;
+    }
+
+    const target = pendingCenterTarget;
+    pendingCenterTarget = null;
+    canvasTransform.centerOnWindow(target);
+    return true;
+  },
   getViewportCenter: () => {
     const inst = getInstance();
     const wrapper = getWrapper(inst);
@@ -112,9 +137,16 @@ export const canvasTransform = {
   },
   centerOnWindow: (win: { x: number; y: number; width?: number; height?: number }) => {
     const inst = getInstance();
-    if (!inst?.state) return;
     const wrapper = getWrapper(inst);
-    if (!wrapper) return;
+    if (!inst?.state || !wrapper || wrapper.offsetWidth === 0 || wrapper.offsetHeight === 0) {
+      pendingCenterTarget = {
+        x: win.x,
+        y: win.y,
+        width: win.width,
+        height: win.height,
+      };
+      return false;
+    }
     const vw = wrapper.offsetWidth;
     const vh = wrapper.offsetHeight;
     const winW = win.width || 400;
@@ -124,7 +156,8 @@ export const canvasTransform = {
     const scale = inst.state.scale || 1;
     const tx = vw / 2 - winCenterX * scale;
     const ty = vh / 2 - winCenterY * scale;
-    applyTransform(inst, tx, ty, scale);
+    pendingCenterTarget = null;
+    return applyTransform(inst, tx, ty, scale);
   },
   fitToWindows: (windows: WindowData[]) => {
     const inst = getInstance();

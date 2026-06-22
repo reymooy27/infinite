@@ -50,7 +50,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       tw as unknown as { instance?: { wrapperComponent?: HTMLElement } }
     ).instance?.wrapperComponent;
     if (!wrapper) return;
-    canvasTransform.current = (tw as any).instance ?? tw;
+    canvasTransform.setCurrent((tw as any).instance ?? tw);
     let frame = 0;
     let attempts = 0;
     const applyInitialTransform = () => {
@@ -67,6 +67,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         currentWrapper.offsetHeight / 2 - 5000 * DEFAULT_SCALE,
         DEFAULT_SCALE,
       );
+      canvasTransform.flushPendingCenter();
       if (!applied && attempts < 20) {
         frame = requestAnimationFrame(applyInitialTransform);
       }
@@ -74,7 +75,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     frame = requestAnimationFrame(applyInitialTransform);
     return () => {
       cancelAnimationFrame(frame);
-      canvasTransform.current = null;
+      canvasTransform.setCurrent(null);
     };
   }, []);
 

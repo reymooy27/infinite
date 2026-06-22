@@ -322,6 +322,7 @@ export default function Dock() {
   };
 
   const focusMode = useSettingsStore((s) => s.focusMode);
+  const focusModeWindowId = useSettingsStore((s) => s.focusModeWindowId);
   const setFocusMode = useSettingsStore((s) => s.setFocusMode);
 
   const minimized = windows.filter((w) => w.minimized);
@@ -344,6 +345,17 @@ export default function Dock() {
       canvasTransform.centerOnWindow(win);
     }
     setShowWinMenu(false);
+  };
+
+  const handleToggleFocusMode = () => {
+    if (focusMode && focusModeWindowId) {
+      const activeFocusWindow = windows.find((w) => w.id === focusModeWindowId);
+      if (activeFocusWindow) {
+        focusWindow(activeFocusWindow.id);
+        canvasTransform.centerOnWindow(activeFocusWindow);
+      }
+    }
+    setFocusMode(!focusMode);
   };
 
   const handleTransfer = useCallback((conn: { id: number; name: string }, action: "upload" | "download") => {
@@ -599,7 +611,7 @@ export default function Dock() {
 
         {/* Focus mode toggle */}
         <button
-          onClick={() => setFocusMode(!focusMode)}
+          onClick={handleToggleFocusMode}
           title={focusMode ? "Switch to canvas mode" : "Focus mode (terminal only)"}
           className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
             focusMode
