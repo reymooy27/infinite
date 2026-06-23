@@ -102,7 +102,13 @@ export default function NavigationIndicator() {
     if (!dir) return;
     focusWindow(dir.targetId);
     const win = windows.find((w) => w.id === dir.targetId);
-    if (win) canvasTransform.centerOnWindow(win);
+    if (!win) return;
+    let attempts = 0;
+    const tryCenter = () => {
+      if (canvasTransform.centerOnWindow(win) || attempts++ > 30) return;
+      requestAnimationFrame(tryCenter);
+    };
+    requestAnimationFrame(tryCenter);
   }, [dir, focusWindow, windows]);
 
   if (!dir) return null;

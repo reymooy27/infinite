@@ -46,16 +46,15 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const tw = wrapperRef.current;
     if (!tw) return;
-    const wrapper = (
-      tw as unknown as { instance?: { wrapperComponent?: HTMLElement } }
-    ).instance?.wrapperComponent;
-    if (!wrapper) return;
-    canvasTransform.setCurrent((tw as any).instance ?? tw);
+    // Must set canvasTransform.current immediately so tryRestore and other
+    // callers can access the ZoomPanPinch instance. The rAF loop below
+    // handles the case where wrapperComponent isn't initialized yet.
+    const inst = (tw as any).instance ?? tw;
+    canvasTransform.setCurrent(inst);
     let frame = 0;
     let attempts = 0;
     const applyInitialTransform = () => {
       attempts += 1;
-      const inst = canvasTransform.getInstance();
       const currentWrapper = inst?.wrapperComponent;
       if (!currentWrapper || currentWrapper.offsetWidth === 0 || currentWrapper.offsetHeight === 0) {
         if (attempts < 20) frame = requestAnimationFrame(applyInitialTransform);

@@ -111,11 +111,9 @@ export default function App() {
 
         if (activeFocusWindow) {
           state.focusWindow(activeFocusWindow.id);
-          // Restore saved scale first so centerOnWindow preserves zoom level
-          if (saved && inst?.setTransform) {
-            canvasTransform.applyTransform(inst, saved.x, saved.y, saved.scale);
-          }
-          return canvasTransform.centerOnWindow(activeFocusWindow);
+          // Pass saved scale so centerOnWindow preserves zoom level
+          // even if the instance isn't ready for applyTransform yet
+          return canvasTransform.centerOnWindow(activeFocusWindow, saved?.scale);
         }
 
         if (!inst) return false;

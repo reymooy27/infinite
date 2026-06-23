@@ -27,6 +27,7 @@ type PendingCenterTarget = {
   y: number;
   width?: number;
   height?: number;
+  scaleOverride?: number;
 };
 
 const getInstance = (): TransformInstance | null => {
@@ -49,6 +50,8 @@ const applyTransform = (
 ) => {
   if (!inst) return false;
   if (inst?.setTransform) {
+    const { disabled, wrapperComponent, contentComponent } = inst as any;
+    if (disabled || !wrapperComponent || !contentComponent) return false;
     inst.setTransform(positionX, positionY, scale, 0);
     return true;
   }
@@ -90,11 +93,8 @@ export const canvasTransform = {
       return false;
     }
 
-    const target = pendingCenterTarget;
-    pendingCenterTarget = null;
-    canvasTransform.centerOnWindow(target);
-    _centerFlushedOnce = true;
-    return true;
+    const { scaleOverride, ...win } = pendingCenterTarget;
+    return canvasTransform.centerOnWindow(win, scaleOverride);
   },
   getViewportCenter: () => {
     const inst = getInstance();
@@ -141,7 +141,7 @@ export const canvasTransform = {
       }
     }
   },
-  centerOnWindow: (win: { x: number; y: number; width?: number; height?: number }) => {
+  centerOnWindow: (win: { x: number; y: number; width?: number; height?: number }, scaleOverride?: number) => {
     const inst = getInstance();
     const wrapper = getWrapper(inst);
     if (!inst?.state || !wrapper || wrapper.offsetWidth === 0 || wrapper.offsetHeight === 0) {
@@ -150,6 +150,7 @@ export const canvasTransform = {
         y: win.y,
         width: win.width,
         height: win.height,
+        scaleOverride,
       };
       return false;
     }
@@ -159,12 +160,17 @@ export const canvasTransform = {
     const winH = win.height || 300;
     const winCenterX = win.x + winW / 2;
     const winCenterY = win.y + winH / 2;
-    const scale = inst.state.scale || 1;
+    const scale = scaleOverride ?? inst.state.scale ?? 1;
     const tx = vw / 2 - winCenterX * scale;
     const ty = vh / 2 - winCenterY * scale;
-    pendingCenterTarget = null;
-    _centerFlushedOnce = true;
-    return applyTransform(inst, tx, ty, scale);
+    const ok = applyTransform(inst, tx, ty, scale);
+    if (ok) {
+      pendingCenterTarget = null;
+      _centerFlushedOnce = true;
+    } else {
+      pendingCenterTarget = { x: win.x, y: win.y, width: win.width, height: win.height, scaleOverride };
+    }
+    return ok;
   },
   fitToWindows: (windows: WindowData[]) => {
     const inst = getInstance();

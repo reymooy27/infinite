@@ -67,6 +67,9 @@ export default function FocusModeLayout({
       canvasTransform.centerOnWindow(activeWindow);
     }
     setFocusMode(false);
+    // centerOnWindow above will fail (Canvas not mounted) and set
+    // pendingCenterTarget. Canvas's mount effect flushes it via
+    // setCurrent -> flushPendingCenter once the instance is ready.
   };
 
   const handleAddTab = () => {

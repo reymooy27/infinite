@@ -333,7 +333,14 @@ export default function Dock() {
     focusWindow(winId);
     bringToFront(winId);
     const win = windows.find((w) => w.id === winId);
-    if (win) canvasTransform.centerOnWindow(win);
+    if (win) {
+      let attempts = 0;
+      const tryCenter = () => {
+        if (canvasTransform.centerOnWindow(win) || attempts++ > 30) return;
+        requestAnimationFrame(tryCenter);
+      };
+      requestAnimationFrame(tryCenter);
+    }
   };
 
   const handleFocusFromMenu = (win: (typeof windows)[0]) => {
@@ -342,7 +349,12 @@ export default function Dock() {
     } else {
       clearFocus();
       focusWindow(win.id);
-      canvasTransform.centerOnWindow(win);
+      let attempts = 0;
+      const tryCenter = () => {
+        if (canvasTransform.centerOnWindow(win) || attempts++ > 30) return;
+        requestAnimationFrame(tryCenter);
+      };
+      requestAnimationFrame(tryCenter);
     }
     setShowWinMenu(false);
   };
@@ -352,7 +364,12 @@ export default function Dock() {
       const activeFocusWindow = windows.find((w) => w.id === focusModeWindowId);
       if (activeFocusWindow) {
         focusWindow(activeFocusWindow.id);
-        canvasTransform.centerOnWindow(activeFocusWindow);
+        let attempts = 0;
+        const tryCenter = () => {
+          if (canvasTransform.centerOnWindow(activeFocusWindow) || attempts++ > 30) return;
+          requestAnimationFrame(tryCenter);
+        };
+        requestAnimationFrame(tryCenter);
       }
     }
     setFocusMode(!focusMode);
