@@ -781,6 +781,7 @@ export const SSHPane = ({
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -853,6 +854,24 @@ export const SSHPane = ({
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const update = () => {
+      const h = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [isMobile]);
 
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
@@ -1286,7 +1305,12 @@ export const SSHPane = ({
 
   return (
     <div
-      style={{ visibility: isActive ? "visible" : "hidden", position: "absolute", inset: 0 }}
+      style={{
+        visibility: isActive ? "visible" : "hidden",
+        position: "absolute",
+        inset: 0,
+        paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 56}px` : undefined,
+      }}
       className={`px-2 bg-[#0a0a0a] ${
         isMobile
           ? "pt-2 pb-14"
