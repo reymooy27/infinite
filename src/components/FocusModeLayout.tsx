@@ -35,6 +35,7 @@ export default function FocusModeLayout({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<"root" | "terminal">("terminal");
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
@@ -122,6 +123,26 @@ export default function FocusModeLayout({
     document.addEventListener("mousedown", handler, true);
     return () => document.removeEventListener("mousedown", handler, true);
   }, [tabPanelOpen]);
+
+  // Detect mobile keyboard and raise terminal content above it
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    if (!mq.matches) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const update = () => {
+      const h = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
 
   return (
     <div className="flex flex-col h-full w-full" style={{ backgroundColor: bgColor }}>
@@ -258,6 +279,7 @@ export default function FocusModeLayout({
               connectionId={tab.connectionId ?? connectionId}
               isActive={tab.id === activeTabId}
               hasNavigated={tab.hasNavigated}
+              keyboardHeight={keyboardHeight}
             />
           ))
         ) : (

@@ -93,7 +93,15 @@ export function ShortcutDrawer({
       const el = anchorRef.current?.closest("[class*='react-draggable']") || anchorRef.current?.parentElement?.parentElement;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      const vh = window.visualViewport?.height || window.innerHeight;
+      const estimatedH = 240;
+      const gap = 4;
+
+      if (vh - rect.bottom < estimatedH + gap && rect.top > estimatedH + gap) {
+        setPos({ top: Math.max(gap, rect.top - estimatedH - gap), left: rect.left, width: rect.width });
+      } else {
+        setPos({ top: Math.min(vh - estimatedH - gap, rect.bottom + gap), left: rect.left, width: rect.width });
+      }
     };
     update();
     const id = setInterval(update, 16);
