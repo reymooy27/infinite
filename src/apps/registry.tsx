@@ -1258,6 +1258,7 @@ export const SSHPane = ({
 
     // 1. Try modern clipboard API (secure context / localhost)
     try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
       await navigator.clipboard.writeText(selection);
       showFeedback();
       return;
