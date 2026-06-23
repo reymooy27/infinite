@@ -61,6 +61,10 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         if (attempts < 20) frame = requestAnimationFrame(applyInitialTransform);
         return;
       }
+      // Skip default initial transform if canvas was already positioned
+      // (e.g. by centerOnWindow during focus-mode exit)
+      if (canvasTransform.hasCenterFlushedOnce()) return;
+
       const applied = canvasTransform.applyTransform(
         inst,
         currentWrapper.offsetWidth / 2 - 5000 * DEFAULT_SCALE,

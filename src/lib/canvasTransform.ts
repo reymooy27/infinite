@@ -39,6 +39,7 @@ const getWrapper = (inst: TransformInstance | null): HTMLElement | null =>
 
 const listeners = new Set<TransformListener>();
 let pendingCenterTarget: PendingCenterTarget | null = null;
+let _centerFlushedOnce = false;
 
 const applyTransform = (
   inst: TransformInstance | null,
@@ -63,7 +64,10 @@ export const canvasTransform = {
   current: null as TransformInstance | null,
   setCurrent: (inst: TransformInstance | null) => {
     canvasTransform.current = inst;
-    canvasTransform.flushPendingCenter();
+    _centerFlushedOnce = false;
+    if (inst) {
+      canvasTransform.flushPendingCenter();
+    }
   },
   getInstance,
   getState: () => getInstance()?.state ?? null,
@@ -77,6 +81,7 @@ export const canvasTransform = {
     listeners.forEach((listener) => listener(state));
   },
   applyTransform,
+  hasCenterFlushedOnce: () => _centerFlushedOnce,
   flushPendingCenter: () => {
     if (!pendingCenterTarget) return false;
     const inst = getInstance();
@@ -88,6 +93,7 @@ export const canvasTransform = {
     const target = pendingCenterTarget;
     pendingCenterTarget = null;
     canvasTransform.centerOnWindow(target);
+    _centerFlushedOnce = true;
     return true;
   },
   getViewportCenter: () => {
@@ -157,6 +163,7 @@ export const canvasTransform = {
     const tx = vw / 2 - winCenterX * scale;
     const ty = vh / 2 - winCenterY * scale;
     pendingCenterTarget = null;
+    _centerFlushedOnce = true;
     return applyTransform(inst, tx, ty, scale);
   },
   fitToWindows: (windows: WindowData[]) => {
