@@ -107,12 +107,17 @@ export default function App() {
         (w) => !w.minimized && !w.maximized,
       );
       const restore = () => {
+        const inst = canvasTransform.getInstance();
+
         if (activeFocusWindow) {
           state.focusWindow(activeFocusWindow.id);
+          // Restore saved scale first so centerOnWindow preserves zoom level
+          if (saved && inst?.setTransform) {
+            canvasTransform.applyTransform(inst, saved.x, saved.y, saved.scale);
+          }
           return canvasTransform.centerOnWindow(activeFocusWindow);
         }
 
-        const inst = canvasTransform.getInstance();
         if (!inst) return false;
         if (saved) {
           return canvasTransform.applyTransform(inst, saved.x, saved.y, saved.scale);
