@@ -1,7 +1,7 @@
 import { Upload, Download, X, FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildWsUrl } from "@/lib/ws";
-import { useFileTransferStore } from "@/stores/useFileTransferStore";
+import { useWindowStore } from "@/stores/useWindowStore";
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -13,11 +13,14 @@ function formatSize(bytes: number): string {
 
 const CHUNK_SIZE = 64 * 1024;
 
-export default function FileTransferModal() {
-  const { showModal, modalMode, modalConnection, closeModal } = useFileTransferStore();
+export default function FileTransferWindow({ windowId }: { windowId?: string }) {
+  const closeWindow = useWindowStore((s) => s.closeWindow);
+  const metadata = useWindowStore((s) => s.windows.find((w) => w.id === windowId)?.metadata);
 
-  const mode = modalMode;
-  const connection = modalConnection;
+  const mode = metadata?.mode === "download" ? "download" : "upload";
+  const connectionId = typeof metadata?.connectionId === "number" ? metadata.connectionId : null;
+  const connectionName = typeof metadata?.connectionName === "string" ? metadata.connectionName : "SSH Session";
+  const connection = connectionId === null ? null : { id: connectionId, name: connectionName };
 
   // Internal state
   const [status, setStatus] = useState<"input" | "connecting" | "transferring" | "done" | "error">("input");
@@ -48,9 +51,8 @@ export default function FileTransferModal() {
     return buildWsUrl("/ws/sftp", { connectionId: connection.id, r: connectKey });
   }, [connection, connectKey]);
 
-  // Reset state when modal opens
+  // Reset state when the transfer window opens.
   useEffect(() => {
-    if (!showModal) return;
     setStatus("input");
     setProgress(null);
     setErrorMessage("");
@@ -59,11 +61,11 @@ export default function FileTransferModal() {
     downloadChunksRef.current = [];
     uploadIdRef.current = "";
     downloadIdRef.current = "";
-  }, [showModal, isUpload]);
+  }, [windowId, isUpload]);
 
-  // Connect WS when modal opens with connection ready
+  // Connect WS once the user starts a transfer.
   useEffect(() => {
-    if (!showModal || !wsUrl || status !== "input") return;
+    if (!wsUrl || status !== "input") return;
     if (mode === "upload" && !selectedFile) return;
     if (mode === "download" && !path.trim()) return;
 
@@ -163,7 +165,7 @@ export default function FileTransferModal() {
       ws.close();
       wsRef.current = null;
     };
-  }, [showModal, wsUrl]); // Only connect on input → connecting transition
+  }, [wsUrl]); // Only connect on input -> connecting transition
 
   async function sendFileChunks(ws: WebSocket, file: File, uploadId: string) {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -206,18 +208,18 @@ export default function FileTransferModal() {
 
   const handleCancel = useCallback(() => {
     wsRef.current?.close();
-    closeModal();
-  }, [closeModal]);
+    if (windowId) closeWindow(windowId);
+  }, [closeWindow, windowId]);
 
-  // Auto-close after done
-  useEffect(() => {
-    if (status === "done") {
-      const t = setTimeout(() => closeModal(), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [status, closeModal]);
-
-  if (!showModal || !mode || !connection) return null;
+  if (!connection) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-neutral-950 p-4">
+        <div className="px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
+          <p className="text-[11px] text-red-400">Missing SSH connection</p>
+        </div>
+      </div>
+    );
+  }
 
   const progressPct = progress && progress.total > 0
     ? Math.round((progress.bytesDone / progress.total) * 100)
@@ -227,12 +229,12 @@ export default function FileTransferModal() {
   const isTransferring = status === "connecting" || status === "transferring";
 
   return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="relative bg-neutral-900 border border-neutral-700 rounded-xl p-5 shadow-2xl w-full max-w-sm mx-4">
+    <div className="w-full h-full bg-neutral-950 p-4 overflow-auto">
+      <div className="relative bg-neutral-900 border border-neutral-800 rounded-lg p-4 shadow-xl w-full min-h-full">
         <button
           onClick={handleCancel}
-          disabled={isTransferring}
-          className="absolute top-3 right-3 text-neutral-500 hover:text-white disabled:text-neutral-600 transition-colors cursor-pointer"
+          className="absolute top-3 right-3 text-neutral-500 hover:text-white transition-colors cursor-pointer"
+          title={isTransferring ? "Close and cancel transfer" : "Close"}
         >
           <X size={16} />
         </button>
@@ -325,8 +327,7 @@ export default function FileTransferModal() {
         <div className="flex gap-2 justify-end">
           <button
             onClick={handleCancel}
-            disabled={isTransferring}
-            className="px-3 py-1.5 text-xs text-neutral-400 hover:text-white disabled:text-neutral-600 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            className="px-3 py-1.5 text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
           >
             {status === "done" || status === "error" ? "Close" : "Cancel"}
           </button>

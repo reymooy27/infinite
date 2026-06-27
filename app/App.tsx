@@ -5,7 +5,6 @@ import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import FileTransferModal from "@/components/FileTransferModal";
 import FocusModeLayout from "@/components/FocusModeLayout";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import NavigationIndicator from "@/components/NavigationIndicator";
@@ -245,7 +244,6 @@ export default function App() {
         openSection={pendingSection}
         onOpenSectionConsumed={() => setPendingSection(null)}
       />
-      <FileTransferModal />
     </div>
     </ErrorBoundary>
   );
