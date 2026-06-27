@@ -12,4 +12,4 @@ RUN npm ci
 COPY server/ ./server/
 
 EXPOSE 7891
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx tsx server/index.ts"]
+CMD ["sh", "-c", "npx prisma db push && npx prisma generate && npx tsx server/index.ts"]
