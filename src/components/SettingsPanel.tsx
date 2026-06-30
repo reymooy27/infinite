@@ -25,6 +25,11 @@ const PROVIDER_SUGGESTIONS = [
   "OpenRouter",
 ];
 
+interface TestState {
+  kind: "idle" | "loading" | "success" | "error";
+  message: string;
+}
+
 function ToggleRow({
   title,
   description,
@@ -104,6 +109,7 @@ export default function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<AIProviderKeyRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [testStates, setTestStates] = useState<Record<string, TestState>>({});
 
   useEffect(() => {
     if (currentPage !== "root" && currentPage !== "api-management") return;
@@ -245,6 +251,48 @@ export default function SettingsPanel({
     } catch {
       setError("Clipboard copy failed.");
     }
+  };
+
+  const handleTest = (id: string) => {
+    void (async () => {
+      setTestStates((prev) => ({
+        ...prev,
+        [id]: { kind: "loading", message: "Testing..." },
+      }));
+
+      try {
+        const res = await fetch(`/api/ai-provider-keys/${id}/test`, {
+          method: "POST",
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to test provider key");
+        }
+
+        setTestStates((prev) => ({
+          ...prev,
+          [id]: {
+            kind: data.ok ? "success" : "error",
+            message: data.message || (data.ok ? "Key valid" : "Key invalid"),
+          },
+        }));
+      } catch (err) {
+        setTestStates((prev) => ({
+          ...prev,
+          [id]: {
+            kind: "error",
+            message:
+              err instanceof Error ? err.message : "Failed to test provider key.",
+          },
+        }));
+      }
+    })();
+  };
+
+  const canTestProvider = (providerName: string) => {
+    const normalized = providerName.trim().toLowerCase();
+    return normalized === "openai" || normalized === "anthropic";
   };
 
   const filteredItems = items.filter((item) =>
@@ -436,6 +484,19 @@ export default function SettingsPanel({
                   key={item.id}
                   className="rounded-lg border border-neutral-700 bg-neutral-900/80 p-3"
                 >
+                  {testStates[item.id] && (
+                    <div
+                      className={`mb-2 rounded-md px-2 py-1 text-[10px] ${
+                        testStates[item.id].kind === "success"
+                          ? "bg-emerald-950/70 text-emerald-300"
+                          : testStates[item.id].kind === "error"
+                            ? "bg-red-950/70 text-red-300"
+                            : "bg-neutral-800 text-neutral-400"
+                      }`}
+                    >
+                      {testStates[item.id].message}
+                    </div>
+                  )}
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-[12px] font-medium text-neutral-100">
@@ -456,6 +517,17 @@ export default function SettingsPanel({
                       >
                         {visibleId === item.id ? "Hide" : "Show"}
                       </button>
+                      {canTestProvider(item.provider) && (
+                        <button
+                          onClick={() => handleTest(item.id)}
+                          disabled={testStates[item.id]?.kind === "loading"}
+                          className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {testStates[item.id]?.kind === "loading"
+                            ? "Testing"
+                            : "Test"}
+                        </button>
+                      )}
                       <button
                         onClick={() => handleCopy(item.apiKey, item.id)}
                         className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
