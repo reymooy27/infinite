@@ -7,14 +7,6 @@ export interface QuickBarSlot {
   isTmux?: boolean;
 }
 
-export interface AIProviderKey {
-  id: string;
-  provider: string;
-  apiKey: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export const AVAILABLE_SHORTCUTS: QuickBarSlot[] = [
   { label: "C-c", data: "\x03" },
   { label: "C-d", data: "\x04" },
@@ -64,7 +56,6 @@ interface SettingsState {
   terminalFontSize: number;
   bgColor: string;
   quickBarSlots: QuickBarSlot[];
-  aiProviderKeys: AIProviderKey[];
   focusMode: boolean;
   focusModeWindowId: string | null;
   setShowTerminalShortcuts: (value: boolean) => void;
@@ -72,9 +63,6 @@ interface SettingsState {
   setTerminalFontSize: (value: number) => void;
   setBgColor: (color: string) => void;
   setQuickBarSlots: (slots: QuickBarSlot[]) => void;
-  addAIProviderKey: (entry: Omit<AIProviderKey, "id" | "createdAt" | "updatedAt">) => void;
-  updateAIProviderKey: (id: string, entry: Omit<AIProviderKey, "id" | "createdAt" | "updatedAt">) => void;
-  deleteAIProviderKey: (id: string) => void;
   setFocusMode: (value: boolean) => void;
   setFocusModeWindowId: (id: string | null) => void;
 }
@@ -87,7 +75,6 @@ export const useSettingsStore = create<SettingsState>()(
       terminalFontSize: 13,
       bgColor: "#171717",
       quickBarSlots: DEFAULT_QUICK_BAR,
-      aiProviderKeys: [],
       focusMode: false,
       focusModeWindowId: null,
       setShowTerminalShortcuts: (value) =>
@@ -96,36 +83,6 @@ export const useSettingsStore = create<SettingsState>()(
       setTerminalFontSize: (value) => set({ terminalFontSize: value }),
       setBgColor: (color) => set({ bgColor: color }),
       setQuickBarSlots: (slots) => set({ quickBarSlots: slots }),
-      addAIProviderKey: (entry) =>
-        set((state) => ({
-          aiProviderKeys: [
-            {
-              id: crypto.randomUUID(),
-              provider: entry.provider,
-              apiKey: entry.apiKey,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-            ...state.aiProviderKeys,
-          ],
-        })),
-      updateAIProviderKey: (id, entry) =>
-        set((state) => ({
-          aiProviderKeys: state.aiProviderKeys.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  provider: entry.provider,
-                  apiKey: entry.apiKey,
-                  updatedAt: new Date().toISOString(),
-                }
-              : item,
-          ),
-        })),
-      deleteAIProviderKey: (id) =>
-        set((state) => ({
-          aiProviderKeys: state.aiProviderKeys.filter((item) => item.id !== id),
-        })),
       setFocusMode: (value) => set({ focusMode: value }),
       setFocusModeWindowId: (id) => set({ focusModeWindowId: id }),
     }),

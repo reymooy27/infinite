@@ -6,6 +6,7 @@ import {
   AVAILABLE_SHORTCUTS,
   AVAILABLE_TMUX_SHORTCUTS,
 } from "@/stores/useSettingsStore";
+import type { AIProviderKeyRecord } from "@/types/aiProvider";
 
 interface SettingsPanelProps {
   currentPage: "root" | "terminal" | "api-management";
@@ -92,16 +93,55 @@ export default function SettingsPanel({
   const setBgColor = useSettingsStore((s) => s.setBgColor);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const setQuickBarSlots = useSettingsStore((s) => s.setQuickBarSlots);
-  const aiProviderKeys = useSettingsStore((s) => s.aiProviderKeys);
-  const addAIProviderKey = useSettingsStore((s) => s.addAIProviderKey);
-  const updateAIProviderKey = useSettingsStore((s) => s.updateAIProviderKey);
-  const deleteAIProviderKey = useSettingsStore((s) => s.deleteAIProviderKey);
 
   const [provider, setProvider] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [items, setItems] = useState<AIProviderKeyRecord[]>([]);
+
+  useEffect(() => {
+    if (currentPage !== "root" && currentPage !== "api-management") return;
+
+    let cancelled = false;
+
+    async function loadKeys() {
+      if (currentPage === "api-management") {
+        setLoading(true);
+        setError("");
+      }
+
+      try {
+        const res = await fetch("/api/ai-provider-keys");
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load provider keys");
+        }
+
+        if (!cancelled) {
+          setItems(data);
+        }
+      } catch (err) {
+        if (!cancelled && currentPage === "api-management") {
+          setError(err instanceof Error ? err.message : "Failed to load provider keys.");
+        }
+      } finally {
+        if (!cancelled && currentPage === "api-management") {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadKeys();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPage]);
 
   useEffect(() => {
     if (!copiedId) return;
@@ -117,41 +157,78 @@ export default function SettingsPanel({
   };
 
   const handleSubmit = () => {
-    const nextProvider = formatProviderName(provider);
-    const nextApiKey = apiKey.trim();
+    void (async () => {
+      const nextProvider = formatProviderName(provider);
+      const nextApiKey = apiKey.trim();
 
-    if (!nextProvider || !nextApiKey) {
-      setError("Provider and API key are required.");
-      return;
-    }
+      if (!nextProvider || !nextApiKey) {
+        setError("Provider and API key are required.");
+        return;
+      }
 
-    const exists = aiProviderKeys.some(
-      (item) =>
-        item.id !== editingId &&
-        item.provider.toLowerCase() === nextProvider.toLowerCase(),
-    );
-    if (exists) {
-      setError("Provider already exists. Edit existing entry instead.");
-      return;
-    }
+      setSaving(true);
+      setError("");
 
-    if (editingId) {
-      updateAIProviderKey(editingId, {
-        provider: nextProvider,
-        apiKey: nextApiKey,
-      });
-    } else {
-      addAIProviderKey({
-        provider: nextProvider,
-        apiKey: nextApiKey,
-      });
-    }
+      try {
+        const res = await fetch(
+          editingId
+            ? `/api/ai-provider-keys/${editingId}`
+            : "/api/ai-provider-keys",
+          {
+            method: editingId ? "PATCH" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              provider: nextProvider,
+              apiKey: nextApiKey,
+            }),
+          },
+        );
 
-    resetForm();
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to save provider key");
+        }
+
+        setItems((prev) =>
+          editingId
+            ? prev.map((item) => (item.id === editingId ? data : item))
+            : [data, ...prev],
+        );
+        resetForm();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save provider key.");
+      } finally {
+        setSaving(false);
+      }
+    })();
+  };
+
+  const handleDelete = (id: string) => {
+    void (async () => {
+      setError("");
+      try {
+        const res = await fetch(`/api/ai-provider-keys/${id}`, {
+          method: "DELETE",
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to delete provider key");
+        }
+
+        setItems((prev) => prev.filter((item) => item.id !== id));
+        if (editingId === id) resetForm();
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to delete provider key.",
+        );
+      }
+    })();
   };
 
   const handleEdit = (id: string) => {
-    const item = aiProviderKeys.find((entry) => entry.id === id);
+    const item = items.find((entry) => entry.id === id);
     if (!item) return;
     setProvider(item.provider);
     setApiKey(item.apiKey);
@@ -212,7 +289,7 @@ export default function SettingsPanel({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300">
-              {aiProviderKeys.length}
+              {items.length}
             </span>
             <svg
               width="14"
@@ -241,7 +318,7 @@ export default function SettingsPanel({
             {editingId ? "Edit provider" : "Add provider"}
           </h3>
           <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
-            Keys stay in local app storage on this browser.
+            Keys are stored in database and encrypted at rest.
           </p>
 
           <div className="mt-3 space-y-2">
@@ -290,9 +367,14 @@ export default function SettingsPanel({
           <div className="mt-3 flex gap-2">
             <button
               onClick={handleSubmit}
+              disabled={saving}
               className="rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-medium text-white transition-colors cursor-pointer hover:bg-blue-500"
             >
-              {editingId ? "Save changes" : "Add provider"}
+              {saving
+                ? "Saving..."
+                : editingId
+                  ? "Save changes"
+                  : "Add provider"}
             </button>
             {(editingId || provider || apiKey) && (
               <button
@@ -316,17 +398,21 @@ export default function SettingsPanel({
               </p>
             </div>
             <span className="rounded-full bg-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300">
-              {aiProviderKeys.length}
+              {items.length}
             </span>
           </div>
 
           <div className="mt-3 space-y-2">
-            {aiProviderKeys.length === 0 ? (
+            {loading ? (
+              <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
+                Loading providers...
+              </div>
+            ) : items.length === 0 ? (
               <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
                 No provider saved yet.
               </div>
             ) : (
-              aiProviderKeys.map((item) => (
+              items.map((item) => (
                 <div
                   key={item.id}
                   className="rounded-lg border border-neutral-700 bg-neutral-900/80 p-3"
@@ -354,10 +440,7 @@ export default function SettingsPanel({
                         Edit
                       </button>
                       <button
-                        onClick={() => {
-                          deleteAIProviderKey(item.id);
-                          if (editingId === item.id) resetForm();
-                        }}
+                        onClick={() => handleDelete(item.id)}
                         className="rounded-md border border-red-900/70 px-2 py-1 text-[11px] text-red-300 transition-colors cursor-pointer hover:border-red-700 hover:text-red-200"
                       >
                         Delete

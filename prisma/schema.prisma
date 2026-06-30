@@ -74,3 +74,15 @@ model Project {
 
   @@map("projects")
 }
+
+model AIProviderKey {
+  id              String   @id @default(cuid())
+  provider        String
+  apiKeyEncrypted String   @map("api_key_encrypted")
+  userId          String   @default("local-user") @map("user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, provider])
+  @@map("ai_provider_keys")
+}
