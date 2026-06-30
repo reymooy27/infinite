@@ -98,10 +98,12 @@ export default function SettingsPanel({
   const [apiKey, setApiKey] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [visibleId, setVisibleId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<AIProviderKeyRecord[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (currentPage !== "root" && currentPage !== "api-management") return;
@@ -244,6 +246,10 @@ export default function SettingsPanel({
       setError("Clipboard copy failed.");
     }
   };
+
+  const filteredItems = items.filter((item) =>
+    item.provider.toLowerCase().includes(searchQuery.trim().toLowerCase()),
+  );
 
   if (currentPage === "root") {
     return (
@@ -402,6 +408,15 @@ export default function SettingsPanel({
             </span>
           </div>
 
+          <div className="mt-3">
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search provider..."
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
+            />
+          </div>
+
           <div className="mt-3 space-y-2">
             {loading ? (
               <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
@@ -411,8 +426,12 @@ export default function SettingsPanel({
               <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
                 No provider saved yet.
               </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
+                No provider match search.
+              </div>
             ) : (
-              items.map((item) => (
+              filteredItems.map((item) => (
                 <div
                   key={item.id}
                   className="rounded-lg border border-neutral-700 bg-neutral-900/80 p-3"
@@ -423,10 +442,20 @@ export default function SettingsPanel({
                         {item.provider}
                       </div>
                       <div className="mt-1 break-all font-mono text-[11px] text-neutral-400">
-                        {maskApiKey(item.apiKey)}
+                        {visibleId === item.id
+                          ? item.apiKey
+                          : maskApiKey(item.apiKey)}
                       </div>
                     </div>
                     <div className="flex shrink-0 gap-1.5">
+                      <button
+                        onClick={() =>
+                          setVisibleId((prev) => (prev === item.id ? null : item.id))
+                        }
+                        className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
+                      >
+                        {visibleId === item.id ? "Hide" : "Show"}
+                      </button>
                       <button
                         onClick={() => handleCopy(item.apiKey, item.id)}
                         className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
