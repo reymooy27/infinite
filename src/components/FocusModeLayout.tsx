@@ -33,7 +33,9 @@ export default function FocusModeLayout({
 
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsPage, setSettingsPage] = useState<"root" | "terminal">("terminal");
+  const [settingsPage, setSettingsPage] = useState<
+    "root" | "terminal" | "api-management"
+  >("terminal");
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -197,6 +199,7 @@ export default function FocusModeLayout({
                 <SettingsPanel
                   currentPage={settingsPage}
                   onOpenTerminal={() => setSettingsPage("terminal")}
+                  onOpenApiManagement={() => setSettingsPage("api-management")}
                 />
               </div>
             )}

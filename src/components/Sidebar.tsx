@@ -13,7 +13,8 @@ type SidebarPage =
   | "ssh"
   | "agents"
   | "settings"
-  | "settings-terminal";
+  | "settings-terminal"
+  | "settings-api-management";
 
 const ROOT_ITEMS = [
   {
@@ -81,7 +82,8 @@ export default function Sidebar({
     value === "ssh" ||
     value === "agents" ||
     value === "settings" ||
-    value === "settings-terminal";
+    value === "settings-terminal" ||
+    value === "settings-api-management";
 
   // Open to a specific section on external request
   useEffect(() => {
@@ -133,7 +135,9 @@ export default function Sidebar({
             ? "Agents"
             : activePage === "settings"
               ? "Settings"
-              : "Terminal";
+              : activePage === "settings-terminal"
+                ? "Terminal"
+                : "API Management";
 
   const handleClose = () => {
     setIsOpen(false);
@@ -141,7 +145,10 @@ export default function Sidebar({
   };
 
   const handleBack = () => {
-    if (activePage === "settings-terminal") {
+    if (
+      activePage === "settings-terminal" ||
+      activePage === "settings-api-management"
+    ) {
       setActivePage("settings");
       return;
     }
@@ -261,12 +268,20 @@ export default function Sidebar({
               {activePage === "ssh" && <SSHPanel />}
               {activePage === "agents" && <AgentPanel />}
               {(activePage === "settings" ||
-                activePage === "settings-terminal") && (
+                activePage === "settings-terminal" ||
+                activePage === "settings-api-management") && (
                 <SettingsPanel
                   currentPage={
-                    activePage === "settings-terminal" ? "terminal" : "root"
+                    activePage === "settings-terminal"
+                      ? "terminal"
+                      : activePage === "settings-api-management"
+                        ? "api-management"
+                        : "root"
                   }
                   onOpenTerminal={() => setActivePage("settings-terminal")}
+                  onOpenApiManagement={() =>
+                    setActivePage("settings-api-management")
+                  }
                 />
               )}
             </div>

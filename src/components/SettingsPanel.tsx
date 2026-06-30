@@ -1,12 +1,28 @@
 "use client";
 
-import { useSettingsStore, AVAILABLE_SHORTCUTS, AVAILABLE_TMUX_SHORTCUTS } from "@/stores/useSettingsStore";
-import type { QuickBarSlot } from "@/stores/useSettingsStore";
+import { useEffect, useState } from "react";
+import {
+  useSettingsStore,
+  AVAILABLE_SHORTCUTS,
+  AVAILABLE_TMUX_SHORTCUTS,
+} from "@/stores/useSettingsStore";
 
 interface SettingsPanelProps {
-  currentPage: "root" | "terminal";
+  currentPage: "root" | "terminal" | "api-management";
   onOpenTerminal: () => void;
+  onOpenApiManagement: () => void;
 }
+
+const PROVIDER_SUGGESTIONS = [
+  "OpenAI",
+  "Anthropic",
+  "Google Gemini",
+  "xAI",
+  "Mistral",
+  "Groq",
+  "DeepSeek",
+  "OpenRouter",
+];
 
 function ToggleRow({
   title,
@@ -48,9 +64,19 @@ function ToggleRow({
   );
 }
 
+function maskApiKey(value: string) {
+  if (value.length <= 8) return "•".repeat(Math.max(value.length, 4));
+  return `${value.slice(0, 4)}${"•".repeat(Math.max(value.length - 8, 4))}${value.slice(-4)}`;
+}
+
+function formatProviderName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
 export default function SettingsPanel({
   currentPage,
   onOpenTerminal,
+  onOpenApiManagement,
 }: SettingsPanelProps) {
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
@@ -66,10 +92,85 @@ export default function SettingsPanel({
   const setBgColor = useSettingsStore((s) => s.setBgColor);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const setQuickBarSlots = useSettingsStore((s) => s.setQuickBarSlots);
+  const aiProviderKeys = useSettingsStore((s) => s.aiProviderKeys);
+  const addAIProviderKey = useSettingsStore((s) => s.addAIProviderKey);
+  const updateAIProviderKey = useSettingsStore((s) => s.updateAIProviderKey);
+  const deleteAIProviderKey = useSettingsStore((s) => s.deleteAIProviderKey);
+
+  const [provider, setProvider] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!copiedId) return;
+    const timeout = window.setTimeout(() => setCopiedId(null), 1600);
+    return () => window.clearTimeout(timeout);
+  }, [copiedId]);
+
+  const resetForm = () => {
+    setProvider("");
+    setApiKey("");
+    setEditingId(null);
+    setError("");
+  };
+
+  const handleSubmit = () => {
+    const nextProvider = formatProviderName(provider);
+    const nextApiKey = apiKey.trim();
+
+    if (!nextProvider || !nextApiKey) {
+      setError("Provider and API key are required.");
+      return;
+    }
+
+    const exists = aiProviderKeys.some(
+      (item) =>
+        item.id !== editingId &&
+        item.provider.toLowerCase() === nextProvider.toLowerCase(),
+    );
+    if (exists) {
+      setError("Provider already exists. Edit existing entry instead.");
+      return;
+    }
+
+    if (editingId) {
+      updateAIProviderKey(editingId, {
+        provider: nextProvider,
+        apiKey: nextApiKey,
+      });
+    } else {
+      addAIProviderKey({
+        provider: nextProvider,
+        apiKey: nextApiKey,
+      });
+    }
+
+    resetForm();
+  };
+
+  const handleEdit = (id: string) => {
+    const item = aiProviderKeys.find((entry) => entry.id === id);
+    if (!item) return;
+    setProvider(item.provider);
+    setApiKey(item.apiKey);
+    setEditingId(item.id);
+    setError("");
+  };
+
+  const handleCopy = async (value: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedId(id);
+    } catch {
+      setError("Clipboard copy failed.");
+    }
+  };
 
   if (currentPage === "root") {
     return (
-      <div className="p-2.5">
+      <div className="space-y-2.5 p-2.5">
         <button
           onClick={onOpenTerminal}
           className="flex w-full items-center justify-between rounded-lg border border-neutral-700 bg-neutral-800/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:border-neutral-600 hover:bg-neutral-800"
@@ -96,6 +197,178 @@ export default function SettingsPanel({
             <path d="M9 18l6-6-6-6" />
           </svg>
         </button>
+
+        <button
+          onClick={onOpenApiManagement}
+          className="flex w-full items-center justify-between rounded-lg border border-neutral-700 bg-neutral-800/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:border-neutral-600 hover:bg-neutral-800"
+        >
+          <div>
+            <div className="text-[13px] font-medium text-neutral-100">
+              API Management
+            </div>
+            <div className="mt-0.5 text-[11px] text-neutral-400">
+              Save provider names and API keys. Copy, edit, or delete entries.
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300">
+              {aiProviderKeys.length}
+            </span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="shrink-0 text-neutral-500"
+            >
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </div>
+        </button>
+      </div>
+    );
+  }
+
+  if (currentPage === "api-management") {
+    return (
+      <div className="space-y-2.5 p-2.5 overflow-y-auto max-h-full">
+        <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+          <h3 className="text-[13px] font-medium text-neutral-100">
+            {editingId ? "Edit provider" : "Add provider"}
+          </h3>
+          <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+            Keys stay in local app storage on this browser.
+          </p>
+
+          <div className="mt-3 space-y-2">
+            <div>
+              <label
+                htmlFor="provider-name"
+                className="mb-1 block text-[11px] text-neutral-400"
+              >
+                Provider
+              </label>
+              <input
+                id="provider-name"
+                list="provider-suggestions"
+                value={provider}
+                onChange={(e) => setProvider(e.target.value)}
+                placeholder="OpenAI"
+                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
+              />
+              <datalist id="provider-suggestions">
+                {PROVIDER_SUGGESTIONS.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <label
+                htmlFor="provider-key"
+                className="mb-1 block text-[11px] text-neutral-400"
+              >
+                API Key
+              </label>
+              <textarea
+                id="provider-key"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-..."
+                rows={4}
+                className="w-full resize-none rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          {error && <p className="mt-2 text-[11px] text-red-400">{error}</p>}
+
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={handleSubmit}
+              className="rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-medium text-white transition-colors cursor-pointer hover:bg-blue-500"
+            >
+              {editingId ? "Save changes" : "Add provider"}
+            </button>
+            {(editingId || provider || apiKey) && (
+              <button
+                onClick={resetForm}
+                className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-[13px] font-medium text-neutral-100">
+                Saved providers
+              </h3>
+              <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+                Copy key, edit provider, or delete row.
+              </p>
+            </div>
+            <span className="rounded-full bg-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300">
+              {aiProviderKeys.length}
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {aiProviderKeys.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
+                No provider saved yet.
+              </div>
+            ) : (
+              aiProviderKeys.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-lg border border-neutral-700 bg-neutral-900/80 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[12px] font-medium text-neutral-100">
+                        {item.provider}
+                      </div>
+                      <div className="mt-1 break-all font-mono text-[11px] text-neutral-400">
+                        {maskApiKey(item.apiKey)}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1.5">
+                      <button
+                        onClick={() => handleCopy(item.apiKey, item.id)}
+                        className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
+                      >
+                        {copiedId === item.id ? "Copied" : "Copy"}
+                      </button>
+                      <button
+                        onClick={() => handleEdit(item.id)}
+                        className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          deleteAIProviderKey(item.id);
+                          if (editingId === item.id) resetForm();
+                        }}
+                        className="rounded-md border border-red-900/70 px-2 py-1 text-[11px] text-red-300 transition-colors cursor-pointer hover:border-red-700 hover:text-red-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -105,19 +378,25 @@ export default function SettingsPanel({
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
         <h3 className="text-[13px] font-medium text-neutral-100">Font size</h3>
         <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
-          Adjust the terminal text size (8–24px).
+          Adjust the terminal text size (8-24px).
         </p>
         <div className="mt-2 flex items-center gap-2">
           <button
-            onClick={() => setTerminalFontSize(Math.max(8, terminalFontSize - 1))}
-            className="h-7 w-7 rounded bg-neutral-700 text-neutral-200 hover:bg-neutral-600 transition-colors cursor-pointer flex items-center justify-center text-sm font-medium"
+            onClick={() =>
+              setTerminalFontSize(Math.max(8, terminalFontSize - 1))
+            }
+            className="flex h-7 w-7 items-center justify-center rounded bg-neutral-700 text-sm font-medium text-neutral-200 transition-colors cursor-pointer hover:bg-neutral-600"
           >
-            −
+            -
           </button>
-          <span className="text-sm text-neutral-200 w-8 text-center font-mono">{terminalFontSize}</span>
+          <span className="w-8 text-center font-mono text-sm text-neutral-200">
+            {terminalFontSize}
+          </span>
           <button
-            onClick={() => setTerminalFontSize(Math.min(24, terminalFontSize + 1))}
-            className="h-7 w-7 rounded bg-neutral-700 text-neutral-200 hover:bg-neutral-600 transition-colors cursor-pointer flex items-center justify-center text-sm font-medium"
+            onClick={() =>
+              setTerminalFontSize(Math.min(24, terminalFontSize + 1))
+            }
+            className="flex h-7 w-7 items-center justify-center rounded bg-neutral-700 text-sm font-medium text-neutral-200 transition-colors cursor-pointer hover:bg-neutral-600"
           >
             +
           </button>
@@ -125,50 +404,68 @@ export default function SettingsPanel({
       </div>
 
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
-        <h3 className="text-[13px] font-medium text-neutral-100">Background color</h3>
+        <h3 className="text-[13px] font-medium text-neutral-100">
+          Background color
+        </h3>
         <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
-          Choose the app background and canvas color.
+          Choose app background and canvas color.
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
-          {["#171717", "#1a1a1a", "#0a0a0a", "#1e1e2e", "#1a1a2e", "#0d1117", "#0f1923", "#2d1b2e"].map((c) => (
+          {[
+            "#171717",
+            "#1a1a1a",
+            "#0a0a0a",
+            "#1e1e2e",
+            "#1a1a2e",
+            "#0d1117",
+            "#0f1923",
+            "#2d1b2e",
+          ].map((c) => (
             <button
               key={c}
               onClick={() => setBgColor(c)}
-              className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer ${
-                bgColor === c ? "border-white scale-110" : "border-transparent hover:scale-110"
+              className={`h-7 w-7 rounded-full border-2 transition-all cursor-pointer ${
+                bgColor === c
+                  ? "scale-110 border-white"
+                  : "border-transparent hover:scale-110"
               }`}
               style={{ backgroundColor: c }}
               title={c}
             />
           ))}
-          <label className="relative w-7 h-7 rounded-full border-2 border-dashed border-neutral-600 hover:border-neutral-400 cursor-pointer flex items-center justify-center overflow-hidden">
+          <label className="relative flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-neutral-600 hover:border-neutral-400">
             <input
               type="color"
               value={bgColor}
               onChange={(e) => setBgColor(e.target.value)}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             />
-            <span className="text-neutral-500 text-xs leading-none pointer-events-none">+</span>
+            <span className="pointer-events-none text-xs leading-none text-neutral-500">
+              +
+            </span>
           </label>
         </div>
       </div>
 
       <ToggleRow
         title="Terminal button shortcuts"
-        description="Show or hide the on-screen terminal shortcut buttons for control keys, arrows, and enter/tab actions."
+        description="Show or hide on-screen terminal shortcut buttons for control keys, arrows, and enter/tab actions."
         checked={showTerminalShortcuts}
         onChange={setShowTerminalShortcuts}
       />
       <ToggleRow
         title="tmux shortcut row"
-        description="Show or hide the separate tmux action row while keeping the main terminal shortcut row available."
+        description="Show or hide separate tmux action row while keeping main terminal shortcut row available."
         checked={showTmuxShortcuts}
         onChange={setShowTmuxShortcuts}
       />
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
-        <h3 className="text-[13px] font-medium text-neutral-100">Quick bar buttons</h3>
+        <h3 className="text-[13px] font-medium text-neutral-100">
+          Quick bar buttons
+        </h3>
         <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
-          Choose which shortcuts appear in the mobile quick bar. Terminal shortcuts are shown at the top, tmux shortcuts below.
+          Choose which shortcuts appear in mobile quick bar. Terminal shortcuts
+          shown at top, tmux shortcuts below.
         </p>
         <div className="mt-2 flex flex-wrap gap-1">
           {AVAILABLE_SHORTCUTS.map((s) => {
@@ -178,12 +475,14 @@ export default function SettingsPanel({
                 key={s.label}
                 onClick={() => {
                   if (active) {
-                    setQuickBarSlots(quickBarSlots.filter((q) => q.data !== s.data));
+                    setQuickBarSlots(
+                      quickBarSlots.filter((q) => q.data !== s.data),
+                    );
                   } else if (quickBarSlots.length < 9) {
                     setQuickBarSlots([...quickBarSlots, s]);
                   }
                 }}
-                className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
+                className={`rounded px-2 py-1 font-mono text-[11px] transition-colors cursor-pointer ${
                   active
                     ? "bg-blue-600 text-white"
                     : "bg-neutral-700 text-neutral-400 hover:text-neutral-200"
@@ -202,12 +501,14 @@ export default function SettingsPanel({
                 key={s.label}
                 onClick={() => {
                   if (active) {
-                    setQuickBarSlots(quickBarSlots.filter((q) => q.data !== s.data));
+                    setQuickBarSlots(
+                      quickBarSlots.filter((q) => q.data !== s.data),
+                    );
                   } else if (quickBarSlots.length < 9) {
                     setQuickBarSlots([...quickBarSlots, s]);
                   }
                 }}
-                className={`px-2 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
+                className={`rounded px-2 py-1 font-mono text-[11px] transition-colors cursor-pointer ${
                   active
                     ? "bg-blue-600 text-white"
                     : "bg-neutral-700 text-neutral-400 hover:text-neutral-200"
@@ -222,7 +523,6 @@ export default function SettingsPanel({
           {quickBarSlots.length}/9 selected
         </p>
       </div>
-
     </div>
   );
 }
