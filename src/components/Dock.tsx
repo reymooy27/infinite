@@ -10,7 +10,24 @@ import { useSettingsStore } from "@/stores/useSettingsStore";
 import { centerWindowById } from "@/lib/focusWindow";
 import type { AppId } from "@/types";
 
-const DOCK_APPS: AppId[] = ["notes", "devBrowser", "ssh", "browserCanvas"];
+const DOCK_APPS: AppId[] = ["notes", "ssh"];
+const BROWSER_DOCK_APPS: AppId[] = ["devBrowser", "browserCanvas"];
+const BROWSER_CHOICES: Array<{
+  appId: (typeof BROWSER_DOCK_APPS)[number];
+  label: string;
+  description: string;
+}> = [
+  {
+    appId: "devBrowser",
+    label: "Dev Web",
+    description: "Open dev browser window for local web testing.",
+  },
+  {
+    appId: "browserCanvas",
+    label: "Puppeteer",
+    description: "Open streamed browser window backed by Puppeteer.",
+  },
+];
 
 function WindowList({
   windows,
@@ -209,6 +226,7 @@ export default function Dock() {
 
   const [showWinMenu, setShowWinMenu] = useState(false);
   const [showFileTransfer, setShowFileTransfer] = useState(false);
+  const [showBrowserPicker, setShowBrowserPicker] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileTransferRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -325,8 +343,12 @@ export default function Dock() {
   const focusModeWindowId = useSettingsStore((s) => s.focusModeWindowId);
   const setFocusMode = useSettingsStore((s) => s.setFocusMode);
 
-  const minimized = windows.filter((w) => w.minimized);
   const hasWindows = windows.length > 0;
+  const isBrowserPlacing =
+    placingAppId !== null && BROWSER_DOCK_APPS.includes(placingAppId);
+  const isBrowserOpen = windows.some((w) =>
+    BROWSER_DOCK_APPS.includes(w.appId),
+  );
 
   const handleRestore = (winId: string) => {
     restoreWindow(winId);
@@ -365,6 +387,33 @@ export default function Dock() {
     }
   }, []);
 
+  const handleBrowserLauncher = () => {
+    setShowWinMenu(false);
+    setShowFileTransfer(false);
+    if (isBrowserPlacing) {
+      clearPlacing();
+      setShowBrowserPicker(false);
+      return;
+    }
+    setShowBrowserPicker((v) => !v);
+  };
+
+  const handleBrowserChoice = (appId: (typeof BROWSER_DOCK_APPS)[number]) => {
+    setShowBrowserPicker(false);
+    setPlacingApp(appId);
+  };
+
+  useEffect(() => {
+    if (!showBrowserPicker) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowBrowserPicker(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [showBrowserPicker]);
+
   // Close menus on outside click
   useEffect(() => {
     if (!showWinMenu && !showFileTransfer) return;
@@ -384,6 +433,60 @@ export default function Dock() {
 
   return (
     <>
+      {showBrowserPicker && (
+        <div className="fixed inset-0 z-[10020] flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close browser picker"
+            className="absolute inset-0 bg-black/55"
+            onClick={() => setShowBrowserPicker(false)}
+          />
+          <div className="relative z-[10021] w-full max-w-sm rounded-2xl border border-neutral-700 bg-neutral-900/95 p-4 shadow-2xl backdrop-blur-md">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-100">
+                  Open Browser
+                </h2>
+                <p className="mt-1 text-xs text-neutral-400">
+                  Pick browser mode, then place window on canvas.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowBrowserPicker(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
+                title="Close"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {BROWSER_CHOICES.map((choice) => {
+                const app = registry[choice.appId];
+                return (
+                  <button
+                    key={choice.appId}
+                    onClick={() => handleBrowserChoice(choice.appId)}
+                    className="flex w-full items-start gap-3 rounded-xl border border-neutral-700 bg-neutral-800/70 px-3 py-3 text-left transition-colors cursor-pointer hover:border-blue-500 hover:bg-neutral-800"
+                  >
+                    <span className="mt-0.5 text-neutral-200">{app.icon}</span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-neutral-100">
+                        {choice.label}
+                      </span>
+                      <span className="mt-1 block text-xs text-neutral-400">
+                        {choice.description}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile backdrop + sheet — outside dock bar so backdrop covers it */}
       {showWinMenu && (
         <div className="sm:hidden">
@@ -492,43 +595,69 @@ export default function Dock() {
       <div className={`flex gap-1 sm:gap-2 p-0 bg-neutral-900/90 backdrop-blur-md border rounded-xl shadow-2xl items-center transition-colors ${
         isDragging ? 'border-blue-500' : 'border-neutral-700'
       }`}>
-        {DOCK_APPS.map((appId) => {
+        {DOCK_APPS.map((appId, index) => {
           const app = registry[appId];
           const isOpen = windows.some((w) => w.appId === appId);
           const isPlacing = placingAppId === appId;
           return (
-            <button
-              key={appId}
-              onClick={() => {
-                if (isPlacing) {
-                  clearPlacing();
-                } else {
-                  setPlacingApp(appId);
-                }
-              }}
-              className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
-                isPlacing
-                  ? "bg-blue-600 text-white"
-                  : "text-neutral-200 hover:bg-neutral-800 hover:text-white"
-              }`}
-              title={app.title}
-            >
-              <span className="text-base leading-none">{app.icon}</span>
-              {isOpen && (
-                <span
-                  className={`w-1 h-1 rounded-full ${
-                    isPlacing ? "bg-white" : "bg-blue-400"
+            <div key={appId} className="contents">
+              {index === 1 && (
+                <button
+                  onClick={handleBrowserLauncher}
+                  className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+                    isBrowserPlacing
+                      ? "bg-blue-600 text-white"
+                      : showBrowserPicker
+                        ? "bg-neutral-700 text-white"
+                        : "text-neutral-200 hover:bg-neutral-800 hover:text-white"
                   }`}
-                />
+                  title="Browser"
+                >
+                  <span className="text-base leading-none">
+                    {registry.devBrowser.icon}
+                  </span>
+                  {isBrowserOpen && (
+                    <span
+                      className={`w-1 h-1 rounded-full ${
+                        isBrowserPlacing ? "bg-white" : "bg-blue-400"
+                      }`}
+                    />
+                  )}
+                </button>
               )}
-            </button>
+              <button
+                onClick={() => {
+                  setShowBrowserPicker(false);
+                  if (isPlacing) {
+                    clearPlacing();
+                  } else {
+                    setPlacingApp(appId);
+                  }
+                }}
+                className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+                  isPlacing
+                    ? "bg-blue-600 text-white"
+                    : "text-neutral-200 hover:bg-neutral-800 hover:text-white"
+                }`}
+                title={app.title}
+              >
+                <span className="text-base leading-none">{app.icon}</span>
+                {isOpen && (
+                  <span
+                    className={`w-1 h-1 rounded-full ${
+                      isPlacing ? "bg-white" : "bg-blue-400"
+                    }`}
+                  />
+                )}
+              </button>
+            </div>
           );
         })}
           {hasWindows && (<>
           <div className="w-px h-6 sm:h-8 bg-neutral-700 mx-0.5 sm:mx-1" />
             <div className="relative" ref={menuRef}>
               <button
-                onClick={() => { setShowWinMenu((v) => !v); setShowFileTransfer(false); }}
+                onClick={() => { setShowWinMenu((v) => !v); setShowFileTransfer(false); setShowBrowserPicker(false); }}
                 className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
                   showWinMenu
                     ? "bg-neutral-700 text-white"
@@ -576,7 +705,7 @@ export default function Dock() {
         {/* File transfer button */}
         <div className="relative" ref={fileTransferRef}>
           <button
-            onClick={() => { setShowFileTransfer((v) => !v); setShowWinMenu(false); }}
+            onClick={() => { setShowFileTransfer((v) => !v); setShowWinMenu(false); setShowBrowserPicker(false); }}
             className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
               showFileTransfer
                 ? "bg-blue-600 text-white"
