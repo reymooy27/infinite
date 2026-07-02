@@ -351,7 +351,6 @@ export default function Dock() {
       const activeFocusWindow = windows.find((w) => w.id === focusModeWindowId);
       if (activeFocusWindow) {
         focusWindow(activeFocusWindow.id);
-        centerWindowById(activeFocusWindow.id);
       }
     }
     setFocusMode(!focusMode);

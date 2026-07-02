@@ -5,7 +5,6 @@ import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown } from "lu
 import { SSHPane } from "@/apps/registry";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
-import { centerWindowById } from "@/lib/focusWindow";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { getSSHMetadata } from "@/types";
@@ -82,7 +81,6 @@ export default function FocusModeLayout({
   const handleExitFocusMode = () => {
     if (activeWindow) {
       focusWindow(activeWindow.id);
-      centerWindowById(activeWindow.id);
     }
     setFocusMode(false);
   };

@@ -99,7 +99,7 @@ export default function App() {
         };
       }
     } else if (wasInFocus && !focusMode) {
-      // Exiting focus mode — prefer returning to the active focus-mode window.
+      // Exiting focus mode — restore exact canvas viewport from before focus mode.
       const saved = savedTransformRef.current;
       const state = useWindowStore.getState();
       const activeFocusWindow = focusModeWindowId
@@ -111,16 +111,14 @@ export default function App() {
       const restore = () => {
         const inst = canvasTransform.getInstance();
 
-        if (activeFocusWindow) {
-          state.focusWindow(activeFocusWindow.id);
-          // Pass saved scale so centerOnWindow preserves zoom level
-          // even if the instance isn't ready for applyTransform yet
-          return canvasTransform.centerOnWindow(activeFocusWindow, saved?.scale);
-        }
+        if (activeFocusWindow) state.focusWindow(activeFocusWindow.id);
 
         if (!inst) return false;
         if (saved) {
           return canvasTransform.applyTransform(inst, saved.x, saved.y, saved.scale);
+        }
+        if (activeFocusWindow) {
+          return canvasTransform.centerOnWindow(activeFocusWindow);
         }
         if (visibleWindows.length > 0) {
           canvasTransform.fitToWindows(visibleWindows);
@@ -135,6 +133,7 @@ export default function App() {
         requestAnimationFrame(tryRestore);
       };
       requestAnimationFrame(tryRestore);
+      savedTransformRef.current = null;
     }
   }, [focusMode, focusModeWindowId]);
 
