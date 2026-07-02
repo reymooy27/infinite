@@ -61,11 +61,6 @@ class BrowserManager {
       }
       existing.ws = ws;
       this.attachListeners(ws, existing, windowId);
-      this.send(existing, { type: "url", url: existing.page.url() });
-      existing.page.title()
-        .then((title) => this.send(existing, { type: "title", title }))
-        .catch(() => {});
-      this.send(existing, { type: "loading", loading: false });
       await this.startScreencast(existing);
       logger.info("[browser] Session reattached", { windowId });
       return;
@@ -77,7 +72,6 @@ class BrowserManager {
 
     const page = await this.browser!.newPage();
     const client = await page.createCDPSession();
-    await client.send("Page.enable").catch(() => {});
     await page.setViewport({ width, height });
     await page.setBypassCSP(true).catch(() => {});
     await page.evaluateOnNewDocument(() => {
@@ -107,11 +101,6 @@ class BrowserManager {
         this.send(session, { type: "url", url: page.url() });
         this.send(session, { type: "loading", loading: false });
       }
-    });
-
-    client.on("Page.navigatedWithinDocument", (event) => {
-      this.send(session, { type: "url", url: event.url });
-      this.send(session, { type: "loading", loading: false });
     });
 
     page.on("load", () => {

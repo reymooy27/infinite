@@ -16,6 +16,7 @@ interface DevBrowserProps {
 interface HistoryEntry {
   displayUrl: string;
   targetUrl: string;
+  canonicalUrl?: string;
 }
 
 interface Bookmark {
@@ -91,11 +92,9 @@ export default function DevBrowser({
   const isDraggingConsole = useRef(false);
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(0);
-  const apiBaseUrl = useRef<string>("");
-
-  if (!apiBaseUrl.current && typeof window !== "undefined") {
-    apiBaseUrl.current = buildHttpBaseUrl();
-  }
+  const historyIndexRef = useRef(historyIndex);
+  const apiBaseUrl =
+    typeof window !== "undefined" ? buildHttpBaseUrl() : "http://localhost:7891";
 
   // ── Derived values ────────────────────────────────────────────────────────
 
@@ -144,6 +143,10 @@ export default function DevBrowser({
   useEffect(() => {
     consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [consoleLogs]);
+
+  useEffect(() => {
+    historyIndexRef.current = historyIndex;
+  }, [historyIndex]);
 
   // Persist history (capped at 50 entries)
   useEffect(() => {
@@ -198,6 +201,38 @@ export default function DevBrowser({
           ...prev,
           { level: e.data.level, text: e.data.text, timestamp: e.data.timestamp },
         ]);
+        return;
+      }
+
+      if (e.data?.source === "dev-browser-route") {
+        const displayUrl =
+          typeof e.data.displayUrl === "string" ? e.data.displayUrl : "";
+        const targetUrl =
+          typeof e.data.targetUrl === "string" ? e.data.targetUrl : "";
+        if (!displayUrl || !targetUrl) return;
+
+        setInputUrl(displayUrl);
+        setUrl(targetUrl);
+        setHistory((prev) => {
+          const idx = historyIndexRef.current;
+          if (idx < 0 || !prev[idx]) return prev;
+          const current = prev[idx];
+          if (
+            current.displayUrl === displayUrl &&
+            current.targetUrl === targetUrl &&
+            current.canonicalUrl === displayUrl
+          ) {
+            return prev;
+          }
+          const next = prev.slice();
+          next[idx] = {
+            ...current,
+            displayUrl,
+            targetUrl,
+            canonicalUrl: displayUrl,
+          };
+          return next;
+        });
       }
     };
     window.addEventListener("message", handleMessage);
@@ -333,8 +368,24 @@ export default function DevBrowser({
         parsed.hostname === "0.0.0.0";
 
       if (isLocalhostParsed) {
+        const buildProxyTarget = (origin: string) => {
+          const proxyToken = btoa(origin)
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/g, "");
+          return {
+            proxyPath: `/api/dev-browser/proxy/${proxyToken}${parsed.pathname}${parsed.search}${parsed.hash}`,
+            canonicalUrl: `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`,
+          };
+        };
+
         if (!connectionId) {
-          return { displayUrl, targetUrl };
+          const proxyTarget = buildProxyTarget(parsed.origin);
+          return {
+            displayUrl,
+            targetUrl: proxyTarget.proxyPath,
+            canonicalUrl: proxyTarget.canonicalUrl,
+          };
         }
 
         const targetPort = parsed.port
@@ -343,7 +394,7 @@ export default function DevBrowser({
             ? 443
             : 80;
 
-        const res = await fetch(`${apiBaseUrl.current}/api/tunnels`, {
+        const res = await fetch(`${apiBaseUrl}/api/tunnels`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -359,12 +410,18 @@ export default function DevBrowser({
         }
 
         const data = await res.json();
-        targetUrl = `${data.url}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        const tunnelOrigin = data.url as string;
+        const proxyTarget = buildProxyTarget(tunnelOrigin);
+        return {
+          displayUrl,
+          targetUrl: proxyTarget.proxyPath,
+          canonicalUrl: proxyTarget.canonicalUrl,
+        };
       }
 
-      return { displayUrl, targetUrl };
+      return { displayUrl, targetUrl, canonicalUrl: targetUrl };
     },
-    [connectionId],
+    [apiBaseUrl, connectionId],
   );
 
   const loadEntry = useCallback(
@@ -478,11 +535,17 @@ export default function DevBrowser({
   };
 
   useEffect(() => {
-    if (initialUrl) navigateToUrl(initialUrl);
+    if (!initialUrl) return;
+    const timeoutId = window.setTimeout(() => {
+      navigateToUrl(initialUrl);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pinUrl =
     historyIndex >= 0 ? history[historyIndex]?.displayUrl : inputUrl.trim() || null;
+  const currentDisplayUrl =
+    historyIndex >= 0 ? history[historyIndex]?.displayUrl ?? "" : inputUrl.trim();
   const pinnedBookmark = pinUrl ? quickLinks.find((q) => q.url === pinUrl) : null;
   const isPinned = !!pinnedBookmark;
 
@@ -703,8 +766,8 @@ export default function DevBrowser({
         </button>
         <button
           type="button"
-          onClick={() => url && window.open(url, "_blank")}
-          disabled={!url}
+          onClick={() => currentDisplayUrl && window.open(currentDisplayUrl, "_blank")}
+          disabled={!currentDisplayUrl}
           className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 text-neutral-300 text-sm rounded-md border border-neutral-700 transition-colors"
           title="Open in new tab"
         >
@@ -735,7 +798,7 @@ export default function DevBrowser({
                   <div className="text-4xl mb-4">⛔</div>
                   <p className="text-neutral-300 mb-2 text-sm">{error}</p>
                   <a
-                    href={url}
+                    href={currentDisplayUrl || url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-400 hover:text-blue-300 text-sm underline"

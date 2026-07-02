@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import FileTransferWindow from "@/components/FileTransferModal";
+import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
@@ -1927,7 +1928,7 @@ export const registry: Record<AppId, AppDefinition> = {
     id: "devBrowser",
     title: "Dev Browser",
     icon: <Globe />,
-    component: BrowserCanvas as React.ComponentType<{
+    component: DevBrowser as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
       initialUrl?: string;

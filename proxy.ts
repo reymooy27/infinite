@@ -11,6 +11,13 @@ const SECURITY_HEADERS: Record<string, string> = {
 
 export default function middleware(_req: NextRequest) {
   const response = NextResponse.next();
+  if (_req.nextUrl.pathname.startsWith("/api/dev-browser/proxy/")) {
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+      if (key === "X-Frame-Options") continue;
+      response.headers.set(key, value);
+    }
+    return response;
+  }
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(key, value);
   }
