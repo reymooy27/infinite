@@ -43,7 +43,9 @@ export default function FocusModeLayout({
   const tabPanelRef = useRef<HTMLDivElement>(null);
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
 
-  const sshWindows = windows.filter((w) => w.appId === "ssh");
+  const sshWindows = [...windows]
+    .filter((w) => w.appId === "ssh" && !w.minimized)
+    .sort((a, b) => b.z - a.z);
   const activeWindow =
     sshWindows.find((w) => w.id === focusModeWindowId) ??
     sshWindows[0] ??
@@ -63,6 +65,19 @@ export default function FocusModeLayout({
   const tabs = sshMeta?.tabs ?? [];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "";
   const connectionId = activeWindow?.metadata?.connectionId as number | undefined;
+  const getWindowLabel = (windowId: string) => {
+    const win = sshWindows.find((item) => item.id === windowId);
+    if (!win) return "Terminal";
+    const meta = getSSHMetadata(win);
+    return (
+      (win.metadata?.title as string | undefined) ??
+      meta?.tabs.find((tab) => tab.id === meta.activeTabId)?.title ??
+      meta?.tabs.find((tab) => tab.id === meta.activeTabId)?.label ??
+      meta?.tabs[0]?.title ??
+      meta?.tabs[0]?.label ??
+      "Terminal"
+    );
+  };
 
   const handleExitFocusMode = () => {
     if (activeWindow) {
@@ -215,6 +230,29 @@ export default function FocusModeLayout({
           </button>
         </div>
       </div>
+
+      {/* Window bar row */}
+      {sshWindows.length > 0 && (
+        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center gap-1 overflow-x-auto">
+          {sshWindows.map((win) => {
+            const isSelected = win.id === activeWindow?.id;
+            return (
+              <button
+                key={win.id}
+                onClick={() => setFocusModeWindowId(win.id)}
+                className={`shrink-0 max-w-[10rem] truncate px-2.5 py-1 rounded text-xs border transition-colors cursor-pointer ${
+                  isSelected
+                    ? "bg-neutral-800 text-white border-neutral-700"
+                    : "text-neutral-400 border-neutral-800 hover:bg-neutral-800 hover:text-white"
+                }`}
+                title={getWindowLabel(win.id)}
+              >
+                {getWindowLabel(win.id)}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Tab bar row — always visible below header */}
       {activeWindow && (
