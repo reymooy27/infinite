@@ -49,16 +49,17 @@ export default function FocusModeLayout({
     sshWindows.find((w) => w.id === focusModeWindowId) ??
     sshWindows[0] ??
     null;
+  const activeWindowId = activeWindow?.id ?? null;
 
   // Keep focusModeWindowId in sync when active window changes/closes
   useEffect(() => {
-    if (activeWindow && activeWindow.id !== focusModeWindowId) {
-      setFocusModeWindowId(activeWindow.id);
+    if (activeWindowId && activeWindowId !== focusModeWindowId) {
+      setFocusModeWindowId(activeWindowId);
     }
-    if (!activeWindow && focusModeWindowId) {
+    if (!activeWindowId && focusModeWindowId) {
       setFocusModeWindowId(null);
     }
-  }, [activeWindow, focusModeWindowId, setFocusModeWindowId]);
+  }, [activeWindowId, focusModeWindowId, setFocusModeWindowId]);
 
   const sshMeta = activeWindow ? getSSHMetadata(activeWindow) : null;
   const tabs = sshMeta?.tabs ?? [];

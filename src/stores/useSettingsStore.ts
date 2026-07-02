@@ -83,8 +83,12 @@ export const useSettingsStore = create<SettingsState>()(
       setTerminalFontSize: (value) => set({ terminalFontSize: value }),
       setBgColor: (color) => set({ bgColor: color }),
       setQuickBarSlots: (slots) => set({ quickBarSlots: slots }),
-      setFocusMode: (value) => set({ focusMode: value }),
-      setFocusModeWindowId: (id) => set({ focusModeWindowId: id }),
+      setFocusMode: (value) =>
+        set((state) => (state.focusMode === value ? state : { focusMode: value })),
+      setFocusModeWindowId: (id) =>
+        set((state) =>
+          state.focusModeWindowId === id ? state : { focusModeWindowId: id },
+        ),
     }),
     {
       name: "infinite-settings",

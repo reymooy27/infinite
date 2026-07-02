@@ -108,10 +108,9 @@ export default function App() {
       const visibleWindows = state.windows.filter(
         (w) => !w.minimized && !w.maximized,
       );
+      if (activeFocusWindow) state.focusWindow(activeFocusWindow.id);
       const restore = () => {
         const inst = canvasTransform.getInstance();
-
-        if (activeFocusWindow) state.focusWindow(activeFocusWindow.id);
 
         if (!inst) return false;
         if (saved) {

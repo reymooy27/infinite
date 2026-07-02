@@ -115,7 +115,13 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   },
 
   bringToFront: (id) => {
-    const topZ = get().topZ + 1;
+    const state = get();
+    const current = state.windows.find((w) => w.id === id);
+    if (!current) return;
+    const currentTopZ = Math.max(0, ...state.windows.map((w) => w.z || 0));
+    if (current.z === currentTopZ && state.focusTargetId === id) return;
+
+    const topZ = state.topZ + 1;
     set((state) => ({
       windows: state.windows.map((w) =>
         w.id === id ? { ...w, z: topZ } : w
@@ -127,6 +133,12 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   },
 
   focusWindow: (id) => {
+    const state = get();
+    if (state.focusTargetId === id) {
+      const current = state.windows.find((w) => w.id === id);
+      const currentTopZ = Math.max(0, ...state.windows.map((w) => w.z || 0));
+      if (!current || current.z === currentTopZ) return;
+    }
     set({ focusTargetId: id });
     get().bringToFront(id);
   },
