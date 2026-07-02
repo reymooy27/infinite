@@ -1405,16 +1405,19 @@ export const SSHPane = ({
     if (conn) useFileTransferStore.getState().openDownload(conn);
   }, [connectionId]);
 
+  const mobileBottomInset = isMobile ? (keyboardHeight ?? 0) + 56 : 0;
+
   return (
     <div
       style={{
         visibility: isActive ? "visible" : "hidden",
         position: "absolute",
         inset: 0,
+        paddingBottom: isMobile ? `${mobileBottomInset}px` : undefined,
       }}
       className={`px-2 bg-[#0a0a0a] ${
         isMobile
-          ? "pt-2 pb-14"
+          ? "pt-2"
           : showTerminalShortcuts
             ? showTmuxShortcuts
               ? "pt-2 pb-28"
