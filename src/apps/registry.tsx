@@ -1309,7 +1309,7 @@ export const SSHPane = ({
       <div ref={terminalRef} className="w-full h-full" />
 
       {/* Mobile UI */}
-      {status === "connected" && isMobile && (
+      {status === "connected" && isMobile && showTerminalShortcuts && (
         <div className="absolute bottom-1 left-1 right-1 z-30">
           <QuickBar
             onSend={sendShortcut}
@@ -1321,7 +1321,7 @@ export const SSHPane = ({
           />
         </div>
       )}
-      {status === "connected" && isMobile && drawerOpen && (
+      {status === "connected" && isMobile && showTerminalShortcuts && drawerOpen && (
         <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} anchorRef={terminalRef} />
       )}
 
