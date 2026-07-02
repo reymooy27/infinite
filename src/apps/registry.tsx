@@ -767,6 +767,7 @@ export const SSHPane = ({
   isActive,
   hasNavigated,
   keyboardHeight,
+  refreshNonce,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -774,6 +775,7 @@ export const SSHPane = ({
   isActive: boolean;
   hasNavigated?: boolean;
   keyboardHeight?: number;
+  refreshNonce?: number;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -800,10 +802,30 @@ export const SSHPane = ({
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
+  const viewportOffsetRef = useRef(0);
 
   useEffect(() => {
     bufferKeyRef.current = `${windowId}-${tabId}`;
   }, [windowId, tabId]);
+
+  const getViewportOffsetFromBottom = useCallback(() => {
+    const term = termInstanceRef.current;
+    if (!term) return 0;
+    const buffer = term.buffer.active;
+    return Math.max(0, buffer.baseY - buffer.viewportY);
+  }, []);
+
+  const restoreViewportOffset = useCallback((offsetFromBottom?: number) => {
+    const term = termInstanceRef.current;
+    if (!term) return;
+    const buffer = term.buffer.active;
+    const offset =
+      typeof offsetFromBottom === "number"
+        ? offsetFromBottom
+        : viewportOffsetRef.current;
+    const targetLine = Math.max(0, buffer.baseY - Math.max(0, offset));
+    term.scrollToLine(targetLine);
+  }, []);
 
   const snapshotTerminalBuffer = useCallback(() => {
     const term = termInstanceRef.current;
@@ -819,13 +841,17 @@ export const SSHPane = ({
       lines.pop();
     }
 
-    saveBuffer(bufferKeyRef.current, lines);
-  }, []);
+    const viewportOffset = getViewportOffsetFromBottom();
+    viewportOffsetRef.current = viewportOffset;
+    saveBuffer(bufferKeyRef.current, lines, viewportOffset);
+  }, [getViewportOffsetFromBottom]);
 
   const forceTerminalRepaint = useCallback(() => {
     const term = termInstanceRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;
+    const viewportOffset = getViewportOffsetFromBottom();
+    viewportOffsetRef.current = viewportOffset;
 
     fit.fit();
     if (term.rows > 0) {
@@ -836,7 +862,8 @@ export const SSHPane = ({
       term.resize(term.cols - 1, term.rows);
       term.refresh(0, term.rows - 1);
     }
-  }, []);
+    requestAnimationFrame(() => restoreViewportOffset(viewportOffset));
+  }, [getViewportOffsetFromBottom, restoreViewportOffset]);
 
   const refreshTerminal = useCallback(() => {
     snapshotTerminalBuffer();
@@ -950,8 +977,13 @@ export const SSHPane = ({
 
     // Restore cached terminal content from previous project switch
     const cached = getBuffer(bufferKeyRef.current);
-    if (cached && cached.length > 0) {
-      term.write(cached.join('\r\n'));
+    if (cached && cached.lines.length > 0) {
+      viewportOffsetRef.current = cached.scrollOffsetFromBottom;
+      term.write(cached.lines.join("\r\n"), () => {
+        requestAnimationFrame(() =>
+          restoreViewportOffset(cached.scrollOffsetFromBottom),
+        );
+      });
     }
     deleteBuffer(bufferKeyRef.current);
 
@@ -970,6 +1002,10 @@ export const SSHPane = ({
     term.onTitleChange((newTitle) => {
       if (!windowId || !newTitle || !tabId) return;
       useWindowStore.getState().setActiveTabTitle(windowId, tabId, newTitle);
+    });
+
+    term.onScroll(() => {
+      viewportOffsetRef.current = getViewportOffsetFromBottom();
     });
 
     const observer = new ResizeObserver(() => {
@@ -1017,6 +1053,17 @@ export const SSHPane = ({
       forceTerminalRepaint();
     }
   }, [forceTerminalRepaint, terminalFontSize]);
+
+  useEffect(() => {
+    if (!refreshNonce) return;
+    if (statusRef.current === "connected") {
+      snapshotTerminalBuffer();
+      forceTerminalRepaint();
+      focusTerminal();
+      return;
+    }
+    setRetryKey((k) => k + 1);
+  }, [focusTerminal, forceTerminalRepaint, refreshNonce, snapshotTerminalBuffer]);
 
   useEffect(() => {
     const container = terminalRef.current;
@@ -1576,12 +1623,13 @@ const SSHTerminal = ({
       <div className="relative flex-1 min-h-0">
         {tabs.map((tab) => (
           <SSHPane
-            key={`${tab.id}-${paneRefreshKey}`}
+            key={tab.id}
             tabId={tab.id}
             windowId={windowId}
             connectionId={tab.connectionId ?? connectionId}
             isActive={tab.id === activeTabId}
             hasNavigated={tab.hasNavigated}
+            refreshNonce={paneRefreshKey}
           />
         ))}
       </div>

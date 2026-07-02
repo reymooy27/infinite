@@ -316,13 +316,14 @@ export default function FocusModeLayout({
         {activeWindow ? (
           tabs.map((tab) => (
             <SSHPane
-              key={`${tab.id}-${paneRefreshKey}`}
+              key={tab.id}
               tabId={tab.id}
               windowId={activeWindow.id}
               connectionId={tab.connectionId ?? connectionId}
               isActive={tab.id === activeTabId}
               hasNavigated={tab.hasNavigated}
               keyboardHeight={keyboardHeight}
+              refreshNonce={paneRefreshKey}
             />
           ))
         ) : (
