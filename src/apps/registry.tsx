@@ -846,7 +846,7 @@ export const SSHPane = ({
     saveBuffer(bufferKeyRef.current, lines, viewportOffset);
   }, [getViewportOffsetFromBottom]);
 
-  const forceTerminalRepaint = useCallback(() => {
+  const syncTerminalLayout = useCallback((recreateCanvas = false) => {
     const term = termInstanceRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;
@@ -857,13 +857,21 @@ export const SSHPane = ({
     if (term.rows > 0) {
       term.refresh(0, term.rows - 1);
     }
-    if (term.cols > 0 && term.rows > 0) {
+    if (recreateCanvas && term.cols > 0 && term.rows > 0) {
       term.resize(term.cols + 1, term.rows);
       term.resize(term.cols - 1, term.rows);
       term.refresh(0, term.rows - 1);
     }
     requestAnimationFrame(() => restoreViewportOffset(viewportOffset));
   }, [getViewportOffsetFromBottom, restoreViewportOffset]);
+
+  const forceTerminalRepaint = useCallback(() => {
+    syncTerminalLayout(true);
+  }, [syncTerminalLayout]);
+
+  const handleTerminalResize = useCallback(() => {
+    syncTerminalLayout(false);
+  }, [syncTerminalLayout]);
 
   const refreshTerminal = useCallback(() => {
     snapshotTerminalBuffer();
@@ -1009,7 +1017,7 @@ export const SSHPane = ({
     });
 
     const observer = new ResizeObserver(() => {
-      requestAnimationFrame(forceTerminalRepaint);
+      requestAnimationFrame(handleTerminalResize);
     });
     observer.observe(terminalRef.current);
 
@@ -1036,7 +1044,7 @@ export const SSHPane = ({
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, [focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer]);
+  }, [focusTerminal, forceTerminalRepaint, handleTerminalResize, snapshotTerminalBuffer]);
 
   useEffect(() => {
     if (isActive) {
