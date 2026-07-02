@@ -7,7 +7,7 @@ import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
-import { canvasTransform } from "@/lib/canvasTransform";
+import { centerWindowById } from "@/lib/focusWindow";
 import type { AppId } from "@/types";
 
 const DOCK_APPS: AppId[] = ["notes", "devBrowser", "ssh", "browserCanvas"];
@@ -332,15 +332,7 @@ export default function Dock() {
     restoreWindow(winId);
     focusWindow(winId);
     bringToFront(winId);
-    const win = windows.find((w) => w.id === winId);
-    if (win) {
-      let attempts = 0;
-      const tryCenter = () => {
-        if (canvasTransform.centerOnWindow(win) || attempts++ > 30) return;
-        requestAnimationFrame(tryCenter);
-      };
-      requestAnimationFrame(tryCenter);
-    }
+    centerWindowById(winId);
   };
 
   const handleFocusFromMenu = (win: (typeof windows)[0]) => {
@@ -349,12 +341,7 @@ export default function Dock() {
     } else {
       clearFocus();
       focusWindow(win.id);
-      let attempts = 0;
-      const tryCenter = () => {
-        if (canvasTransform.centerOnWindow(win) || attempts++ > 30) return;
-        requestAnimationFrame(tryCenter);
-      };
-      requestAnimationFrame(tryCenter);
+      centerWindowById(win.id);
     }
     setShowWinMenu(false);
   };
@@ -364,12 +351,7 @@ export default function Dock() {
       const activeFocusWindow = windows.find((w) => w.id === focusModeWindowId);
       if (activeFocusWindow) {
         focusWindow(activeFocusWindow.id);
-        let attempts = 0;
-        const tryCenter = () => {
-          if (canvasTransform.centerOnWindow(activeFocusWindow) || attempts++ > 30) return;
-          requestAnimationFrame(tryCenter);
-        };
-        requestAnimationFrame(tryCenter);
+        centerWindowById(activeFocusWindow.id);
       }
     }
     setFocusMode(!focusMode);

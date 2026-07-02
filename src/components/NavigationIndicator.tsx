@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { canvasTransform } from "@/lib/canvasTransform";
+import { centerWindowById } from "@/lib/focusWindow";
 import { useWindowStore } from "@/stores/useWindowStore";
 
 export default function NavigationIndicator() {
@@ -101,15 +102,8 @@ export default function NavigationIndicator() {
   const handleClick = useCallback(() => {
     if (!dir) return;
     focusWindow(dir.targetId);
-    const win = windows.find((w) => w.id === dir.targetId);
-    if (!win) return;
-    let attempts = 0;
-    const tryCenter = () => {
-      if (canvasTransform.centerOnWindow(win) || attempts++ > 30) return;
-      requestAnimationFrame(tryCenter);
-    };
-    requestAnimationFrame(tryCenter);
-  }, [dir, focusWindow, windows]);
+    centerWindowById(dir.targetId);
+  }, [dir, focusWindow]);
 
   if (!dir) return null;
 

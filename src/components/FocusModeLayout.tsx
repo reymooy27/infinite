@@ -5,7 +5,7 @@ import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown } from "lu
 import { SSHPane } from "@/apps/registry";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
-import { canvasTransform } from "@/lib/canvasTransform";
+import { centerWindowById } from "@/lib/focusWindow";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { getSSHMetadata } from "@/types";
@@ -82,12 +82,9 @@ export default function FocusModeLayout({
   const handleExitFocusMode = () => {
     if (activeWindow) {
       focusWindow(activeWindow.id);
-      canvasTransform.centerOnWindow(activeWindow);
+      centerWindowById(activeWindow.id);
     }
     setFocusMode(false);
-    // centerOnWindow above will fail (Canvas not mounted) and set
-    // pendingCenterTarget. Canvas's mount effect flushes it via
-    // setCurrent -> flushPendingCenter once the instance is ready.
   };
 
   const handleAddTab = () => {
