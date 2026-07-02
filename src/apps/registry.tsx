@@ -10,17 +10,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import FileTransferWindow from "@/components/FileTransferModal";
-import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useProjectStore } from "@/stores/useProjectStore";
-import { buildWsUrl } from "@/lib/ws";
+import { buildHttpBaseUrl, buildWsUrl } from "@/lib/ws";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 
-const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
+const BROWSER_LAST_URL_STORAGE_KEY = "browser-canvas-last-url";
+
+const BrowserCanvas = ({
+  windowId,
+  connectionId,
+  initialUrl,
+}: {
+  windowId?: string;
+  connectionId?: number;
+  initialUrl?: string;
+}) => {
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -31,9 +40,21 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   const frameCountRef = useRef(0);
   const clickRippleRef = useRef<{ x: number; y: number; id: number } | null>(null);
   const rippleIdRef = useRef(0);
+  const histIdxRef = useRef(-1);
+  const storageKey = windowId
+    ? `${BROWSER_LAST_URL_STORAGE_KEY}:${windowId}`
+    : BROWSER_LAST_URL_STORAGE_KEY;
+  const apiBaseUrl =
+    typeof window !== "undefined" ? buildHttpBaseUrl() : "http://localhost:7891";
 
-  const [url, setUrl] = useState("");
-  const [inputUrl, setInputUrl] = useState("");
+  const [url, setUrl] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(storageKey) ?? initialUrl ?? "";
+  });
+  const [inputUrl, setInputUrl] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(storageKey) ?? initialUrl ?? "";
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [wsStatus, setWsStatus] = useState<string>("idle");
@@ -50,7 +71,20 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
 
   const wsUrl = useMemo(() => {
     return buildWsUrl("/ws/browser", { width, height, windowId: windowId || "", r: retryKey });
-  }, [windowId, retryKey]);
+  }, [height, retryKey, width, windowId]);
+
+  useEffect(() => {
+    histIdxRef.current = histIdx;
+  }, [histIdx]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!url) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    window.localStorage.setItem(storageKey, url);
+  }, [storageKey, url]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -71,6 +105,68 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
       wsRef.current.send(JSON.stringify({ type: "resize", width, height }));
     }
   }, [width, height]);
+
+  const resolveTargetUrl = useCallback(
+    async (rawUrl: string) => {
+      const trimmed = rawUrl.trim();
+      if (!trimmed) return null;
+
+      const isLocalhost =
+        /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/.*)?$/i.test(trimmed);
+      const hasProtocol =
+        trimmed.startsWith("http://") || trimmed.startsWith("https://");
+
+      if (
+        !isLocalhost &&
+        !hasProtocol &&
+        (trimmed.includes(" ") || !trimmed.includes("."))
+      ) {
+        return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+      }
+
+      let formatted = trimmed;
+      if (isLocalhost) {
+        formatted = `http://${trimmed}`;
+      } else if (!hasProtocol) {
+        formatted = `https://${trimmed}`;
+      }
+
+      const parsed = new URL(formatted);
+      const isParsedLocalhost =
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "0.0.0.0";
+
+      if (!isParsedLocalhost || !connectionId) {
+        return formatted;
+      }
+
+      const targetPort = parsed.port
+        ? parseInt(parsed.port, 10)
+        : parsed.protocol === "https:"
+          ? 443
+          : 80;
+
+      const res = await fetch(`${apiBaseUrl}/api/tunnels`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connectionId,
+          targetHost: "127.0.0.1",
+          targetPort,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to create localhost tunnel");
+      }
+
+      const data = await res.json();
+      return `${data.url}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    },
+    [apiBaseUrl, connectionId],
+  );
 
   const disconnect = useCallback(() => {
     if (wsRef.current) {
@@ -126,14 +222,16 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
                 !msg.url.startsWith("chrome://") &&
                 !msg.url.startsWith("chrome-error://")
               ) {
+                lastNavigatedUrlRef.current = msg.url;
                 setPageUrl(msg.url);
+                setUrl(msg.url);
                 setInputUrl(msg.url);
 
                 if (isMovingRef.current) {
                   isMovingRef.current = false;
                 } else {
                   setNavHistory((prev) => {
-                    const next = prev.slice(0, histIdx + 1);
+                    const next = prev.slice(0, histIdxRef.current + 1);
                     if (next[next.length - 1] !== msg.url) {
                       next.push(msg.url);
                       setHistIdx(next.length - 1);
@@ -178,7 +276,10 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
 
   useEffect(() => {
     if (!isConnected && !error && (url || retryKey > 0)) {
-      connect();
+      const timeoutId = window.setTimeout(() => {
+        connect();
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
   }, [url, isConnected, error, retryKey, connect]);
 
@@ -200,24 +301,28 @@ const BrowserCanvas = ({ windowId }: { windowId?: string }) => {
   }, [url, isConnected]);
 
   const navigate = useCallback(
-    (target: string) => {
+    async (target: string) => {
       const trimmed = target.trim();
       if (!trimmed) return;
 
-      let formatted: string;
-      if (/^https?:\/\//i.test(trimmed)) {
-        formatted = trimmed;
-      } else if (/^[\w-]+\.[\w-]+/.test(trimmed) && !/\s/.test(trimmed)) {
-        formatted = `https://${trimmed}`;
-      } else {
-        formatted = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-      }
-
-      setUrl(formatted);
-      setInputUrl(formatted);
       setError(null);
+      setInputUrl(trimmed);
+      setIsLoading(true);
+
+      try {
+        const formatted = await resolveTargetUrl(trimmed);
+        if (!formatted) {
+          setIsLoading(false);
+          return;
+        }
+        setUrl(formatted);
+        setInputUrl(formatted);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to resolve URL");
+        setIsLoading(false);
+      }
     },
-    [],
+    [resolveTargetUrl],
   );
 
   const goBack = useCallback(() => {
@@ -1822,9 +1927,10 @@ export const registry: Record<AppId, AppDefinition> = {
     id: "devBrowser",
     title: "Dev Browser",
     icon: <Globe />,
-    component: DevBrowser as React.ComponentType<{
+    component: BrowserCanvas as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
+      initialUrl?: string;
     }>,
     defaultWidth: 1024,
     defaultHeight: 768,
@@ -1836,6 +1942,7 @@ export const registry: Record<AppId, AppDefinition> = {
     component: BrowserCanvas as React.ComponentType<{
       connectionId?: number;
       windowId?: string;
+      initialUrl?: string;
     }>,
     defaultWidth: 1280,
     defaultHeight: 800,
