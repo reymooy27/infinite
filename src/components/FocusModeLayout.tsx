@@ -231,29 +231,6 @@ export default function FocusModeLayout({
         </div>
       </div>
 
-      {/* Window bar row */}
-      {sshWindows.length > 0 && (
-        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center gap-1 overflow-x-auto">
-          {sshWindows.map((win) => {
-            const isSelected = win.id === activeWindow?.id;
-            return (
-              <button
-                key={win.id}
-                onClick={() => setFocusModeWindowId(win.id)}
-                className={`shrink-0 max-w-[10rem] truncate px-2.5 py-1 rounded text-xs border transition-colors cursor-pointer ${
-                  isSelected
-                    ? "bg-neutral-800 text-white border-neutral-700"
-                    : "text-neutral-400 border-neutral-800 hover:bg-neutral-800 hover:text-white"
-                }`}
-                title={getWindowLabel(win.id)}
-              >
-                {getWindowLabel(win.id)}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* Tab bar row — always visible below header */}
       {activeWindow && (
         <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center gap-2">
@@ -277,6 +254,31 @@ export default function FocusModeLayout({
       {/* Tab list panel */}
       {tabPanelOpen && (
         <div ref={tabPanelRef} className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1.5 flex flex-col gap-0.5">
+          {sshWindows.map((win) => {
+            const isSelected = win.id === activeWindow?.id;
+            return (
+              <div
+                key={win.id}
+                onClick={() => {
+                  setFocusModeWindowId(win.id);
+                  setTabPanelOpen(false);
+                }}
+                className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors ${
+                  isSelected
+                    ? "bg-neutral-800 text-white"
+                    : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                }`}
+              >
+                <span className="truncate">{getWindowLabel(win.id)}</span>
+                <span className="ml-2 shrink-0 text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+                  Win
+                </span>
+              </div>
+            );
+          })}
+          {sshWindows.length > 0 && tabs.length > 0 && (
+            <div className="border-t border-neutral-800 mt-0.5 pt-2" />
+          )}
           {tabs.map((tab) => (
             <div
               key={tab.id}
