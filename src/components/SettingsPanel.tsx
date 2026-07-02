@@ -117,45 +117,28 @@ export default function SettingsPanel({
   const [searchQuery, setSearchQuery] = useState("");
   const [testStates, setTestStates] = useState<Record<string, TestState>>({});
 
-  useEffect(() => {
-    if (currentPage !== "root" && currentPage !== "api-management") return;
+  const [loaded, setLoaded] = useState(false);
 
-    let cancelled = false;
+  const loadProviders = async () => {
+    setLoading(true);
+    setError("");
 
-    async function loadProviders() {
-      if (currentPage === "api-management") {
-        setLoading(true);
-        setError("");
+    try {
+      const res = await fetch("/api/ai-providers");
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load providers");
       }
 
-      try {
-        const res = await fetch("/api/ai-providers");
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to load providers");
-        }
-
-        if (!cancelled) {
-          setProviders(data);
-        }
-      } catch (err) {
-        if (!cancelled && currentPage === "api-management") {
-          setError(err instanceof Error ? err.message : "Failed to load providers.");
-        }
-      } finally {
-        if (!cancelled && currentPage === "api-management") {
-          setLoading(false);
-        }
-      }
+      setProviders(data);
+      setLoaded(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load providers.");
+    } finally {
+      setLoading(false);
     }
-
-    loadProviders();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentPage]);
+  };
 
   useEffect(() => {
     if (!copiedId) return;
@@ -466,9 +449,6 @@ export default function SettingsPanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300">
-              {providers.length}
-            </span>
             <svg
               width="14"
               height="14"
@@ -572,23 +552,38 @@ export default function SettingsPanel({
               <h3 className="text-[13px] font-medium text-neutral-100">
                 Providers
               </h3>
-              <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
-                {providers.length} providers, {totalKeys} keys
-              </p>
+              {loaded && (
+                <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+                  {providers.length} providers, {totalKeys} keys
+                </p>
+              )}
             </div>
+            <button
+              onClick={loadProviders}
+              disabled={loading}
+              className="rounded-md border border-neutral-700 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100 disabled:opacity-50"
+            >
+              {loading ? "Loading..." : loaded ? "Refresh" : "Load"}
+            </button>
           </div>
 
-          <div className="mt-3">
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search provider..."
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
-            />
-          </div>
+          {loaded && (
+            <div className="mt-3">
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search provider..."
+                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
+              />
+            </div>
+          )}
 
           <div className="mt-3 space-y-2">
-            {loading ? (
+            {!loaded ? (
+              <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
+                Click Load to fetch providers.
+              </div>
+            ) : loading ? (
               <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
                 Loading providers...
               </div>
