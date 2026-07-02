@@ -784,6 +784,7 @@ export const SSHPane = ({
   const [status, setStatus] = useState<string>("connecting");
   const [retryKey, setRetryKey] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [pasteFeedback, setPasteFeedback] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const showTerminalShortcuts = useSettingsStore(
@@ -806,6 +807,18 @@ export const SSHPane = ({
   const pendingViewportRestoreRef = useRef<number | null>(null);
   const restoreViewportRafRef = useRef<number | null>(null);
   const resizeSyncRafRef = useRef<number | null>(null);
+  const pendingOsc52Ref = useRef("");
+  const osc52CarryRef = useRef("");
+
+  const showCopyFeedback = useCallback(() => {
+    setCopyFeedback(true);
+    setTimeout(() => setCopyFeedback(false), 1200);
+  }, []);
+
+  const showPasteFeedback = useCallback(() => {
+    setPasteFeedback(true);
+    setTimeout(() => setPasteFeedback(false), 1200);
+  }, []);
 
   useEffect(() => {
     bufferKeyRef.current = `${windowId}-${tabId}`;
@@ -1237,6 +1250,91 @@ export const SSHPane = ({
     };
   }, []);
 
+  const sendShortcut = useCallback((data: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "data", data }));
+    }
+  }, []);
+
+  const sendTmux = useCallback((key: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "data", data: "\x02" }));
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "data", data: key }));
+        }
+      }, 80);
+    }
+  }, []);
+
+  const writeClipboardText = useCallback(async (text: string) => {
+    if (!text) return false;
+
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {}
+
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return copied;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const decodeOsc52Payload = useCallback((payload: string) => {
+    try {
+      return decodeURIComponent(escape(atob(payload)));
+    } catch {
+      return "";
+    }
+  }, []);
+
+  const captureOsc52Clipboard = useCallback(
+    (chunk: string) => {
+      if (!chunk) return;
+
+      const source = `${osc52CarryRef.current}${chunk}`;
+      const osc52Pattern = /\u001b]52;[^;]*;([A-Za-z0-9+/=]*)(?:\u0007|\u001b\\)/g;
+      let match: RegExpExecArray | null = null;
+
+      while ((match = osc52Pattern.exec(source))) {
+        const decoded = decodeOsc52Payload(match[1]);
+        if (!decoded) continue;
+        pendingOsc52Ref.current = decoded;
+        void writeClipboardText(decoded);
+      }
+
+      const lastStart = source.lastIndexOf("\u001b]52;");
+      if (lastStart === -1) {
+        osc52CarryRef.current = "";
+        return;
+      }
+
+      const tail = source.slice(lastStart);
+      if (tail.includes("\u0007") || tail.includes("\u001b\\")) {
+        osc52CarryRef.current = "";
+        return;
+      }
+
+      osc52CarryRef.current = tail.slice(-4096);
+    },
+    [decodeOsc52Payload, writeClipboardText],
+  );
+
   useEffect(() => {
     if (!wsUrl) return;
 
@@ -1293,7 +1391,9 @@ export const SSHPane = ({
                 useWindowStore.getState().markTabNavigated(windowId, tabId);
               }
             }
-            term.write(new Uint8Array(e.data));
+            const bytes = new Uint8Array(e.data);
+            captureOsc52Clipboard(new TextDecoder().decode(bytes));
+            term.write(bytes);
           }
           return;
         }
@@ -1313,6 +1413,7 @@ export const SSHPane = ({
           for (let i = 0; i < binaryStr.length; i++) {
             bytes[i] = binaryStr.charCodeAt(i);
           }
+          captureOsc52Clipboard(binaryStr);
           term.write(bytes);
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
@@ -1327,69 +1428,38 @@ export const SSHPane = ({
       snapshotTerminalBuffer();
       ws.close();
     };
-  }, [focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
-
-  const sendShortcut = useCallback((data: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "data", data }));
-    }
-  }, []);
-
-  const sendTmux = useCallback((key: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "data", data: "\x02" }));
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "data", data: key }));
-        }
-      }, 80);
-    }
-  }, []);
+  }, [captureOsc52Clipboard, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
 
   const handleCopy = useCallback(async () => {
     const term = termInstanceRef.current;
     if (!term) return;
-    const selection = term.getSelection();
+    const selection = term.getSelection() || pendingOsc52Ref.current;
     if (!selection) return;
 
-    const showFeedback = () => {
-      setCopyFeedback(true);
-      setTimeout(() => setCopyFeedback(false), 1200);
-    };
-
-    // 1. Try modern clipboard API (secure context / localhost)
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
-      await navigator.clipboard.writeText(selection);
-      showFeedback();
+    if (await writeClipboardText(selection)) {
+      showCopyFeedback();
       return;
-    } catch {}
-
-    // 2. Try legacy execCommand fallback (works on more mobile browsers)
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = selection;
-      ta.style.position = "fixed";
-      ta.style.top = "0";
-      ta.style.left = "0";
-      ta.style.opacity = "0";
-      ta.style.pointerEvents = "none";
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      showFeedback();
-      return;
-    } catch {}
+    }
 
     // 3. Try OSC 52 self-feed through terminal parser (triggers ClipboardAddon)
     try {
       const b64 = btoa(unescape(encodeURIComponent(selection)));
       term.write(`\x1b]52;c;${b64}\x07`);
-      showFeedback();
+      showCopyFeedback();
     } catch {}
-  }, []);
+  }, [showCopyFeedback, writeClipboardText]);
+
+  const handlePaste = useCallback(async () => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    try {
+      if (!navigator.clipboard?.readText) throw new Error("Clipboard read unavailable");
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      wsRef.current.send(JSON.stringify({ type: "data", data: text }));
+      showPasteFeedback();
+    } catch {}
+  }, [showPasteFeedback]);
 
   const handleUploadClick = useCallback(() => {
     if (!connectionId) return;
@@ -1437,8 +1507,10 @@ export const SSHPane = ({
             onSend={sendShortcut}
             onTmux={sendTmux}
             onCopy={handleCopy}
+            onPaste={handlePaste}
             onToggleDrawer={() => setDrawerOpen((o) => !o)}
             copyFeedback={copyFeedback}
+            pasteFeedback={pasteFeedback}
             drawerOpen={drawerOpen}
           />
         </div>
@@ -1548,6 +1620,17 @@ export const SSHPane = ({
                 <span className="text-green-400">Copied!</span>
               ) : (
                 <Copy size={12} />
+              )}
+            </button>
+            <button
+              onClick={handlePaste}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+              title="Paste device clipboard"
+            >
+              {pasteFeedback ? (
+                <span className="text-green-400">Pasted!</span>
+              ) : (
+                <span>Paste</span>
               )}
             </button>
             <div className="w-px h-4 bg-neutral-700" />

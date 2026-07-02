@@ -7,15 +7,19 @@ export function QuickBar({
   onSend,
   onTmux,
   onCopy,
+  onPaste,
   onToggleDrawer,
   copyFeedback,
+  pasteFeedback,
   drawerOpen,
 }: {
   onSend: (data: string) => void;
   onTmux: (key: string) => void;
   onCopy: () => void;
+  onPaste: () => void;
   onToggleDrawer: () => void;
   copyFeedback: boolean;
+  pasteFeedback: boolean;
   drawerOpen: boolean;
 }) {
   const slots = useSettingsStore((s) => s.quickBarSlots);
@@ -38,6 +42,9 @@ export function QuickBar({
       ))}
       <button onClick={onCopy} className={btn}>
         {copyFeedback ? <span className="text-green-400 text-[10px]">✓</span> : <Copy size={13} />}
+      </button>
+      <button onClick={onPaste} className={btn}>
+        {pasteFeedback ? <span className="text-green-400 text-[10px]">✓</span> : <span className="text-[10px]">Paste</span>}
       </button>
       <button
         onClick={onToggleDrawer}
