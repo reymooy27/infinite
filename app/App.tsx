@@ -24,10 +24,13 @@ export default function App() {
   const bgColor = useSettingsStore((s) => s.bgColor);
   const focusMode = useSettingsStore((s) => s.focusMode);
   const focusModeWindowId = useSettingsStore((s) => s.focusModeWindowId);
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !localStorage.getItem("infinite-onboarded");
-  });
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  useEffect(() => {
+    if (!localStorage.getItem("infinite-onboarded")) {
+      setShowOnboarding(true);
+    }
+  }, []);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const savedTransformRef = useRef<{ x: number; y: number; scale: number } | null>(null);
