@@ -803,6 +803,8 @@ export const SSHPane = ({
   isActiveRef.current = isActive;
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
   const viewportOffsetRef = useRef(0);
+  const pendingViewportRestoreRef = useRef<number | null>(null);
+  const restoreViewportRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     bufferKeyRef.current = `${windowId}-${tabId}`;
@@ -824,8 +826,36 @@ export const SSHPane = ({
         ? offsetFromBottom
         : viewportOffsetRef.current;
     const targetLine = Math.max(0, buffer.baseY - Math.max(0, offset));
-    term.scrollToLine(targetLine);
+    (
+      term as XTerminal & {
+        scrollToLine: (line: number, disableSmoothScroll?: boolean) => void;
+      }
+    ).scrollToLine(targetLine, true);
+    viewportOffsetRef.current = Math.max(0, offset);
   }, []);
+
+  const scheduleViewportRestore = useCallback((offsetFromBottom?: number) => {
+    const offset =
+      typeof offsetFromBottom === "number"
+        ? offsetFromBottom
+        : pendingViewportRestoreRef.current ?? viewportOffsetRef.current;
+
+    pendingViewportRestoreRef.current = Math.max(0, offset);
+
+    if (restoreViewportRafRef.current !== null) {
+      cancelAnimationFrame(restoreViewportRafRef.current);
+    }
+
+    restoreViewportRafRef.current = requestAnimationFrame(() => {
+      restoreViewportRafRef.current = requestAnimationFrame(() => {
+        const pendingOffset =
+          pendingViewportRestoreRef.current ?? viewportOffsetRef.current;
+        restoreViewportOffset(pendingOffset);
+        pendingViewportRestoreRef.current = null;
+        restoreViewportRafRef.current = null;
+      });
+    });
+  }, [restoreViewportOffset]);
 
   const snapshotTerminalBuffer = useCallback(() => {
     const term = termInstanceRef.current;
@@ -852,6 +882,7 @@ export const SSHPane = ({
     if (!term || !fit) return;
     const viewportOffset = getViewportOffsetFromBottom();
     viewportOffsetRef.current = viewportOffset;
+    pendingViewportRestoreRef.current = viewportOffset;
 
     fit.fit();
     if (term.rows > 0) {
@@ -862,8 +893,8 @@ export const SSHPane = ({
       term.resize(term.cols - 1, term.rows);
       term.refresh(0, term.rows - 1);
     }
-    requestAnimationFrame(() => restoreViewportOffset(viewportOffset));
-  }, [getViewportOffsetFromBottom, restoreViewportOffset]);
+    scheduleViewportRestore(viewportOffset);
+  }, [getViewportOffsetFromBottom, scheduleViewportRestore]);
 
   const forceTerminalRepaint = useCallback(() => {
     syncTerminalLayout(true);
@@ -873,16 +904,20 @@ export const SSHPane = ({
     syncTerminalLayout(false);
   }, [syncTerminalLayout]);
 
-  const refreshTerminal = useCallback(() => {
-    snapshotTerminalBuffer();
-    forceTerminalRepaint();
-    setRetryKey((k) => k + 1);
-  }, [forceTerminalRepaint, snapshotTerminalBuffer]);
-
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
     termInstanceRef.current?.focus();
   }, []);
+
+  const refreshTerminal = useCallback(() => {
+    snapshotTerminalBuffer();
+    if (statusRef.current === "connected") {
+      forceTerminalRepaint();
+      focusTerminal();
+      return;
+    }
+    setRetryKey((k) => k + 1);
+  }, [focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -988,9 +1023,7 @@ export const SSHPane = ({
     if (cached && cached.lines.length > 0) {
       viewportOffsetRef.current = cached.scrollOffsetFromBottom;
       term.write(cached.lines.join("\r\n"), () => {
-        requestAnimationFrame(() =>
-          restoreViewportOffset(cached.scrollOffsetFromBottom),
-        );
+        scheduleViewportRestore(cached.scrollOffsetFromBottom);
       });
     }
     deleteBuffer(bufferKeyRef.current);
@@ -1004,6 +1037,9 @@ export const SSHPane = ({
     term.onResize(({ cols, rows }) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "resize", cols, rows }));
+      }
+      if (pendingViewportRestoreRef.current !== null) {
+        scheduleViewportRestore(pendingViewportRestoreRef.current);
       }
     });
 
@@ -1040,11 +1076,15 @@ export const SSHPane = ({
       // Save buffer before unmount so content persists across project switches
       snapshotTerminalBuffer();
       observer.disconnect();
+      if (restoreViewportRafRef.current !== null) {
+        cancelAnimationFrame(restoreViewportRafRef.current);
+      }
+      pendingViewportRestoreRef.current = null;
       term.dispose();
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, [focusTerminal, forceTerminalRepaint, handleTerminalResize, snapshotTerminalBuffer]);
+  }, [focusTerminal, forceTerminalRepaint, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer]);
 
   useEffect(() => {
     if (isActive) {
