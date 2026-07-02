@@ -4,13 +4,6 @@ import { encrypt } from "@/lib/crypto";
 import { logger, logApiRequest } from "@/lib/logger";
 import { LOCAL_USER_ID } from "@/lib/auth";
 
-function normalizeProvider(value: unknown) {
-  return String(value ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, 100);
-}
-
 function getSecret() {
   return process.env.ENCRYPTION_SECRET;
 }
@@ -21,7 +14,7 @@ export async function PATCH(
 ) {
   const start = Date.now();
   const method = "PATCH";
-  const path = "/api/ai-provider-keys/[id]";
+  const path = "/api/ai-keys/[id]";
 
   try {
     const secret = getSecret();
@@ -35,18 +28,18 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await req.json();
-    const provider = normalizeProvider(body.provider);
+    const label = String(body.label ?? "").trim();
     const apiKey = String(body.apiKey ?? "").trim();
 
-    if (!provider || !apiKey) {
+    if (!apiKey) {
       logApiRequest(method, path, 400, Date.now() - start);
       return NextResponse.json(
-        { error: "Provider and API key are required" },
+        { error: "API key is required" },
         { status: 400 },
       );
     }
 
-    const existing = await prisma.aIProviderKey.findFirst({
+    const existing = await prisma.aIKey.findFirst({
       where: { id, userId: LOCAL_USER_ID },
     });
 
@@ -55,26 +48,10 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const duplicate = await prisma.aIProviderKey.findFirst({
-      where: {
-        id: { not: id },
-        userId: LOCAL_USER_ID,
-        provider: { equals: provider, mode: "insensitive" },
-      },
-    });
-
-    if (duplicate) {
-      logApiRequest(method, path, 409, Date.now() - start);
-      return NextResponse.json(
-        { error: "Provider already exists" },
-        { status: 409 },
-      );
-    }
-
-    const row = await prisma.aIProviderKey.update({
+    const row = await prisma.aIKey.update({
       where: { id },
       data: {
-        provider,
+        label,
         apiKeyEncrypted: encrypt(apiKey, secret),
       },
     });
@@ -82,7 +59,7 @@ export async function PATCH(
     logApiRequest(method, path, 200, Date.now() - start);
     return NextResponse.json({
       id: row.id,
-      provider: row.provider,
+      label: row.label,
       apiKey,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -92,23 +69,23 @@ export async function PATCH(
     logger.error(`[${method}] ${path} Error`, { error });
     logApiRequest(method, path, 500, Date.now() - start, err);
     return NextResponse.json(
-      { error: "Failed to update AI provider key" },
+      { error: "Failed to update API key" },
       { status: 500 },
     );
   }
 }
 
 export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const start = Date.now();
   const method = "DELETE";
-  const path = "/api/ai-provider-keys/[id]";
+  const path = "/api/ai-keys/[id]";
 
   try {
     const { id } = await params;
-    const existing = await prisma.aIProviderKey.findFirst({
+    const existing = await prisma.aIKey.findFirst({
       where: { id, userId: LOCAL_USER_ID },
       select: { id: true },
     });
@@ -118,7 +95,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await prisma.aIProviderKey.delete({ where: { id } });
+    await prisma.aIKey.delete({ where: { id } });
 
     logApiRequest(method, path, 200, Date.now() - start);
     return NextResponse.json({ ok: true });
@@ -127,7 +104,7 @@ export async function DELETE(
     logger.error(`[${method}] ${path} Error`, { error });
     logApiRequest(method, path, 500, Date.now() - start, err);
     return NextResponse.json(
-      { error: "Failed to delete AI provider key" },
+      { error: "Failed to delete API key" },
       { status: 500 },
     );
   }

@@ -6,7 +6,7 @@ import {
   AVAILABLE_SHORTCUTS,
   AVAILABLE_TMUX_SHORTCUTS,
 } from "@/stores/useSettingsStore";
-import type { AIProviderKeyRecord } from "@/types/aiProvider";
+import type { AIProviderRecord } from "@/types/aiProvider";
 
 interface SettingsPanelProps {
   currentPage: "root" | "terminal" | "api-management";
@@ -75,10 +75,6 @@ function maskApiKey(value: string) {
   return `${value.slice(0, 4)}${"•".repeat(Math.max(value.length - 8, 4))}${value.slice(-4)}`;
 }
 
-function formatProviderName(value: string) {
-  return value.trim().replace(/\s+/g, " ");
-}
-
 export default function SettingsPanel({
   currentPage,
   onOpenTerminal,
@@ -99,15 +95,25 @@ export default function SettingsPanel({
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const setQuickBarSlots = useSettingsStore((s) => s.setQuickBarSlots);
 
-  const [provider, setProvider] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // provider form state
+  const [providerName, setProviderName] = useState("");
+  const [providerBaseUrl, setProviderBaseUrl] = useState("");
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+
+  // key form state
+  const [addKeyLabel, setAddKeyLabel] = useState("");
+  const [addKeyValue, setAddKeyValue] = useState("");
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
+  const [editKeyLabel, setEditKeyLabel] = useState("");
+  const [editKeyValue, setEditKeyValue] = useState("");
+
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [visibleId, setVisibleId] = useState<string | null>(null);
+  const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [items, setItems] = useState<AIProviderKeyRecord[]>([]);
+  const [providers, setProviders] = useState<AIProviderRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [testStates, setTestStates] = useState<Record<string, TestState>>({});
 
@@ -116,26 +122,26 @@ export default function SettingsPanel({
 
     let cancelled = false;
 
-    async function loadKeys() {
+    async function loadProviders() {
       if (currentPage === "api-management") {
         setLoading(true);
         setError("");
       }
 
       try {
-        const res = await fetch("/api/ai-provider-keys");
+        const res = await fetch("/api/ai-providers");
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.error || "Failed to load provider keys");
+          throw new Error(data.error || "Failed to load providers");
         }
 
         if (!cancelled) {
-          setItems(data);
+          setProviders(data);
         }
       } catch (err) {
         if (!cancelled && currentPage === "api-management") {
-          setError(err instanceof Error ? err.message : "Failed to load provider keys.");
+          setError(err instanceof Error ? err.message : "Failed to load providers.");
         }
       } finally {
         if (!cancelled && currentPage === "api-management") {
@@ -144,7 +150,7 @@ export default function SettingsPanel({
       }
     }
 
-    loadKeys();
+    loadProviders();
 
     return () => {
       cancelled = true;
@@ -157,20 +163,31 @@ export default function SettingsPanel({
     return () => window.clearTimeout(timeout);
   }, [copiedId]);
 
-  const resetForm = () => {
-    setProvider("");
-    setApiKey("");
-    setEditingId(null);
+  const resetProviderForm = () => {
+    setProviderName("");
+    setProviderBaseUrl("");
+    setEditingProviderId(null);
     setError("");
   };
 
-  const handleSubmit = () => {
-    void (async () => {
-      const nextProvider = formatProviderName(provider);
-      const nextApiKey = apiKey.trim();
+  const resetKeyForm = () => {
+    setAddKeyLabel("");
+    setAddKeyValue("");
+    setEditingKeyId(null);
+    setEditKeyLabel("");
+    setEditKeyValue("");
+    setError("");
+  };
 
-      if (!nextProvider || !nextApiKey) {
-        setError("Provider and API key are required.");
+  // ---- Provider CRUD ----
+
+  const handleSaveProvider = () => {
+    void (async () => {
+      const name = providerName.trim().replace(/\s+/g, " ");
+      const baseUrl = providerBaseUrl.trim() || undefined;
+
+      if (!name) {
+        setError("Provider name is required.");
         return;
       }
 
@@ -179,69 +196,177 @@ export default function SettingsPanel({
 
       try {
         const res = await fetch(
-          editingId
-            ? `/api/ai-provider-keys/${editingId}`
-            : "/api/ai-provider-keys",
+          editingProviderId
+            ? `/api/ai-providers/${editingProviderId}`
+            : "/api/ai-providers",
           {
-            method: editingId ? "PATCH" : "POST",
+            method: editingProviderId ? "PATCH" : "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              provider: nextProvider,
-              apiKey: nextApiKey,
-            }),
+            body: JSON.stringify({ name, baseUrl }),
           },
         );
 
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.error || "Failed to save provider key");
+          throw new Error(data.error || "Failed to save provider");
         }
 
-        setItems((prev) =>
-          editingId
-            ? prev.map((item) => (item.id === editingId ? data : item))
-            : [data, ...prev],
-        );
-        resetForm();
+        if (editingProviderId) {
+          setProviders((prev) =>
+            prev.map((p) =>
+              p.id === editingProviderId
+                ? { ...p, name: data.name, baseUrl: data.baseUrl, updatedAt: data.updatedAt }
+                : p,
+            ),
+          );
+        } else {
+          setProviders((prev) => [data, ...prev]);
+        }
+        resetProviderForm();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to save provider key.");
+        setError(err instanceof Error ? err.message : "Failed to save provider.");
       } finally {
         setSaving(false);
       }
     })();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDeleteProvider = (id: string) => {
     void (async () => {
       setError("");
       try {
-        const res = await fetch(`/api/ai-provider-keys/${id}`, {
-          method: "DELETE",
-        });
+        const res = await fetch(`/api/ai-providers/${id}`, { method: "DELETE" });
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.error || "Failed to delete provider key");
+          throw new Error(data.error || "Failed to delete provider");
         }
 
-        setItems((prev) => prev.filter((item) => item.id !== id));
-        if (editingId === id) resetForm();
+        setProviders((prev) => prev.filter((p) => p.id !== id));
+        if (editingProviderId === id) resetProviderForm();
+        if (expandedProviderId === id) setExpandedProviderId(null);
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to delete provider key.",
-        );
+        setError(err instanceof Error ? err.message : "Failed to delete provider.");
       }
     })();
   };
 
-  const handleEdit = (id: string) => {
-    const item = items.find((entry) => entry.id === id);
-    if (!item) return;
-    setProvider(item.provider);
-    setApiKey(item.apiKey);
-    setEditingId(item.id);
+  const handleEditProvider = (id: string) => {
+    const p = providers.find((entry) => entry.id === id);
+    if (!p) return;
+    setProviderName(p.name);
+    setProviderBaseUrl(p.baseUrl || "");
+    setEditingProviderId(id);
     setError("");
+  };
+
+  // ---- Key CRUD ----
+
+  const handleAddKey = (providerId: string) => {
+    void (async () => {
+      const apiKey = addKeyValue.trim();
+      if (!apiKey) {
+        setError("API key is required.");
+        return;
+      }
+
+      setSaving(true);
+      setError("");
+
+      try {
+        const res = await fetch(`/api/ai-providers/${providerId}/keys`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: addKeyLabel.trim(), apiKey }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to add API key");
+        }
+
+        setProviders((prev) =>
+          prev.map((p) =>
+            p.id === providerId
+              ? { ...p, keys: [...p.keys, data] }
+              : p,
+          ),
+        );
+        setAddKeyLabel("");
+        setAddKeyValue("");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to add API key.");
+      } finally {
+        setSaving(false);
+      }
+    })();
+  };
+
+  const handleSaveKey = (keyId: string, providerId: string) => {
+    void (async () => {
+      const apiKey = editKeyValue.trim();
+      if (!apiKey) {
+        setError("API key is required.");
+        return;
+      }
+
+      setSaving(true);
+      setError("");
+
+      try {
+        const res = await fetch(`/api/ai-keys/${keyId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: editKeyLabel.trim(), apiKey }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to update API key");
+        }
+
+        setProviders((prev) =>
+          prev.map((p) =>
+            p.id === providerId
+              ? { ...p, keys: p.keys.map((k) => (k.id === keyId ? data : k)) }
+              : p,
+          ),
+        );
+        resetKeyForm();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to update API key.");
+      } finally {
+        setSaving(false);
+      }
+    })();
+  };
+
+  const handleDeleteKey = (keyId: string, providerId: string) => {
+    void (async () => {
+      setError("");
+      try {
+        const res = await fetch(`/api/ai-keys/${keyId}`, { method: "DELETE" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to delete API key");
+        }
+
+        setProviders((prev) =>
+          prev.map((p) =>
+            p.id === providerId
+              ? { ...p, keys: p.keys.filter((k) => k.id !== keyId) }
+              : p,
+          ),
+        );
+        if (editingKeyId === keyId) resetKeyForm();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to delete API key.");
+      }
+    })();
   };
 
   const handleCopy = async (value: string, id: string) => {
@@ -253,26 +378,24 @@ export default function SettingsPanel({
     }
   };
 
-  const handleTest = (id: string) => {
+  const handleTest = (keyId: string) => {
     void (async () => {
       setTestStates((prev) => ({
         ...prev,
-        [id]: { kind: "loading", message: "Testing..." },
+        [keyId]: { kind: "loading", message: "Testing..." },
       }));
 
       try {
-        const res = await fetch(`/api/ai-provider-keys/${id}/test`, {
-          method: "POST",
-        });
+        const res = await fetch(`/api/ai-keys/${keyId}/test`, { method: "POST" });
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.error || "Failed to test provider key");
+          throw new Error(data.error || "Failed to test API key");
         }
 
         setTestStates((prev) => ({
           ...prev,
-          [id]: {
+          [keyId]: {
             kind: data.ok ? "success" : "error",
             message: data.message || (data.ok ? "Key valid" : "Key invalid"),
           },
@@ -280,23 +403,24 @@ export default function SettingsPanel({
       } catch (err) {
         setTestStates((prev) => ({
           ...prev,
-          [id]: {
+          [keyId]: {
             kind: "error",
-            message:
-              err instanceof Error ? err.message : "Failed to test provider key.",
+            message: err instanceof Error ? err.message : "Failed to test API key.",
           },
         }));
       }
     })();
   };
 
-  const canTestProvider = (providerName: string) => {
-    const normalized = providerName.trim().toLowerCase();
-    return normalized === "openai" || normalized === "anthropic";
+  const canTestProvider = (name: string) => {
+    const n = name.trim().toLowerCase();
+    return n === "openai" || n === "anthropic";
   };
 
-  const filteredItems = items.filter((item) =>
-    item.provider.toLowerCase().includes(searchQuery.trim().toLowerCase()),
+  const totalKeys = providers.reduce((sum, p) => sum + p.keys.length, 0);
+
+  const filteredProviders = providers.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.trim().toLowerCase()),
   );
 
   if (currentPage === "root") {
@@ -343,7 +467,7 @@ export default function SettingsPanel({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300">
-              {items.length}
+              {providers.length}
             </span>
             <svg
               width="14"
@@ -367,9 +491,10 @@ export default function SettingsPanel({
   if (currentPage === "api-management") {
     return (
       <div className="space-y-2.5 p-2.5 overflow-y-auto max-h-full">
+        {/* Add / Edit Provider Form */}
         <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
           <h3 className="text-[13px] font-medium text-neutral-100">
-            {editingId ? "Edit provider" : "Add provider"}
+            {editingProviderId ? "Edit provider" : "Add provider"}
           </h3>
           <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
             Keys are stored in database and encrypted at rest.
@@ -381,13 +506,13 @@ export default function SettingsPanel({
                 htmlFor="provider-name"
                 className="mb-1 block text-[11px] text-neutral-400"
               >
-                Provider
+                Provider name
               </label>
               <input
                 id="provider-name"
                 list="provider-suggestions"
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
+                value={providerName}
+                onChange={(e) => setProviderName(e.target.value)}
                 placeholder="OpenAI"
                 className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
               />
@@ -400,18 +525,17 @@ export default function SettingsPanel({
 
             <div>
               <label
-                htmlFor="provider-key"
+                htmlFor="provider-base-url"
                 className="mb-1 block text-[11px] text-neutral-400"
               >
-                API Key
+                Base URL <span className="text-neutral-600">(optional)</span>
               </label>
-              <textarea
-                id="provider-key"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-..."
-                rows={4}
-                className="w-full resize-none rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
+              <input
+                id="provider-base-url"
+                value={providerBaseUrl}
+                onChange={(e) => setProviderBaseUrl(e.target.value)}
+                placeholder="https://api.openai.com/v1"
+                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
               />
             </div>
           </div>
@@ -420,19 +544,19 @@ export default function SettingsPanel({
 
           <div className="mt-3 flex gap-2">
             <button
-              onClick={handleSubmit}
+              onClick={handleSaveProvider}
               disabled={saving}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-medium text-white transition-colors cursor-pointer hover:bg-blue-500"
+              className="rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-medium text-white transition-colors cursor-pointer hover:bg-blue-500 disabled:opacity-50"
             >
               {saving
                 ? "Saving..."
-                : editingId
+                : editingProviderId
                   ? "Save changes"
                   : "Add provider"}
             </button>
-            {(editingId || provider || apiKey) && (
+            {(editingProviderId || providerName || providerBaseUrl) && (
               <button
-                onClick={resetForm}
+                onClick={resetProviderForm}
                 className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
               >
                 Cancel
@@ -441,19 +565,17 @@ export default function SettingsPanel({
           </div>
         </div>
 
+        {/* Providers List */}
         <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-[13px] font-medium text-neutral-100">
-                Saved providers
+                Providers
               </h3>
               <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
-                Copy key, edit provider, or delete row.
+                {providers.length} providers, {totalKeys} keys
               </p>
             </div>
-            <span className="rounded-full bg-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300">
-              {items.length}
-            </span>
           </div>
 
           <div className="mt-3">
@@ -470,86 +592,222 @@ export default function SettingsPanel({
               <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
                 Loading providers...
               </div>
-            ) : items.length === 0 ? (
+            ) : providers.length === 0 ? (
               <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
-                No provider saved yet.
+                No providers saved yet.
               </div>
-            ) : filteredItems.length === 0 ? (
+            ) : filteredProviders.length === 0 ? (
               <div className="rounded-lg border border-dashed border-neutral-700 px-3 py-4 text-[11px] text-neutral-500">
-                No provider match search.
+                No providers match search.
               </div>
             ) : (
-              filteredItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-lg border border-neutral-700 bg-neutral-900/80 p-3"
-                >
-                  {testStates[item.id] && (
+              filteredProviders.map((prov) => {
+                const isExpanded = expandedProviderId === prov.id;
+                return (
+                  <div
+                    key={prov.id}
+                    className="rounded-lg border border-neutral-700 bg-neutral-900/80"
+                  >
+                    {/* Provider Header */}
                     <div
-                      className={`mb-2 rounded-md px-2 py-1 text-[10px] ${
-                        testStates[item.id].kind === "success"
-                          ? "bg-emerald-950/70 text-emerald-300"
-                          : testStates[item.id].kind === "error"
-                            ? "bg-red-950/70 text-red-300"
-                            : "bg-neutral-800 text-neutral-400"
-                      }`}
+                      className="flex items-center justify-between gap-2 p-3 cursor-pointer select-none"
+                      onClick={() =>
+                        setExpandedProviderId(isExpanded ? null : prov.id)
+                      }
                     >
-                      {testStates[item.id].message}
-                    </div>
-                  )}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-[12px] font-medium text-neutral-100">
-                        {item.provider}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className={`shrink-0 text-neutral-500 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                          >
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                          <span className="text-[12px] font-medium text-neutral-100">
+                            {prov.name}
+                          </span>
+                          <span className="rounded-full bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                            {prov.keys.length} {prov.keys.length === 1 ? "key" : "keys"}
+                          </span>
+                        </div>
+                        {prov.baseUrl && (
+                          <div className="mt-0.5 ml-[18px] truncate font-mono text-[10px] text-neutral-500">
+                            {prov.baseUrl}
+                          </div>
+                        )}
                       </div>
-                      <div className="mt-1 break-all font-mono text-[11px] text-neutral-400">
-                        {visibleId === item.id
-                          ? item.apiKey
-                          : maskApiKey(item.apiKey)}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 gap-1.5">
-                      <button
-                        onClick={() =>
-                          setVisibleId((prev) => (prev === item.id ? null : item.id))
-                        }
-                        className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
-                      >
-                        {visibleId === item.id ? "Hide" : "Show"}
-                      </button>
-                      {canTestProvider(item.provider) && (
+                      <div className="flex shrink-0 gap-1.5" onClick={(e) => e.stopPropagation()}>
                         <button
-                          onClick={() => handleTest(item.id)}
-                          disabled={testStates[item.id]?.kind === "loading"}
-                          className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => handleEditProvider(prov.id)}
+                          className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
                         >
-                          {testStates[item.id]?.kind === "loading"
-                            ? "Testing"
-                            : "Test"}
+                          Edit
                         </button>
-                      )}
-                      <button
-                        onClick={() => handleCopy(item.apiKey, item.id)}
-                        className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
-                      >
-                        {copiedId === item.id ? "Copied" : "Copy"}
-                      </button>
-                      <button
-                        onClick={() => handleEdit(item.id)}
-                        className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="rounded-md border border-red-900/70 px-2 py-1 text-[11px] text-red-300 transition-colors cursor-pointer hover:border-red-700 hover:text-red-200"
-                      >
-                        Delete
-                      </button>
+                        <button
+                          onClick={() => handleDeleteProvider(prov.id)}
+                          className="rounded-md border border-red-900/70 px-2 py-1 text-[11px] text-red-300 transition-colors cursor-pointer hover:border-red-700 hover:text-red-200"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Expanded: Keys List */}
+                    {isExpanded && (
+                      <div className="border-t border-neutral-800 px-3 pb-3 pt-2 space-y-2">
+                        {prov.keys.map((key) => {
+                          const isEditing = editingKeyId === key.id;
+                          return (
+                            <div
+                              key={key.id}
+                              className="rounded-md border border-neutral-800 bg-neutral-950/60 p-2.5"
+                            >
+                              {testStates[key.id] && (
+                                <div
+                                  className={`mb-2 rounded-md px-2 py-1 text-[10px] ${
+                                    testStates[key.id].kind === "success"
+                                      ? "bg-emerald-950/70 text-emerald-300"
+                                      : testStates[key.id].kind === "error"
+                                        ? "bg-red-950/70 text-red-300"
+                                        : "bg-neutral-800 text-neutral-400"
+                                  }`}
+                                >
+                                  {testStates[key.id].message}
+                                </div>
+                              )}
+
+                              {isEditing ? (
+                                <div className="space-y-1.5">
+                                  <input
+                                    value={editKeyLabel}
+                                    onChange={(e) => setEditKeyLabel(e.target.value)}
+                                    placeholder="Label (optional)"
+                                    className="w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-[11px] text-neutral-100 outline-none focus:border-blue-500"
+                                  />
+                                  <textarea
+                                    value={editKeyValue}
+                                    onChange={(e) => setEditKeyValue(e.target.value)}
+                                    placeholder="sk-..."
+                                    rows={3}
+                                    className="w-full resize-none rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-[11px] text-neutral-100 outline-none focus:border-blue-500"
+                                  />
+                                  <div className="flex gap-1.5">
+                                    <button
+                                      onClick={() => handleSaveKey(key.id, prov.id)}
+                                      disabled={saving}
+                                      className="rounded bg-blue-600 px-2 py-1 text-[11px] text-white cursor-pointer hover:bg-blue-500 disabled:opacity-50"
+                                    >
+                                      {saving ? "Saving..." : "Save"}
+                                    </button>
+                                    <button
+                                      onClick={resetKeyForm}
+                                      className="rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 cursor-pointer hover:text-neutral-100"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    {key.label && (
+                                      <div className="text-[11px] font-medium text-neutral-300">
+                                        {key.label}
+                                      </div>
+                                    )}
+                                    <div className="mt-0.5 break-all font-mono text-[11px] text-neutral-400">
+                                      {visibleId === key.id
+                                        ? key.apiKey
+                                        : maskApiKey(key.apiKey)}
+                                    </div>
+                                  </div>
+                                  <div className="flex shrink-0 flex-wrap gap-1">
+                                    <button
+                                      onClick={() =>
+                                        setVisibleId((prev) =>
+                                          prev === key.id ? null : key.id,
+                                        )
+                                      }
+                                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:text-neutral-100"
+                                    >
+                                      {visibleId === key.id ? "Hide" : "Show"}
+                                    </button>
+                                    {canTestProvider(prov.name) && (
+                                      <button
+                                        onClick={() => handleTest(key.id)}
+                                        disabled={testStates[key.id]?.kind === "loading"}
+                                        className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:text-neutral-100 disabled:opacity-50"
+                                      >
+                                        {testStates[key.id]?.kind === "loading"
+                                          ? "Testing"
+                                          : "Test"}
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleCopy(key.apiKey, key.id)}
+                                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:text-neutral-100"
+                                    >
+                                      {copiedId === key.id ? "Copied" : "Copy"}
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setEditingKeyId(key.id);
+                                        setEditKeyLabel(key.label || "");
+                                        setEditKeyValue(key.apiKey);
+                                        setError("");
+                                      }}
+                                      className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:text-neutral-100"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteKey(key.id, prov.id)}
+                                      className="rounded border border-red-900/70 px-1.5 py-0.5 text-[10px] text-red-300 cursor-pointer hover:text-red-200"
+                                    >
+                                      Del
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Add Key Form */}
+                        <div className="rounded-md border border-dashed border-neutral-700 bg-neutral-950/40 p-2.5 space-y-1.5">
+                          <input
+                            value={addKeyLabel}
+                            onChange={(e) => setAddKeyLabel(e.target.value)}
+                            placeholder="Label (optional)"
+                            className="w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-[11px] text-neutral-100 outline-none focus:border-blue-500"
+                          />
+                          <textarea
+                            value={addKeyValue}
+                            onChange={(e) => setAddKeyValue(e.target.value)}
+                            placeholder="sk-..."
+                            rows={2}
+                            className="w-full resize-none rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-[11px] text-neutral-100 outline-none focus:border-blue-500"
+                          />
+                          <button
+                            onClick={() => handleAddKey(prov.id)}
+                            disabled={saving || !addKeyValue.trim()}
+                            className="rounded bg-neutral-700 px-2 py-1 text-[11px] text-neutral-200 cursor-pointer hover:bg-neutral-600 disabled:opacity-50"
+                          >
+                            {saving ? "Adding..." : "Add key"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

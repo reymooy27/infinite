@@ -75,14 +75,28 @@ model Project {
   @@map("projects")
 }
 
-model AIProviderKey {
-  id              String   @id @default(cuid())
-  provider        String
-  apiKeyEncrypted String   @map("api_key_encrypted")
-  userId          String   @default("local-user") @map("user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+model AIProvider {
+  id        String    @id @default(cuid())
+  name      String
+  baseUrl   String?   @map("base_url")
+  userId    String    @default("local-user") @map("user_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  keys      AIKey[]
 
-  @@unique([userId, provider])
-  @@map("ai_provider_keys")
+  @@unique([userId, name])
+  @@map("ai_providers")
+}
+
+model AIKey {
+  id              String      @id @default(cuid())
+  label           String?     @default("")
+  apiKeyEncrypted String      @map("api_key_encrypted")
+  providerId      String      @map("provider_id")
+  provider        AIProvider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  userId          String      @default("local-user") @map("user_id")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@map("ai_keys")
 }

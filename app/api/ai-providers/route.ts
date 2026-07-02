@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { decrypt } from "@/lib/crypto";
 import { logger, logApiRequest } from "@/lib/logger";
 import { LOCAL_USER_ID } from "@/lib/auth";
 
-function normalizeProvider(value: unknown) {
+function normalizeName(value: unknown) {
   return String(value ?? "")
     .trim()
     .replace(/\s+/g, " ")
     .slice(0, 100);
+}
+
+function normalizeBaseUrl(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  return raw.replace(/\/+$/, "");
 }
 
 function getSecret() {
@@ -18,7 +24,7 @@ function getSecret() {
 export async function GET() {
   const start = Date.now();
   const method = "GET";
-  const path = "/api/ai-provider-keys";
+  const path = "/api/ai-providers";
 
   try {
     const secret = getSecret();
@@ -30,15 +36,23 @@ export async function GET() {
       );
     }
 
-    const rows = await prisma.aIProviderKey.findMany({
+    const rows = await prisma.aIProvider.findMany({
       where: { userId: LOCAL_USER_ID },
+      include: { keys: { orderBy: { createdAt: "asc" } } },
       orderBy: { updatedAt: "desc" },
     });
 
     const items = rows.map((row) => ({
       id: row.id,
-      provider: row.provider,
-      apiKey: decrypt(row.apiKeyEncrypted, secret),
+      name: row.name,
+      baseUrl: row.baseUrl,
+      keys: row.keys.map((k) => ({
+        id: k.id,
+        label: k.label,
+        apiKey: decrypt(k.apiKeyEncrypted, secret),
+        createdAt: k.createdAt.toISOString(),
+        updatedAt: k.updatedAt.toISOString(),
+      })),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     }));
@@ -50,7 +64,7 @@ export async function GET() {
     logger.error(`[${method}] ${path} Error`, { error });
     logApiRequest(method, path, 500, Date.now() - start, err);
     return NextResponse.json(
-      { error: "Failed to fetch AI provider keys" },
+      { error: "Failed to fetch AI providers" },
       { status: 500 },
     );
   }
@@ -59,34 +73,25 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const start = Date.now();
   const method = "POST";
-  const path = "/api/ai-provider-keys";
+  const path = "/api/ai-providers";
 
   try {
-    const secret = getSecret();
-    if (!secret) {
-      logApiRequest(method, path, 500, Date.now() - start);
-      return NextResponse.json(
-        { error: "Server configuration error" },
-        { status: 500 },
-      );
-    }
-
     const body = await req.json();
-    const provider = normalizeProvider(body.provider);
-    const apiKey = String(body.apiKey ?? "").trim();
+    const name = normalizeName(body.name);
+    const baseUrl = normalizeBaseUrl(body.baseUrl);
 
-    if (!provider || !apiKey) {
+    if (!name) {
       logApiRequest(method, path, 400, Date.now() - start);
       return NextResponse.json(
-        { error: "Provider and API key are required" },
+        { error: "Provider name is required" },
         { status: 400 },
       );
     }
 
-    const existing = await prisma.aIProviderKey.findFirst({
+    const existing = await prisma.aIProvider.findFirst({
       where: {
         userId: LOCAL_USER_ID,
-        provider: { equals: provider, mode: "insensitive" },
+        name: { equals: name, mode: "insensitive" },
       },
     });
 
@@ -98,10 +103,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const row = await prisma.aIProviderKey.create({
+    const row = await prisma.aIProvider.create({
       data: {
-        provider,
-        apiKeyEncrypted: encrypt(apiKey, secret),
+        name,
+        baseUrl,
         userId: LOCAL_USER_ID,
       },
     });
@@ -110,8 +115,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         id: row.id,
-        provider: row.provider,
-        apiKey,
+        name: row.name,
+        baseUrl: row.baseUrl,
+        keys: [],
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
       },
@@ -122,7 +128,7 @@ export async function POST(req: NextRequest) {
     logger.error(`[${method}] ${path} Error`, { error });
     logApiRequest(method, path, 500, Date.now() - start, err);
     return NextResponse.json(
-      { error: "Failed to create AI provider key" },
+      { error: "Failed to create AI provider" },
       { status: 500 },
     );
   }
