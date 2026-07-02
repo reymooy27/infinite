@@ -805,6 +805,7 @@ export const SSHPane = ({
   const viewportOffsetRef = useRef(0);
   const pendingViewportRestoreRef = useRef<number | null>(null);
   const restoreViewportRafRef = useRef<number | null>(null);
+  const resizeSyncRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     bufferKeyRef.current = `${windowId}-${tabId}`;
@@ -880,6 +881,18 @@ export const SSHPane = ({
     const term = termInstanceRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;
+    const fitWithPropose = fit as FitAddon & {
+      proposeDimensions?: () => { cols: number; rows: number } | undefined;
+    };
+    const proposed = fitWithPropose.proposeDimensions?.();
+    if (
+      !recreateCanvas &&
+      proposed &&
+      proposed.cols === term.cols &&
+      proposed.rows === term.rows
+    ) {
+      return;
+    }
     const viewportOffset = getViewportOffsetFromBottom();
     viewportOffsetRef.current = viewportOffset;
     pendingViewportRestoreRef.current = viewportOffset;
@@ -1053,7 +1066,13 @@ export const SSHPane = ({
     });
 
     const observer = new ResizeObserver(() => {
-      requestAnimationFrame(handleTerminalResize);
+      if (resizeSyncRafRef.current !== null) {
+        cancelAnimationFrame(resizeSyncRafRef.current);
+      }
+      resizeSyncRafRef.current = requestAnimationFrame(() => {
+        resizeSyncRafRef.current = null;
+        handleTerminalResize();
+      });
     });
     observer.observe(terminalRef.current);
 
@@ -1078,6 +1097,9 @@ export const SSHPane = ({
       observer.disconnect();
       if (restoreViewportRafRef.current !== null) {
         cancelAnimationFrame(restoreViewportRafRef.current);
+      }
+      if (resizeSyncRafRef.current !== null) {
+        cancelAnimationFrame(resizeSyncRafRef.current);
       }
       pendingViewportRestoreRef.current = null;
       term.dispose();
@@ -1389,7 +1411,6 @@ export const SSHPane = ({
         visibility: isActive ? "visible" : "hidden",
         position: "absolute",
         inset: 0,
-        paddingBottom: keyboardHeight ? `${keyboardHeight + 56}px` : undefined,
       }}
       className={`px-2 bg-[#0a0a0a] ${
         isMobile
@@ -1405,7 +1426,10 @@ export const SSHPane = ({
 
       {/* Mobile UI */}
       {status === "connected" && isMobile && showTerminalShortcuts && (
-        <div className="absolute bottom-1 left-1 right-1 z-30">
+        <div
+          className="absolute left-1 right-1 z-30"
+          style={{ bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem" }}
+        >
           <QuickBar
             onSend={sendShortcut}
             onTmux={sendTmux}
