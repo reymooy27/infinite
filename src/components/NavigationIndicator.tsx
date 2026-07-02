@@ -6,9 +6,8 @@ import { centerWindowById } from "@/lib/focusWindow";
 import { useWindowStore } from "@/stores/useWindowStore";
 
 export default function NavigationIndicator() {
-  const windows = useWindowStore((s) =>
-    s.windows.filter((w) => !w.minimized && !w.maximized),
-  );
+  const allWindows = useWindowStore((s) => s.windows);
+  const windows = allWindows.filter((w) => !w.minimized && !w.maximized);
   const focusWindow = useWindowStore((s) => s.focusWindow);
   const [dir, setDir] = useState<{ angle: number; dist: number; targetId: string } | null>(null);
   const showing = useRef(false);
