@@ -86,8 +86,6 @@ export default function SettingsPanel({
   const setShowTerminalShortcuts = useSettingsStore(
     (s) => s.setShowTerminalShortcuts,
   );
-  const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
-  const setShowTmuxShortcuts = useSettingsStore((s) => s.setShowTmuxShortcuts);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
   const bgColor = useSettingsStore((s) => s.bgColor);
@@ -889,12 +887,6 @@ export default function SettingsPanel({
         description="Show or hide on-screen terminal shortcut buttons for control keys, arrows, and enter/tab actions."
         checked={showTerminalShortcuts}
         onChange={setShowTerminalShortcuts}
-      />
-      <ToggleRow
-        title="tmux shortcut row"
-        description="Show or hide separate tmux action row while keeping main terminal shortcut row available."
-        checked={showTmuxShortcuts}
-        onChange={setShowTmuxShortcuts}
       />
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
         <h3 className="text-[13px] font-medium text-neutral-100">
