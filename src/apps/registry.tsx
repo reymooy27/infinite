@@ -1631,8 +1631,9 @@ export const SSHPane = ({
     if (conn) useFileTransferStore.getState().openDownload(conn);
   }, [connectionId]);
 
-  const mobileBottomInset =
-    isMobile && showTerminalShortcuts ? (keyboardHeight ?? 0) + 56 : 0;
+  const mobileBottomInset = isMobile
+    ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
+    : 0;
 
   return (
     <div
