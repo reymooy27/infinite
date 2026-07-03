@@ -10,8 +10,10 @@ const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
 const LONG_PRESS_DURATION = 200;
 const DRAG_THRESHOLD = 5;
-const EDGE_RESIZE_HIT_SIZE = 28;
-const CORNER_RESIZE_HIT_SIZE = 76;
+const DESKTOP_RESIZE_HIT_SIZE = 10;
+const DESKTOP_RESIZE_OFFSET = -5;
+const MOBILE_EDGE_RESIZE_HIT_SIZE = 28;
+const MOBILE_CORNER_RESIZE_HIT_SIZE = 76;
 
 const RESIZE_CONFIG = {
   bottomRight: true,
@@ -113,6 +115,55 @@ export default function WindowFrame({
   const isMinimized = win?.minimized;
   const maxZ = useWindowStore((s) => Math.max(...s.windows.map((w) => w.z), 0));
   const resizeConfig = isMobile ? MOBILE_RESIZE_CONFIG : RESIZE_CONFIG;
+  const edgeResizeHitSize = isMobile
+    ? MOBILE_EDGE_RESIZE_HIT_SIZE
+    : DESKTOP_RESIZE_HIT_SIZE;
+  const cornerResizeHitSize = isMobile
+    ? MOBILE_CORNER_RESIZE_HIT_SIZE
+    : DESKTOP_RESIZE_HIT_SIZE;
+  const resizeHandleOffset = isMobile ? 0 : DESKTOP_RESIZE_OFFSET;
+  const resizeHandleStyles = {
+    top: {
+      height: `${edgeResizeHitSize}px`,
+      top: `${resizeHandleOffset}px`,
+    },
+    right: {
+      width: `${edgeResizeHitSize}px`,
+      right: `${resizeHandleOffset}px`,
+    },
+    bottom: {
+      height: `${edgeResizeHitSize}px`,
+      bottom: `${resizeHandleOffset}px`,
+    },
+    left: {
+      width: `${edgeResizeHitSize}px`,
+      left: `${resizeHandleOffset}px`,
+    },
+    bottomRight: {
+      width: `${cornerResizeHitSize}px`,
+      height: `${cornerResizeHitSize}px`,
+      right: `${resizeHandleOffset}px`,
+      bottom: `${resizeHandleOffset}px`,
+    },
+    bottomLeft: {
+      width: `${cornerResizeHitSize}px`,
+      height: `${cornerResizeHitSize}px`,
+      left: `${resizeHandleOffset}px`,
+      bottom: `${resizeHandleOffset}px`,
+    },
+    topRight: {
+      width: `${cornerResizeHitSize}px`,
+      height: `${cornerResizeHitSize}px`,
+      right: `${resizeHandleOffset}px`,
+      top: `${resizeHandleOffset}px`,
+    },
+    topLeft: {
+      width: `${cornerResizeHitSize}px`,
+      height: `${cornerResizeHitSize}px`,
+      left: `${resizeHandleOffset}px`,
+      top: `${resizeHandleOffset}px`,
+    },
+  };
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 767px)");
@@ -471,34 +522,7 @@ export default function WindowFrame({
       dragHandleClassName="window-drag-handle"
       disableDragging={false}
       enableResizing={resizeConfig}
-      resizeHandleStyles={{
-        bottom: { height: `${EDGE_RESIZE_HIT_SIZE}px`, bottom: 0 },
-        right: { width: `${EDGE_RESIZE_HIT_SIZE}px`, right: 0 },
-        bottomRight: {
-          width: `${CORNER_RESIZE_HIT_SIZE}px`,
-          height: `${CORNER_RESIZE_HIT_SIZE}px`,
-          right: 0,
-          bottom: 0,
-        },
-        bottomLeft: {
-          width: `${CORNER_RESIZE_HIT_SIZE}px`,
-          height: `${CORNER_RESIZE_HIT_SIZE}px`,
-          left: 0,
-          bottom: 0,
-        },
-        topRight: {
-          width: `${CORNER_RESIZE_HIT_SIZE}px`,
-          height: `${CORNER_RESIZE_HIT_SIZE}px`,
-          right: 0,
-          top: 0,
-        },
-        topLeft: {
-          width: `${CORNER_RESIZE_HIT_SIZE}px`,
-          height: `${CORNER_RESIZE_HIT_SIZE}px`,
-          left: 0,
-          top: 0,
-        },
-      }}
+      resizeHandleStyles={resizeHandleStyles}
       onDragStart={handleDragStart}
       onDragStop={handleDragStop}
       onResizeStart={handleResizeStart}
