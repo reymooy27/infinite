@@ -24,6 +24,23 @@ interface WebSocketMessage {
   rows?: number;
 }
 
+function safeSocketSend(
+  ws: { send: (data: string | Buffer) => void } | undefined,
+  data: string | Buffer,
+) {
+  if (!ws) return;
+  try {
+    ws.send(data);
+  } catch {}
+}
+
+function safeSocketClose(ws: { close: () => void } | undefined) {
+  if (!ws) return;
+  try {
+    ws.close();
+  } catch {}
+}
+
 function quoteShellArg(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -765,6 +782,7 @@ export function createSSHSocket(
     });
 
     ws.on("close", () => {
+      if (sessions.get(windowId) !== session) return;
       logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
       session.ws = undefined;
       session.cleanupTimer = setTimeout(() => {
@@ -786,6 +804,7 @@ export function createSSHSocket(
   });
 
   const conn = new Client();
+  let session: ActiveSession | null = null;
 
   let config;
   try {
@@ -816,16 +835,18 @@ export function createSSHSocket(
     conn.shell(shellOptions, (err: Error | null, stream: ClientChannel) => {
       if (err) {
         logger.error(`[SSH] Shell error for connection ${connection.id}`, { error: err.message });
-        ws.send(
+        safeSocketSend(
+          ws,
           JSON.stringify({
             type: "error",
             message: `Shell error: ${err.message}`,
           }),
         );
+        safeSocketClose(ws);
         return;
       }
 
-      const session: ActiveSession = {
+      session = {
         conn,
         stream,
         ws,
@@ -842,11 +863,11 @@ export function createSSHSocket(
 
       stream.on("data", (data: Buffer) => {
         appendRecentOutput(session, data);
-        session.ws?.send(data);
+        safeSocketSend(session.ws, data);
       });
       stream.stderr.on("data", (data: Buffer) => {
         appendRecentOutput(session, data);
-        session.ws?.send(data);
+        safeSocketSend(session.ws, data);
       });
 
       ws.on("message", (msg: unknown) => {
@@ -866,12 +887,26 @@ export function createSSHSocket(
 
       stream.on("close", () => {
         logger.info(`[SSH] Shell stream closed for connection ${connection.id}`);
-        session.ws?.send(JSON.stringify({ type: "disconnected" }));
-        session.ws?.close();
+        safeSocketSend(session.ws, JSON.stringify({ type: "disconnected" }));
+        safeSocketClose(session.ws);
         if (windowId) sessions.delete(windowId);
       });
 
+      stream.on("error", (streamErr: Error) => {
+        logger.error(`[SSH] Shell stream error for connection ${connection.id}`, {
+          error: streamErr.message,
+        });
+        safeSocketSend(
+          session?.ws ?? ws,
+          JSON.stringify({ type: "error", message: streamErr.message }),
+        );
+        safeSocketClose(session?.ws ?? ws);
+        if (windowId) sessions.delete(windowId);
+        conn.end();
+      });
+
       ws.on("close", () => {
+        if (windowId && sessions.get(windowId) !== session) return;
         if (windowId) {
           logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
           session.ws = undefined;
@@ -895,11 +930,18 @@ export function createSSHSocket(
       error: err.message,
       code: err.code
     });
-    ws.send(JSON.stringify({ type: "error", message: err.message }));
+    safeSocketSend(
+      session?.ws ?? ws,
+      JSON.stringify({ type: "error", message: err.message }),
+    );
+    safeSocketClose(session?.ws ?? ws);
+    if (windowId) sessions.delete(windowId);
   });
 
   conn.on("close", () => {
     logger.info(`[SSH] Connection closed for ${connection.id}`);
+    safeSocketSend(session?.ws ?? ws, JSON.stringify({ type: "disconnected" }));
+    safeSocketClose(session?.ws ?? ws);
     if (windowId) sessions.delete(windowId);
   });
 

@@ -1079,13 +1079,15 @@ export const SSHPane = ({
 
   const refreshTerminal = useCallback(() => {
     snapshotTerminalBuffer();
-    if (statusRef.current === "connected") {
-      forceTerminalRepaint();
-      focusTerminal();
-      return;
+    const ws = wsRef.current;
+    if (
+      ws &&
+      (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+    ) {
+      ws.close();
     }
     setRetryKey((k) => k + 1);
-  }, [focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer]);
+  }, [snapshotTerminalBuffer]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -1295,14 +1297,16 @@ export const SSHPane = ({
 
   useEffect(() => {
     if (!refreshNonce) return;
-    if (statusRef.current === "connected") {
-      snapshotTerminalBuffer();
-      forceTerminalRepaint();
-      focusTerminal();
-      return;
+    snapshotTerminalBuffer();
+    const ws = wsRef.current;
+    if (
+      ws &&
+      (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+    ) {
+      ws.close();
     }
     setRetryKey((k) => k + 1);
-  }, [focusTerminal, forceTerminalRepaint, refreshNonce, snapshotTerminalBuffer]);
+  }, [refreshNonce, snapshotTerminalBuffer]);
 
   useEffect(() => {
     const container = terminalRef.current;
