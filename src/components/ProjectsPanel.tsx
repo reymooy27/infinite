@@ -1,7 +1,79 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent, InputHTMLAttributes } from "react";
 import { useProjectStore } from "@/stores/useProjectStore";
+
+type PickerTarget = "new" | "edit";
+type PickerMode = "file" | "folder";
+
+type BrowserFileWithPath = File & {
+  path?: string;
+  webkitRelativePath?: string;
+};
+
+type DirectoryInputProps = InputHTMLAttributes<HTMLInputElement> & {
+  webkitdirectory?: string;
+  directory?: string;
+};
+
+function stripExtension(name: string) {
+  return name.replace(/\.[^.]+$/, "");
+}
+
+function dirname(filePath: string) {
+  return filePath.replace(/[\\/][^\\/]+$/, "");
+}
+
+function inferPickedProject(files: FileList | null, mode: PickerMode) {
+  if (!files || files.length === 0) return null;
+
+  const firstFile = files[0] as BrowserFileWithPath;
+  const fullPath =
+    typeof firstFile.path === "string" && firstFile.path.trim()
+      ? firstFile.path
+      : "";
+
+  if (mode === "file") {
+    return {
+      directory: fullPath ? dirname(fullPath) : "",
+      suggestedName: stripExtension(firstFile.name),
+      limited: !fullPath,
+    };
+  }
+
+  const relativePath =
+    typeof firstFile.webkitRelativePath === "string"
+      ? firstFile.webkitRelativePath
+      : "";
+  const normalizedRelative = relativePath.replace(/\\/g, "/");
+  const rootName = normalizedRelative.split("/").find(Boolean) || stripExtension(firstFile.name);
+
+  if (!fullPath || !normalizedRelative) {
+    return {
+      directory: "",
+      suggestedName: rootName,
+      limited: true,
+    };
+  }
+
+  const normalizedFull = fullPath.replace(/\\/g, "/");
+  const relativeIndex = normalizedFull.lastIndexOf(normalizedRelative);
+
+  if (relativeIndex === -1) {
+    return {
+      directory: dirname(fullPath),
+      suggestedName: rootName,
+      limited: true,
+    };
+  }
+
+  return {
+    directory: fullPath.slice(0, relativeIndex + rootName.length),
+    suggestedName: rootName,
+    limited: false,
+  };
+}
 
 export default function ProjectsPanel() {
   const { projects, activeProjectId, loading, fetchProjects, createProject, deleteProject, renameProject, switchProject } =
@@ -10,16 +82,27 @@ export default function ProjectsPanel() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDir, setNewDir] = useState("");
+  const [createPickerNote, setCreatePickerNote] = useState("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDir, setEditDir] = useState("");
+  const [editPickerNote, setEditPickerNote] = useState("");
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
 
   const newNameRef = useRef<HTMLInputElement>(null);
   const editNameRef = useRef<HTMLInputElement>(null);
+  const pickerTargetRef = useRef<PickerTarget>("new");
+  const filePickerRef = useRef<HTMLInputElement>(null);
+  const folderPickerRef = useRef<HTMLInputElement>(null);
+
+  const folderPickerProps: DirectoryInputProps = {
+    webkitdirectory: "",
+    directory: "",
+    multiple: true,
+  };
 
   useEffect(() => {
     if (projects.length === 0 && !loading) fetchProjects();
@@ -39,6 +122,7 @@ export default function ProjectsPanel() {
     setCreating(false);
     setNewName("");
     setNewDir("");
+    setCreatePickerNote("");
     await createProject(name, newDir.trim() || undefined);
   };
 
@@ -56,7 +140,40 @@ export default function ProjectsPanel() {
     setEditingId(id);
     setEditName(p.name);
     setEditDir(p.directory ?? "");
+    setEditPickerNote("");
     setDeletingId(null);
+  };
+
+  const openPicker = (target: PickerTarget, mode: PickerMode) => {
+    pickerTargetRef.current = target;
+    if (target === "new") setCreatePickerNote("");
+    else setEditPickerNote("");
+
+    if (mode === "file") filePickerRef.current?.click();
+    else folderPickerRef.current?.click();
+  };
+
+  const handlePickerSelect = (event: ChangeEvent<HTMLInputElement>, mode: PickerMode) => {
+    const target = pickerTargetRef.current;
+    const picked = inferPickedProject(event.target.files, mode);
+    event.target.value = "";
+
+    if (!picked) return;
+
+    const setName = target === "new" ? setNewName : setEditName;
+    const setDir = target === "new" ? setNewDir : setEditDir;
+    const setNote = target === "new" ? setCreatePickerNote : setEditPickerNote;
+
+    if (picked.directory) setDir(picked.directory);
+    if (picked.suggestedName) {
+      setName((current) => (current.trim() ? current : picked.suggestedName));
+    }
+
+    setNote(
+      picked.limited
+        ? "Browser hide full path. Name filled from selection. Directory still manual."
+        : "",
+    );
   };
 
   const handleSwitch = async (id: string) => {
@@ -74,6 +191,20 @@ export default function ProjectsPanel() {
 
   return (
     <div className="p-2.5 flex flex-col gap-2">
+      <input
+        type="file"
+        ref={filePickerRef}
+        onChange={(event) => handlePickerSelect(event, "file")}
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={folderPickerRef}
+        onChange={(event) => handlePickerSelect(event, "folder")}
+        className="hidden"
+        {...folderPickerProps}
+      />
+
       {/* Create button / inline form */}
       {creating ? (
         <form
@@ -84,7 +215,7 @@ export default function ProjectsPanel() {
             ref={newNameRef}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && (setCreating(false), setNewName(""), setNewDir(""))}
+            onKeyDown={(e) => e.key === "Escape" && (setCreating(false), setNewName(""), setNewDir(""), setCreatePickerNote(""))}
             placeholder="Project name"
             className="rounded-md bg-neutral-900 border border-neutral-700 px-2.5 py-1.5 text-[12px] text-neutral-100 placeholder-neutral-500 outline-none focus:border-blue-500"
           />
@@ -92,7 +223,7 @@ export default function ProjectsPanel() {
             <input
               value={newDir}
               onChange={(e) => setNewDir(e.target.value)}
-              onKeyDown={(e) => e.key === "Escape" && (setCreating(false), setNewName(""), setNewDir(""))}
+              onKeyDown={(e) => e.key === "Escape" && (setCreating(false), setNewName(""), setNewDir(""), setCreatePickerNote(""))}
               placeholder="/home/user/myproject  (optional)"
               className="w-full rounded-md bg-neutral-900 border border-neutral-700 pl-7 pr-2.5 py-1.5 text-[12px] text-neutral-100 placeholder-neutral-500 outline-none focus:border-blue-500 font-mono"
             />
@@ -100,6 +231,25 @@ export default function ProjectsPanel() {
               <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
             </svg>
           </div>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => openPicker("new", "file")}
+              className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white cursor-pointer"
+            >
+              Pick file
+            </button>
+            <button
+              type="button"
+              onClick={() => openPicker("new", "folder")}
+              className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white cursor-pointer"
+            >
+              Pick folder
+            </button>
+          </div>
+          {createPickerNote && (
+            <p className="text-[10px] text-amber-300">{createPickerNote}</p>
+          )}
           <div className="flex gap-1.5">
             <button
               type="submit"
@@ -110,7 +260,7 @@ export default function ProjectsPanel() {
             </button>
             <button
               type="button"
-              onClick={() => { setCreating(false); setNewName(""); setNewDir(""); }}
+              onClick={() => { setCreating(false); setNewName(""); setNewDir(""); setCreatePickerNote(""); }}
               className="px-3 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800 text-[12px] transition-colors cursor-pointer"
             >
               Cancel
@@ -225,7 +375,7 @@ export default function ProjectsPanel() {
                     <input
                       value={editDir}
                       onChange={(e) => setEditDir(e.target.value)}
-                      onKeyDown={(e) => e.key === "Escape" && setEditingId(null)}
+                      onKeyDown={(e) => e.key === "Escape" && (setEditingId(null), setEditPickerNote(""))}
                       placeholder="/home/user/myproject  (optional)"
                       className="w-full rounded-md bg-neutral-900 border border-neutral-700 pl-7 pr-2.5 py-1.5 text-[12px] text-neutral-100 placeholder-neutral-500 outline-none focus:border-blue-500 font-mono"
                     />
@@ -233,6 +383,25 @@ export default function ProjectsPanel() {
                       <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
                     </svg>
                   </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => openPicker("edit", "file")}
+                      className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white cursor-pointer"
+                    >
+                      Pick file
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openPicker("edit", "folder")}
+                      className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white cursor-pointer"
+                    >
+                      Pick folder
+                    </button>
+                  </div>
+                  {editPickerNote && (
+                    <p className="text-[10px] text-amber-300">{editPickerNote}</p>
+                  )}
                   <div className="flex gap-1.5">
                     <button
                       type="submit"
@@ -243,7 +412,7 @@ export default function ProjectsPanel() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setEditingId(null)}
+                      onClick={() => { setEditingId(null); setEditPickerNote(""); }}
                       className="px-3 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800 text-[12px] transition-colors cursor-pointer"
                     >
                       Cancel
