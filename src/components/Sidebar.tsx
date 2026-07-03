@@ -192,7 +192,7 @@ export default function Sidebar({
           <div className="sm:fixed sm:top-4 sm:left-4 sm:z-[10000]">
             <div
               ref={sheetRef}
-              className="fixed bottom-0 left-0 right-0 sm:absolute sm:top-full sm:left-0 sm:right-auto sm:bottom-auto sm:mt-1.5 w-full sm:w-[28rem] bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:max-h-[62vh] max-h-[70vh] flex flex-col transition-transform touch-none z-[10000] animate-[slideUp_0.3s_ease-out] sm:animate-[fadeSlideIn_0.12s_ease-out]"
+              className="fixed bottom-0 left-0 right-0 sm:absolute sm:top-full sm:left-0 sm:right-auto sm:bottom-auto sm:mt-3 w-full sm:w-[28rem] bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:max-h-[62vh] max-h-[70vh] flex flex-col transition-transform touch-none z-[10000] animate-[slideUp_0.3s_ease-out] sm:animate-[fadeSlideIn_0.12s_ease-out]"
             >
               <div
                 className="sm:hidden w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
