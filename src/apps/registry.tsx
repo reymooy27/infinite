@@ -1631,7 +1631,8 @@ export const SSHPane = ({
     if (conn) useFileTransferStore.getState().openDownload(conn);
   }, [connectionId]);
 
-  const mobileBottomInset = isMobile ? (keyboardHeight ?? 0) + 56 : 0;
+  const mobileBottomInset =
+    isMobile && showTerminalShortcuts ? (keyboardHeight ?? 0) + 56 : 0;
 
   return (
     <div
@@ -1639,7 +1640,7 @@ export const SSHPane = ({
         visibility: isActive ? "visible" : "hidden",
         position: "absolute",
         inset: 0,
-        paddingBottom: isMobile ? `${mobileBottomInset}px` : undefined,
+        paddingBottom: mobileBottomInset ? `${mobileBottomInset}px` : undefined,
       }}
       className={`px-2 bg-[#0a0a0a] ${
         isMobile
