@@ -1113,6 +1113,32 @@ export const SSHPane = ({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [snapshotTerminalBuffer]);
 
+  // Prevent browser from intercepting Ctrl+W (close tab) and Escape
+  // when terminal is focused — forward them to the terminal instead
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!isActiveRef.current || !terminalRef.current) return;
+      const active = document.activeElement;
+      if (!active || !terminalRef.current.contains(active)) return;
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "data", data: "\x17" }));
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "data", data: "\x1b" }));
+        }
+      }
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, []);
+
   useEffect(() => {
     if (!terminalRef.current) return;
 

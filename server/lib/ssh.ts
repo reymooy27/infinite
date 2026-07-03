@@ -1,6 +1,7 @@
 import { Client, ClientChannel, SFTPWrapper } from "ssh2";
 import net from "net";
 import type { AddressInfo } from "net";
+import path from "path";
 import { logger } from "./logger.js";
 
 const ERR_UNHANDLED = "ERR_UNHANDLED_ERROR";
@@ -302,15 +303,100 @@ function readNextChunk(
   });
 }
 
+function sanitizeRelativeUploadPath(value: string) {
+  const normalized = path.posix.normalize(value);
+  const parts = normalized
+    .split("/")
+    .filter((part) => part && part !== "." && part !== "..");
+
+  if (parts.length === 0) {
+    throw new Error("Invalid upload path");
+  }
+
+  return parts.join("/");
+}
+
+function buildUploadPath(msg: {
+  fileName: string;
+  destPath: string;
+  relativePath?: string;
+  treatDestAsDirectory?: boolean;
+}) {
+  if (!msg.treatDestAsDirectory) {
+    return msg.destPath.endsWith("/")
+      ? msg.destPath + msg.fileName
+      : msg.destPath;
+  }
+
+  const relativePath = sanitizeRelativeUploadPath(msg.relativePath || msg.fileName);
+  const basePath = msg.destPath.trim() || ".";
+  return path.posix.join(basePath, relativePath);
+}
+
+function ensureRemoteDirectory(
+  sftp: SFTPWrapper,
+  directoryPath: string,
+): Promise<void> {
+  const normalized = path.posix.normalize(directoryPath);
+  const parts = normalized
+    .split("/")
+    .filter((part) => part && part !== ".");
+
+  if (parts.length === 0) {
+    return Promise.resolve();
+  }
+
+  const isAbsolute = normalized.startsWith("/");
+
+  return new Promise((resolve, reject) => {
+    let currentPath = isAbsolute ? "/" : "";
+
+    const step = (index: number) => {
+      if (index >= parts.length) {
+        resolve();
+        return;
+      }
+
+      currentPath = currentPath === "/"
+        ? `/${parts[index]}`
+        : currentPath
+          ? `${currentPath}/${parts[index]}`
+          : parts[index];
+
+      sftp.stat(currentPath, (statErr) => {
+        if (!statErr) {
+          step(index + 1);
+          return;
+        }
+
+        sftp.mkdir(currentPath, (mkdirErr) => {
+          if (mkdirErr) {
+            reject(mkdirErr);
+            return;
+          }
+          step(index + 1);
+        });
+      });
+    };
+
+    step(0);
+  });
+}
+
 function handleUploadStart(
   conn: Client,
   ws: { send: (data: string) => void },
-  msg: { uploadId: string; fileName: string; fileSize: number; destPath: string },
-  windowId?: string,
+  msg: {
+    uploadId: string;
+    fileName: string;
+    fileSize: number;
+    destPath: string;
+    relativePath?: string;
+    treatDestAsDirectory?: boolean;
+  },
 ) {
-  const fullPath = msg.destPath.endsWith("/")
-    ? msg.destPath + msg.fileName
-    : msg.destPath;
+  const fullPath = buildUploadPath(msg);
+  const parentDir = path.posix.dirname(fullPath);
 
   conn.sftp((err, sftp) => {
     if (err) {
@@ -318,22 +404,27 @@ function handleUploadStart(
       return;
     }
 
-    sftp.open(fullPath, "w", (openErr, handle) => {
-      if (openErr) {
-        ws.send(JSON.stringify({ type: "upload_error", uploadId: msg.uploadId, message: openErr.message }));
-        sftp.end();
-        return;
-      }
+    ensureRemoteDirectory(sftp, parentDir).then(() => {
+      sftp.open(fullPath, "w", (openErr, handle) => {
+        if (openErr) {
+          ws.send(JSON.stringify({ type: "upload_error", uploadId: msg.uploadId, message: openErr.message }));
+          sftp.end();
+          return;
+        }
 
-      activeUploads.set(msg.uploadId, {
-        sftp,
-        handle,
-        filePath: fullPath,
-        bytesWritten: 0,
-        fileSize: msg.fileSize,
+        activeUploads.set(msg.uploadId, {
+          sftp,
+          handle,
+          filePath: fullPath,
+          bytesWritten: 0,
+          fileSize: msg.fileSize,
+        });
+
+        ws.send(JSON.stringify({ type: "upload_ack", uploadId: msg.uploadId }));
       });
-
-      ws.send(JSON.stringify({ type: "upload_ack", uploadId: msg.uploadId }));
+    }).catch((mkdirErr: Error) => {
+      ws.send(JSON.stringify({ type: "upload_error", uploadId: msg.uploadId, message: mkdirErr.message }));
+      sftp.end();
     });
   });
 }
@@ -432,11 +523,17 @@ function handleFileTransferMessage(
   conn: Client,
   ws: { send: (data: string) => void },
   msg: Record<string, unknown>,
-  windowId?: string,
 ) {
   switch (msg.type) {
     case "upload_start":
-      handleUploadStart(conn, ws, msg as { uploadId: string; fileName: string; fileSize: number; destPath: string }, windowId);
+      handleUploadStart(conn, ws, msg as {
+        uploadId: string;
+        fileName: string;
+        fileSize: number;
+        destPath: string;
+        relativePath?: string;
+        treatDestAsDirectory?: boolean;
+      });
       break;
     case "upload_chunk":
       handleUploadChunk(ws, msg as { uploadId: string; data: string; offset: number });
@@ -447,19 +544,6 @@ function handleFileTransferMessage(
     case "download_request":
       handleDownloadRequest(conn, ws, msg as { downloadId: string; remotePath: string });
       break;
-  }
-}
-
-function cleanupFileTransfersForSession(_windowId?: string) {
-  for (const [uploadId, upload] of Array.from(activeUploads)) {
-    activeUploads.delete(uploadId);
-    upload.sftp.close(upload.handle, () => {});
-    upload.sftp.end();
-  }
-  for (const [downloadId, download] of Array.from(activeDownloads)) {
-    activeDownloads.delete(downloadId);
-    download.sftp.close(download.handle, () => {});
-    download.sftp.end();
   }
 }
 
@@ -498,7 +582,7 @@ export function createSSHSocket(
         } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
           session.stream.setWindow(parsed.rows, parsed.cols, 0, 0);
         } else {
-          handleFileTransferMessage(session.conn, ws, parsed as unknown as Record<string, unknown>, windowId);
+          handleFileTransferMessage(session.conn, ws, parsed as unknown as Record<string, unknown>);
         }
       } catch {
         logger.debug(`[SSH] Malformed message from session ${windowId}`);
@@ -598,7 +682,7 @@ export function createSSHSocket(
           } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
             stream.setWindow(parsed.rows, parsed.cols, 0, 0);
           } else {
-            handleFileTransferMessage(conn, ws, parsed as unknown as Record<string, unknown>, windowId);
+            handleFileTransferMessage(conn, ws, parsed as unknown as Record<string, unknown>);
           }
         } catch {
           logger.debug(`[SSH] Malformed message from connection ${connection.id}`);
