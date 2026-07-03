@@ -77,14 +77,20 @@ interface ActiveUpload {
 }
 
 interface ActiveDownload {
-  sftp: SFTPWrapper;
-  handle: Buffer;
   fileName: string;
   fileSize: number;
+  cleanup: () => void;
 }
 
 const activeUploads = new Map<string, ActiveUpload>();
 const activeDownloads = new Map<string, ActiveDownload>();
+
+function cleanupDownload(downloadId: string) {
+  const download = activeDownloads.get(downloadId);
+  if (!download) return;
+  activeDownloads.delete(downloadId);
+  download.cleanup();
+}
 
 function appendRecentOutput(session: ActiveSession, data: Buffer) {
   session.recentOutput.push(data);
@@ -276,17 +282,13 @@ function readNextChunk(
   sftp.read(handle, buffer, 0, CHUNK_SIZE, position, (err, bytesRead, dataBuffer) => {
     if (err) {
       ws.send(JSON.stringify({ type: "download_error", downloadId, message: err.message }));
-      sftp.close(handle, () => {});
-      sftp.end();
-      activeDownloads.delete(downloadId);
+      cleanupDownload(downloadId);
       return;
     }
 
     if (bytesRead === 0) {
       ws.send(JSON.stringify({ type: "download_complete", downloadId }));
-      sftp.close(handle, () => {});
-      sftp.end();
-      activeDownloads.delete(downloadId);
+      cleanupDownload(downloadId);
       return;
     }
 
@@ -494,6 +496,12 @@ function handleDownloadRequest(
         return;
       }
 
+      if (typeof stats.isDirectory === "function" && stats.isDirectory()) {
+        sftp.end();
+        streamDirectoryArchive(conn, ws, msg.downloadId, msg.remotePath);
+        return;
+      }
+
       sftp.open(msg.remotePath, "r", (openErr, handle) => {
         if (openErr) {
           ws.send(JSON.stringify({ type: "download_error", downloadId: msg.downloadId, message: openErr.message }));
@@ -511,10 +519,99 @@ function handleDownloadRequest(
           fileSize,
         }));
 
-        activeDownloads.set(msg.downloadId, { sftp, handle, fileName, fileSize });
+        activeDownloads.set(msg.downloadId, {
+          fileName,
+          fileSize,
+          cleanup: () => {
+            sftp.close(handle, () => {});
+            sftp.end();
+          },
+        });
 
         readNextChunk(sftp, handle, ws, msg.downloadId, fileSize, 0);
       });
+    });
+  });
+}
+
+function streamDirectoryArchive(
+  conn: Client,
+  ws: { send: (data: string) => void },
+  downloadId: string,
+  remotePath: string,
+) {
+  const normalizedPath = path.posix.normalize(remotePath);
+  const parentDir = path.posix.dirname(normalizedPath);
+  const baseName = path.posix.basename(normalizedPath);
+  const archiveName = `${baseName || "download"}.tar.gz`;
+  const command = `tar -C ${quoteShellArg(parentDir)} -czf - -- ${quoteShellArg(baseName)}`;
+
+  conn.exec(command, (err, stream) => {
+    if (err) {
+      ws.send(JSON.stringify({ type: "download_error", downloadId, message: err.message }));
+      return;
+    }
+
+    let bytesSent = 0;
+    let finished = false;
+
+    ws.send(JSON.stringify({
+      type: "download_start",
+      downloadId,
+      fileName: archiveName,
+      fileSize: 0,
+      isArchive: true,
+    }));
+
+    activeDownloads.set(downloadId, {
+      fileName: archiveName,
+      fileSize: 0,
+      cleanup: () => {
+        if (!stream.destroyed) {
+          stream.close();
+        }
+      },
+    });
+
+    stream.on("data", (chunk: Buffer) => {
+      bytesSent += chunk.length;
+      ws.send(JSON.stringify({
+        type: "download_chunk",
+        downloadId,
+        data: chunk.toString("base64"),
+        offset: bytesSent - chunk.length,
+        total: 0,
+      }));
+    });
+
+    stream.stderr.on("data", (chunk: Buffer) => {
+      logger.warn("[SFTP] Archive stderr", {
+        downloadId,
+        remotePath,
+        message: chunk.toString("utf8"),
+      });
+    });
+
+    stream.on("close", (code?: number) => {
+      if (finished) return;
+      finished = true;
+      cleanupDownload(downloadId);
+      if (code && code !== 0) {
+        ws.send(JSON.stringify({
+          type: "download_error",
+          downloadId,
+          message: `Failed to archive folder (exit ${code})`,
+        }));
+        return;
+      }
+      ws.send(JSON.stringify({ type: "download_complete", downloadId }));
+    });
+
+    stream.on("error", (streamErr: Error) => {
+      if (finished) return;
+      finished = true;
+      cleanupDownload(downloadId);
+      ws.send(JSON.stringify({ type: "download_error", downloadId, message: streamErr.message }));
     });
   });
 }

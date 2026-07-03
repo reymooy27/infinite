@@ -27,6 +27,7 @@ type TransferProgress = {
   currentLabel: string;
   itemIndex: number;
   itemCount: number;
+  isIndeterminate?: boolean;
 };
 
 type DirectoryInputProps = InputHTMLAttributes<HTMLInputElement> & {
@@ -224,6 +225,7 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
             currentLabel: msg.fileName,
             itemIndex: Math.min(completedDownloadsRef.current + 1, completedDownloadsRef.current + pendingDownloadsRef.current.length + 1),
             itemCount: completedDownloadsRef.current + pendingDownloadsRef.current.length + 1,
+            isIndeterminate: Boolean(msg.isArchive) || msg.fileSize === 0,
           });
         } else if (msg.type === "download_chunk") {
           const binaryStr = atob(msg.data);
@@ -238,6 +240,7 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
             currentLabel: current?.currentLabel || downloadNameRef.current || activeDownloadRef.current,
             itemIndex: current?.itemIndex || completedDownloadsRef.current + 1,
             itemCount: current?.itemCount || completedDownloadsRef.current + pendingDownloadsRef.current.length + 1,
+            isIndeterminate: current?.isIndeterminate || msg.total === 0,
           }));
         } else if (msg.type === "download_complete") {
           const allChunks = downloadChunksRef.current;
@@ -465,12 +468,12 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
                   value={path}
                   onChange={(e) => setPath(e.target.value)}
                   onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleStart(); }}
-                  placeholder={"/home/user/file-1.txt\n/home/user/file-2.log"}
+                  placeholder={"/home/user/file-1.txt\n/home/user/project-folder"}
                   rows={4}
                   className="w-full px-2.5 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors resize-none"
                 />
                 <p className="mt-1 text-[10px] text-neutral-500">
-                  One file path per line. Browser may ask permission for multiple downloads.
+                  One path per line. Folder paths download as `.tar.gz`. Browser may ask permission for multiple downloads.
                 </p>
               </>
             )}
@@ -485,13 +488,17 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
               </span>
             </div>
             <div className="flex justify-between text-[10px] text-neutral-500 mb-1">
-              <span>{progressPct}%</span>
-              <span>{formatSize(progress.bytesDone)} / {formatSize(progress.total)}</span>
+              <span>{progress.isIndeterminate ? "Streaming..." : `${progressPct}%`}</span>
+              <span>
+                {progress.isIndeterminate
+                  ? formatSize(progress.bytesDone)
+                  : `${formatSize(progress.bytesDone)} / ${formatSize(progress.total)}`}
+              </span>
             </div>
             <div className="w-full h-1.5 bg-neutral-800 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300 bg-blue-500"
-                style={{ width: `${progressPct}%` }}
+                style={{ width: progress.isIndeterminate ? "100%" : `${progressPct}%`, opacity: progress.isIndeterminate ? 0.7 : 1 }}
               />
             </div>
           </div>
