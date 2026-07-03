@@ -1041,6 +1041,42 @@ export const SSHPane = ({
     termInstanceRef.current?.focus();
   }, []);
 
+  const forwardReservedTerminalShortcut = useCallback((event: KeyboardEvent) => {
+    if (event.type !== "keydown" || !isActiveRef.current || !terminalRef.current) {
+      return false;
+    }
+
+    const active = document.activeElement;
+    if (!active || !terminalRef.current.contains(active)) {
+      return false;
+    }
+
+    const isCloseShortcut =
+      (event.metaKey || event.ctrlKey) &&
+      !event.altKey &&
+      event.key.toLowerCase() === "w";
+    const isEscape = event.key === "Escape";
+
+    if (!isCloseShortcut && !isEscape) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "data",
+          data: isCloseShortcut ? "\x17" : "\x1b",
+        }),
+      );
+    }
+
+    return true;
+  }, []);
+
   const refreshTerminal = useCallback(() => {
     snapshotTerminalBuffer();
     if (statusRef.current === "connected") {
@@ -1117,27 +1153,11 @@ export const SSHPane = ({
   // when terminal is focused — forward them to the terminal instead
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!isActiveRef.current || !terminalRef.current) return;
-      const active = document.activeElement;
-      if (!active || !terminalRef.current.contains(active)) return;
-
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
-        e.preventDefault();
-        e.stopPropagation();
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "data", data: "\x17" }));
-        }
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "data", data: "\x1b" }));
-        }
-      }
+      forwardReservedTerminalShortcut(e);
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, []);
+  }, [forwardReservedTerminalShortcut]);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -1173,6 +1193,10 @@ export const SSHPane = ({
     const clipboardAddon = new ClipboardAddon();
     term.loadAddon(clipboardAddon);
     term.open(terminalRef.current);
+    term.attachCustomKeyEventHandler((event) => {
+      if (!(event instanceof KeyboardEvent)) return true;
+      return !forwardReservedTerminalShortcut(event);
+    });
 
     requestAnimationFrame(focusTerminal);
 
@@ -1251,7 +1275,7 @@ export const SSHPane = ({
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, [focusTerminal, forceTerminalRepaint, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer]);
+  }, [focusTerminal, forceTerminalRepaint, forwardReservedTerminalShortcut, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer]);
 
   useEffect(() => {
     if (isActive) {
