@@ -1316,7 +1316,6 @@ export const SSHPane = ({
 
     let startPos = { x: 0, y: 0 };
     let lastPos = { x: 0, y: 0 };
-    let touchStartAt = 0;
     let isDragSelection = false;
     let gestureMode: "pending" | "scroll" | "selection" = "pending";
 
@@ -1342,9 +1341,11 @@ export const SSHPane = ({
 
       startPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       lastPos = startPos;
-      touchStartAt = Date.now();
       isDragSelection = false;
-      gestureMode = "pending";
+      gestureMode = enableTouchScroll && isMobile ? "scroll" : "pending";
+      if (enableTouchScroll && isMobile) {
+        termInstanceRef.current?.clearSelection();
+      }
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -1353,26 +1354,16 @@ export const SSHPane = ({
       const touch = e.touches[0];
       const dx = touch.clientX - startPos.x;
       const dy = touch.clientY - startPos.y;
-      const absDx = Math.abs(dx);
-      const absDy = Math.abs(dy);
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist < 2) return;
-
-      if (enableTouchScroll && isMobile && gestureMode === "pending") {
-        const longPressSelection = Date.now() - touchStartAt > 250;
-        if (!longPressSelection && absDy > 6 && absDy > absDx) {
-          gestureMode = "scroll";
-        } else if (dist > 8) {
-          gestureMode = "selection";
-        }
-      }
 
       if (enableTouchScroll && isMobile && gestureMode === "scroll") {
         const viewport = getViewport();
         if (!viewport) return;
         e.preventDefault();
         viewport.scrollTop -= touch.clientY - lastPos.y;
+        termInstanceRef.current?.clearSelection();
         lastPos = { x: touch.clientX, y: touch.clientY };
         return;
       }
@@ -1696,7 +1687,12 @@ export const SSHPane = ({
         className="w-full h-full"
         style={
           enableTouchScroll && isMobile
-            ? { touchAction: "pan-y", overscrollBehavior: "contain" }
+            ? {
+                touchAction: "pan-y",
+                overscrollBehavior: "contain",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+              }
             : undefined
         }
       />
