@@ -320,6 +320,7 @@ export default function FocusModeLayout({
               hasNavigated={tab.hasNavigated}
               keyboardHeight={keyboardHeight}
               refreshNonce={paneRefreshKey}
+              enableTouchScroll
             />
           ))
         ) : (

@@ -874,6 +874,7 @@ export const SSHPane = ({
   hasNavigated,
   keyboardHeight,
   refreshNonce,
+  enableTouchScroll = false,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -882,6 +883,7 @@ export const SSHPane = ({
   hasNavigated?: boolean;
   keyboardHeight?: number;
   refreshNonce?: number;
+  enableTouchScroll?: boolean;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -1313,13 +1315,19 @@ export const SSHPane = ({
     if (!container) return;
 
     let startPos = { x: 0, y: 0 };
+    let lastPos = { x: 0, y: 0 };
+    let touchStartAt = 0;
     let isDragSelection = false;
+    let gestureMode: "pending" | "scroll" | "selection" = "pending";
 
     const getXterm = (): HTMLElement | null =>
       container.querySelector(".xterm");
 
     const getScreen = (): HTMLElement | null =>
       container.querySelector(".xterm-screen");
+
+    const getViewport = (): HTMLElement | null =>
+      container.querySelector(".xterm-viewport");
 
     const dispatchDoc = (type: string, props: Record<string, number>) => {
       document.dispatchEvent(
@@ -1333,17 +1341,41 @@ export const SSHPane = ({
       if (!screen || !screen.contains(e.target as Node)) return;
 
       startPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      lastPos = startPos;
+      touchStartAt = Date.now();
       isDragSelection = false;
+      gestureMode = "pending";
     };
 
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
 
-      const dx = e.touches[0].clientX - startPos.x;
-      const dy = e.touches[0].clientY - startPos.y;
+      const touch = e.touches[0];
+      const dx = touch.clientX - startPos.x;
+      const dy = touch.clientY - startPos.y;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist < 2) return;
+
+      if (enableTouchScroll && isMobile && gestureMode === "pending") {
+        const longPressSelection = Date.now() - touchStartAt > 250;
+        if (!longPressSelection && absDy > 6 && absDy > absDx) {
+          gestureMode = "scroll";
+        } else if (dist > 8) {
+          gestureMode = "selection";
+        }
+      }
+
+      if (enableTouchScroll && isMobile && gestureMode === "scroll") {
+        const viewport = getViewport();
+        if (!viewport) return;
+        e.preventDefault();
+        viewport.scrollTop -= touch.clientY - lastPos.y;
+        lastPos = { x: touch.clientX, y: touch.clientY };
+        return;
+      }
 
       const xtermEl = getXterm();
       if (!xtermEl) return;
@@ -1366,14 +1398,15 @@ export const SSHPane = ({
       }
 
       if (isDragSelection) {
-        const t = e.touches[0];
         dispatchDoc("mousemove", {
-          clientX: t.clientX,
-          clientY: t.clientY,
+          clientX: touch.clientX,
+          clientY: touch.clientY,
           button: 0,
           buttons: 1,
         });
       }
+
+      lastPos = { x: touch.clientX, y: touch.clientY };
     };
 
     const onTouchEnd = (e: TouchEvent) => {
@@ -1388,6 +1421,7 @@ export const SSHPane = ({
         e.preventDefault();
       }
       isDragSelection = false;
+      gestureMode = "pending";
     };
 
     const onAuxClick = (e: MouseEvent) => {
@@ -1408,7 +1442,7 @@ export const SSHPane = ({
       container.removeEventListener("touchend", onTouchEnd);
       container.removeEventListener("auxclick", onAuxClick, true);
     };
-  }, []);
+  }, [enableTouchScroll, isMobile]);
 
   const sendShortcut = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -1657,7 +1691,15 @@ export const SSHPane = ({
             : "py-2"
       }`}
     >
-      <div ref={terminalRef} className="w-full h-full" />
+      <div
+        ref={terminalRef}
+        className="w-full h-full"
+        style={
+          enableTouchScroll && isMobile
+            ? { touchAction: "pan-y", overscrollBehavior: "contain" }
+            : undefined
+        }
+      />
 
       {/* Mobile UI */}
       {status === "connected" && isMobile && showTerminalShortcuts && (
