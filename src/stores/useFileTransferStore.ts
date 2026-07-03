@@ -14,7 +14,7 @@ function openTransferWindow(conn: TransferConnection, mode: TransferMode) {
     connectionId: conn.id,
     connectionName: conn.name,
     mode,
-    title: `${mode === "upload" ? "Upload" : "Download"} - ${conn.name}`,
+    title: `File Transfer - ${conn.name}`,
   });
 }
 

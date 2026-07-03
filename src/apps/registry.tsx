@@ -1982,8 +1982,8 @@ export const registry: Record<AppId, AppDefinition> = {
       connectionId?: number;
       windowId?: string;
     }>,
-    defaultWidth: 380,
-    defaultHeight: 360,
+    defaultWidth: 560,
+    defaultHeight: 520,
   },
 };
 

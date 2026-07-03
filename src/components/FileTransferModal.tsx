@@ -1,4 +1,14 @@
-import { Upload, Download, X, FileText, FolderOpen } from "lucide-react";
+import {
+  ChevronLeft,
+  Download,
+  FileText,
+  Folder,
+  FolderOpen,
+  Plus,
+  RefreshCw,
+  Upload,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, InputHTMLAttributes } from "react";
 import { buildWsUrl } from "@/lib/ws";
@@ -12,7 +22,16 @@ function formatSize(bytes: number): string {
   return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+function parseRemotePaths(value: string): string[] {
+  return value
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 const CHUNK_SIZE = 64 * 1024;
+
+type TransferMode = "upload" | "download";
 
 type UploadSelection = {
   file: File;
@@ -30,6 +49,13 @@ type TransferProgress = {
   isIndeterminate?: boolean;
 };
 
+type RemoteBrowserEntry = {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+};
+
 type DirectoryInputProps = InputHTMLAttributes<HTMLInputElement> & {
   webkitdirectory?: string;
   directory?: string;
@@ -39,7 +65,7 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
   const closeWindow = useWindowStore((s) => s.closeWindow);
   const metadata = useWindowStore((s) => s.windows.find((w) => w.id === windowId)?.metadata);
 
-  const mode = metadata?.mode === "download" ? "download" : "upload";
+  const initialMode: TransferMode = metadata?.mode === "download" ? "download" : "upload";
   const connectionId = typeof metadata?.connectionId === "number" ? metadata.connectionId : null;
   const connectionName = typeof metadata?.connectionName === "string" ? metadata.connectionName : "SSH Session";
   const connection = useMemo(
@@ -47,17 +73,23 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
     [connectionId, connectionName],
   );
 
-  // Internal state
+  const [viewMode, setViewMode] = useState<TransferMode>(initialMode);
+  const isUpload = viewMode === "upload";
+
   const [status, setStatus] = useState<"input" | "connecting" | "transferring" | "done" | "error">("input");
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
   const [progress, setProgress] = useState<TransferProgress | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-  const [path, setPath] = useState(mode === "upload" ? "./" : "");
-  const pathRef = useRef(path);
-  useEffect(() => { pathRef.current = path; }, [path]);
 
-  // Upload-specific
+  const [uploadPath, setUploadPath] = useState("./");
+  const uploadPathRef = useRef(uploadPath);
+  useEffect(() => { uploadPathRef.current = uploadPath; }, [uploadPath]);
+
+  const [downloadPath, setDownloadPath] = useState("");
+  const downloadPathRef = useRef(downloadPath);
+  useEffect(() => { downloadPathRef.current = downloadPath; }, [downloadPath]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<UploadSelection[]>([]);
@@ -67,25 +99,36 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
   const activeUploadRef = useRef<UploadSelection | null>(null);
   const completedUploadsRef = useRef(0);
 
-  // Download-specific
   const downloadChunksRef = useRef<Uint8Array[]>([]);
   const downloadNameRef = useRef("");
   const pendingDownloadsRef = useRef<string[]>([]);
   const activeDownloadRef = useRef("");
   const completedDownloadsRef = useRef(0);
 
-  // WebSocket
+  const [browserPathInput, setBrowserPathInput] = useState(".");
+  const browserRequestedPathRef = useRef(".");
+  const [browserCurrentPath, setBrowserCurrentPath] = useState(".");
+  const [browserParentPath, setBrowserParentPath] = useState<string | null>(null);
+  const [browserEntries, setBrowserEntries] = useState<RemoteBrowserEntry[]>([]);
+  const [browserLoading, setBrowserLoading] = useState(false);
+  const [browserError, setBrowserError] = useState("");
+  const [browserSessionKey, setBrowserSessionKey] = useState(0);
+
   const wsRef = useRef<WebSocket | null>(null);
+  const browserWsRef = useRef<WebSocket | null>(null);
   const uploadIdRef = useRef("");
   const downloadIdRef = useRef("");
-
-  const isUpload = mode === "upload";
   const [connectKey, setConnectKey] = useState(0);
 
   const wsUrl = useMemo(() => {
     if (!connection) return null;
     return buildWsUrl("/ws/sftp", { connectionId: connection.id, r: connectKey });
   }, [connection, connectKey]);
+
+  const browserWsUrl = useMemo(() => {
+    if (!connection || isUpload) return null;
+    return buildWsUrl("/ws/sftp", { connectionId: connection.id, b: browserSessionKey });
+  }, [browserSessionKey, connection, isUpload]);
 
   const startNextUpload = useCallback((ws: WebSocket) => {
     const nextFile = pendingUploadsRef.current.shift();
@@ -109,7 +152,7 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
       uploadId,
       fileName: nextFile.file.name,
       fileSize: nextFile.file.size,
-      destPath: pathRef.current,
+      destPath: uploadPathRef.current,
       relativePath: nextFile.relativePath,
       treatDestAsDirectory: nextFile.treatDestAsDirectory,
     }));
@@ -166,11 +209,40 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
     }
   }, []);
 
-  // Connect WS once the user starts a transfer.
+  const sendBrowserListRequest = useCallback((ws: WebSocket, targetPath: string) => {
+    ws.send(JSON.stringify({
+      type: "list_request",
+      requestPath: targetPath.trim() || ".",
+    }));
+  }, []);
+
+  const requestBrowserDirectory = useCallback((targetPath: string, wsOverride?: WebSocket) => {
+    const nextPath = targetPath.trim() || ".";
+    browserRequestedPathRef.current = nextPath;
+    setBrowserLoading(true);
+    setBrowserError("");
+
+    const ws = wsOverride ?? browserWsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      sendBrowserListRequest(ws, nextPath);
+      return;
+    }
+
+    setBrowserSessionKey((key) => key + 1);
+  }, [sendBrowserListRequest]);
+
+  const appendDownloadTarget = useCallback((targetPath: string) => {
+    setDownloadPath((current) => {
+      const existing = parseRemotePaths(current);
+      if (existing.includes(targetPath)) return current;
+      return existing.length > 0 ? `${existing.join("\n")}\n${targetPath}` : targetPath;
+    });
+  }, []);
+
   useEffect(() => {
     if (!wsUrl || connectKey === 0) return;
-    if (mode === "upload" && selectedFilesRef.current.length === 0) return;
-    if (mode === "download" && parseRemotePaths(pathRef.current).length === 0) return;
+    if (isUpload && selectedFilesRef.current.length === 0) return;
+    if (!isUpload && parseRemotePaths(downloadPathRef.current).length === 0) return;
 
     setStatus("connecting");
     const ws = new WebSocket(wsUrl);
@@ -180,13 +252,13 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === "connected") {
-          if (mode === "upload") {
+          if (isUpload) {
             pendingUploadsRef.current = [...selectedFilesRef.current];
             completedUploadsRef.current = 0;
             setStatus("transferring");
             startNextUpload(ws);
-          } else if (mode === "download") {
-            pendingDownloadsRef.current = parseRemotePaths(pathRef.current);
+          } else {
+            pendingDownloadsRef.current = parseRemotePaths(downloadPathRef.current);
             completedDownloadsRef.current = 0;
             setStatus("transferring");
             startNextDownload(ws);
@@ -201,13 +273,13 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
           setProgress({
             bytesDone: msg.bytesWritten,
             total: msg.fileSize,
-            currentLabel: currentFile?.displayPath || msg.path || "Upload",
+            currentLabel: currentFile?.displayPath || "Upload",
             itemIndex: Math.min(completedUploadsRef.current + 1, totalItems || 1),
             itemCount: totalItems || 1,
           });
         } else if (msg.type === "upload_complete") {
           completedUploadsRef.current += 1;
-          setProgress((p) => p ? { ...p, bytesDone: p.total } : null);
+          setProgress((current) => current ? { ...current, bytesDone: current.total } : null);
           if (pendingUploadsRef.current.length > 0) {
             startNextUpload(ws);
           } else {
@@ -244,23 +316,23 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
           }));
         } else if (msg.type === "download_complete") {
           const allChunks = downloadChunksRef.current;
-          const totalBytes = allChunks.reduce((sum, c) => sum + c.length, 0);
+          const totalBytes = allChunks.reduce((sum, chunk) => sum + chunk.length, 0);
           const allBytes = new Uint8Array(totalBytes);
-          let off = 0;
+          let offset = 0;
           for (const chunk of allChunks) {
-            allBytes.set(chunk, off);
-            off += chunk.length;
+            allBytes.set(chunk, offset);
+            offset += chunk.length;
           }
           const blob = new Blob([allBytes]);
           const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = downloadNameRef.current || "download";
-          a.click();
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = downloadNameRef.current || "download";
+          anchor.click();
           URL.revokeObjectURL(url);
           downloadChunksRef.current = [];
           completedDownloadsRef.current += 1;
-          setProgress((p) => p ? { ...p, bytesDone: p.total } : null);
+          setProgress((current) => current ? { ...current, bytesDone: Math.max(current.bytesDone, current.total) } : null);
           if (pendingDownloadsRef.current.length > 0) {
             startNextDownload(ws);
           } else {
@@ -282,6 +354,9 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
         setStatus("error");
         setErrorMessage("Connection lost");
       }
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
     };
 
     ws.onerror = () => {
@@ -291,13 +366,63 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
 
     return () => {
       ws.close();
-      wsRef.current = null;
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
     };
-  }, [connectKey, mode, sendFileChunks, startNextDownload, startNextUpload, wsUrl]);
+  }, [connectKey, isUpload, sendFileChunks, startNextDownload, startNextUpload, wsUrl]);
+
+  useEffect(() => {
+    if (!browserWsUrl) return;
+
+    const ws = new WebSocket(browserWsUrl);
+    browserWsRef.current = ws;
+
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "connected") {
+          requestBrowserDirectory(browserRequestedPathRef.current, ws);
+        } else if (msg.type === "list_response") {
+          setBrowserCurrentPath(msg.currentPath || browserRequestedPathRef.current);
+          setBrowserPathInput(msg.currentPath || browserRequestedPathRef.current);
+          setBrowserParentPath(msg.parentPath || null);
+          setBrowserEntries(Array.isArray(msg.entries) ? msg.entries : []);
+          setBrowserLoading(false);
+          setBrowserError("");
+        } else if (msg.type === "list_error") {
+          setBrowserLoading(false);
+          setBrowserError(msg.message || "Failed to list directory");
+        } else if (msg.type === "error") {
+          setBrowserLoading(false);
+          setBrowserError(msg.message || "Connection failed");
+        }
+      } catch {}
+    };
+
+    ws.onclose = () => {
+      if (browserWsRef.current === ws) {
+        browserWsRef.current = null;
+      }
+      setBrowserLoading(false);
+    };
+
+    ws.onerror = () => {
+      setBrowserLoading(false);
+      setBrowserError("Browser connection failed");
+    };
+
+    return () => {
+      ws.close();
+      if (browserWsRef.current === ws) {
+        browserWsRef.current = null;
+      }
+    };
+  }, [browserWsUrl, requestBrowserDirectory]);
 
   const applyUploadSelection = useCallback((nextFiles: UploadSelection[]) => {
     setSelectedFiles(nextFiles);
-    setPath((currentPath) => currentPath.trim() || "./");
+    setUploadPath((currentPath) => currentPath.trim() || "./");
   }, []);
 
   const handleFileSelect = useCallback((e: ChangeEvent<HTMLInputElement>) => {
@@ -337,14 +462,23 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
     pendingDownloadsRef.current = [];
     activeDownloadRef.current = "";
     completedDownloadsRef.current = 0;
-    setConnectKey(k => k + 1);
+    setConnectKey((key) => key + 1);
     setStatus("input");
   }, []);
 
   const handleCancel = useCallback(() => {
     wsRef.current?.close();
+    browserWsRef.current?.close();
     if (windowId) closeWindow(windowId);
   }, [closeWindow, windowId]);
+
+  const handleModeSwitch = useCallback((nextMode: TransferMode) => {
+    if (status === "connecting" || status === "transferring" || nextMode === viewMode) return;
+    setErrorMessage("");
+    setProgress(null);
+    setStatus("input");
+    setViewMode(nextMode);
+  }, [status, viewMode]);
 
   if (!connection) {
     return (
@@ -363,12 +497,9 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
   const isInput = status === "input";
   const isTransferring = status === "connecting" || status === "transferring";
   const uploadSummary = selectedFiles.length > 0
-    ? selectedFiles
-      .slice(0, 3)
-      .map((item) => item.displayPath)
-      .join(", ")
+    ? selectedFiles.slice(0, 3).map((item) => item.displayPath).join(", ")
     : "";
-  const downloadTargets = parseRemotePaths(path);
+  const downloadTargets = parseRemotePaths(downloadPath);
   const folderPickerProps: DirectoryInputProps = {
     webkitdirectory: "",
     directory: "",
@@ -391,11 +522,34 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
             {isUpload ? <Upload size={16} /> : <Download size={16} />}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold text-white">
-              {isUpload ? "Upload Files" : "Download Files"}
-            </h3>
+            <h3 className="text-sm font-semibold text-white">File Transfer</h3>
             <p className="text-[10px] text-neutral-500 truncate">{connection.name}</p>
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <button
+            onClick={() => handleModeSwitch("upload")}
+            disabled={isTransferring}
+            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer disabled:cursor-not-allowed ${
+              isUpload
+                ? "border-blue-500 bg-blue-500/15 text-blue-300"
+                : "border-neutral-700 bg-neutral-800 text-neutral-400 hover:text-white"
+            }`}
+          >
+            Upload
+          </button>
+          <button
+            onClick={() => handleModeSwitch("download")}
+            disabled={isTransferring}
+            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer disabled:cursor-not-allowed ${
+              !isUpload
+                ? "border-green-500 bg-green-500/15 text-green-300"
+                : "border-neutral-700 bg-neutral-800 text-neutral-400 hover:text-white"
+            }`}
+          >
+            Download
+          </button>
         </div>
 
         {isInput && isUpload && (
@@ -448,36 +602,132 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
           </div>
         )}
 
-        {isInput && (
+        {isInput && isUpload && (
           <div className="mb-4">
             <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider mb-1.5 block">
-              {isUpload ? "Destination directory" : "Remote file paths"}
+              Destination directory
             </label>
-            {isUpload ? (
-              <input
-                type="text"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleStart(); }}
-                placeholder="./"
-                className="w-full px-2.5 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors"
-              />
-            ) : (
-              <>
-                <textarea
-                  value={path}
-                  onChange={(e) => setPath(e.target.value)}
-                  onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleStart(); }}
-                  placeholder={"/home/user/file-1.txt\n/home/user/project-folder"}
-                  rows={4}
-                  className="w-full px-2.5 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors resize-none"
-                />
-                <p className="mt-1 text-[10px] text-neutral-500">
-                  One path per line. Folder paths download as `.tar.gz`. Browser may ask permission for multiple downloads.
-                </p>
-              </>
-            )}
+            <input
+              type="text"
+              value={uploadPath}
+              onChange={(e) => setUploadPath(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleStart(); }}
+              placeholder="./"
+              className="w-full px-2.5 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors"
+            />
           </div>
+        )}
+
+        {isInput && !isUpload && (
+          <>
+            <div className="mb-4">
+              <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider mb-1.5 block">
+                Remote paths
+              </label>
+              <textarea
+                value={downloadPath}
+                onChange={(e) => setDownloadPath(e.target.value)}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleStart(); }}
+                placeholder={"/home/user/file-1.txt\n/home/user/project-folder"}
+                rows={4}
+                className="w-full px-2.5 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors resize-none"
+              />
+              <p className="mt-1 text-[10px] text-neutral-500">
+                One path per line. Folder paths download as `.tar.gz`.
+              </p>
+            </div>
+
+            <div className="mb-4 border border-neutral-800 rounded-lg overflow-hidden bg-neutral-925">
+              <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-medium text-white">Remote browser</p>
+                    <p className="text-[10px] text-neutral-500">Click folder to open. Use `+` to queue file or folder.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 space-y-2">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => browserParentPath && requestBrowserDirectory(browserParentPath)}
+                    disabled={!browserParentPath || browserLoading}
+                    className="px-2 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-300 disabled:text-neutral-600 disabled:border-neutral-800 cursor-pointer disabled:cursor-not-allowed"
+                    title="Go up"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <input
+                    type="text"
+                    value={browserPathInput}
+                    onChange={(e) => setBrowserPathInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") requestBrowserDirectory(browserPathInput); }}
+                    className="flex-1 px-2.5 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors"
+                    placeholder="."
+                  />
+                  <button
+                    onClick={() => requestBrowserDirectory(browserPathInput)}
+                    disabled={browserLoading}
+                    className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-neutral-300 hover:border-neutral-500 transition-colors cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    Go
+                  </button>
+                  <button
+                    onClick={() => requestBrowserDirectory(browserCurrentPath)}
+                    disabled={browserLoading}
+                    className="px-2 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-300 hover:border-neutral-500 transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    title="Refresh"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                </div>
+
+                <div className="px-2.5 py-2 bg-neutral-800/70 border border-neutral-700 rounded-lg text-[10px] text-neutral-400 break-all">
+                  {browserCurrentPath}
+                </div>
+
+                <div className="h-56 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950">
+                  {browserLoading ? (
+                    <div className="h-full flex items-center justify-center text-xs text-neutral-500">
+                      Loading files...
+                    </div>
+                  ) : browserError ? (
+                    <div className="h-full flex items-center justify-center px-4 text-center text-xs text-red-400">
+                      {browserError}
+                    </div>
+                  ) : browserEntries.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-xs text-neutral-500">
+                      Empty directory
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-neutral-800">
+                      {browserEntries.map((entry) => (
+                        <div key={entry.path} className="flex items-center gap-2 px-2 py-2">
+                          <button
+                            onClick={() => entry.isDirectory ? requestBrowserDirectory(entry.path) : appendDownloadTarget(entry.path)}
+                            className="min-w-0 flex-1 flex items-center gap-2 text-left text-xs text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                          >
+                            {entry.isDirectory ? <Folder size={14} className="text-amber-300 shrink-0" /> : <FileText size={14} className="text-neutral-500 shrink-0" />}
+                            <span className="truncate">{entry.name}</span>
+                          </button>
+                          <span className="shrink-0 text-[10px] text-neutral-500">
+                            {entry.isDirectory ? "Folder" : formatSize(entry.size)}
+                          </span>
+                          <button
+                            onClick={() => appendDownloadTarget(entry.path)}
+                            className="shrink-0 p-1.5 rounded-md bg-neutral-800 border border-neutral-700 text-neutral-300 hover:border-neutral-500 transition-colors cursor-pointer"
+                            title={entry.isDirectory ? "Add folder archive" : "Add file"}
+                          >
+                            <Plus size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
         )}
 
         {isTransferring && progress && (
@@ -533,8 +783,8 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
           </button>
           {isInput && (
             <button
-            onClick={handleStart}
-              disabled={(isUpload && selectedFiles.length === 0) || (!isUpload && downloadTargets.length === 0) || (isUpload && !path.trim())}
+              onClick={handleStart}
+              disabled={(isUpload && selectedFiles.length === 0) || (isUpload && !uploadPath.trim()) || (!isUpload && downloadTargets.length === 0)}
               className={`px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed ${
                 isUpload
                   ? "bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/30"
@@ -548,11 +798,4 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
       </div>
     </div>
   );
-}
-
-function parseRemotePaths(value: string): string[] {
-  return value
-    .split("\n")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
 }

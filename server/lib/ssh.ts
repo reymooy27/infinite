@@ -82,6 +82,14 @@ interface ActiveDownload {
   cleanup: () => void;
 }
 
+interface RemoteDirectoryEntry {
+  filename: string;
+  attrs: {
+    isDirectory?: () => boolean;
+    size?: number;
+  };
+}
+
 const activeUploads = new Map<string, ActiveUpload>();
 const activeDownloads = new Map<string, ActiveDownload>();
 
@@ -616,6 +624,73 @@ function streamDirectoryArchive(
   });
 }
 
+function handleListRequest(
+  conn: Client,
+  ws: { send: (data: string) => void },
+  msg: { requestPath?: string },
+) {
+  const requestedPath = msg.requestPath?.trim() || ".";
+
+  conn.sftp((err, sftp) => {
+    if (err) {
+      ws.send(JSON.stringify({ type: "list_error", requestPath: requestedPath, message: err.message }));
+      return;
+    }
+
+    sftp.realpath(requestedPath, (realErr, resolvedPath) => {
+      if (realErr || !resolvedPath) {
+        ws.send(JSON.stringify({
+          type: "list_error",
+          requestPath: requestedPath,
+          message: realErr?.message || "Path not found",
+        }));
+        sftp.end();
+        return;
+      }
+
+      const currentPath = path.posix.normalize(resolvedPath);
+      sftp.readdir(currentPath, (readErr, entries) => {
+        if (readErr) {
+          ws.send(JSON.stringify({
+            type: "list_error",
+            requestPath: requestedPath,
+            message: readErr.message,
+          }));
+          sftp.end();
+          return;
+        }
+
+        const list = ((entries as RemoteDirectoryEntry[] | undefined) || [])
+          .filter((entry) => entry.filename !== "." && entry.filename !== "..")
+          .map((entry) => {
+            const entryPath = currentPath === "/"
+              ? `/${entry.filename}`
+              : path.posix.join(currentPath, entry.filename);
+            return {
+              name: entry.filename,
+              path: entryPath,
+              isDirectory: Boolean(entry.attrs?.isDirectory?.()),
+              size: entry.attrs?.size || 0,
+            };
+          })
+          .sort((a, b) => {
+            if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          });
+
+        ws.send(JSON.stringify({
+          type: "list_response",
+          requestPath: requestedPath,
+          currentPath,
+          parentPath: currentPath === "/" ? null : path.posix.dirname(currentPath),
+          entries: list,
+        }));
+        sftp.end();
+      });
+    });
+  });
+}
+
 function handleFileTransferMessage(
   conn: Client,
   ws: { send: (data: string) => void },
@@ -640,6 +715,9 @@ function handleFileTransferMessage(
       break;
     case "download_request":
       handleDownloadRequest(conn, ws, msg as { downloadId: string; remotePath: string });
+      break;
+    case "list_request":
+      handleListRequest(conn, ws, msg as { requestPath?: string });
       break;
   }
 }
