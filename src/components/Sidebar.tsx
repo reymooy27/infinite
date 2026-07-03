@@ -124,6 +124,35 @@ export default function Sidebar({
     } catch {}
   }, []);
 
+  const handleClose = useCallback(() => {
+    setIsOpen(false);
+    setActivePage("root");
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDownOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (sheetRef.current && !sheetRef.current.contains(target)) {
+        handleClose();
+      }
+    };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleClose();
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDownOutside, true);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDownOutside, true);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [handleClose, isOpen]);
+
   const title =
     activePage === "root"
       ? "Menu"
@@ -138,11 +167,6 @@ export default function Sidebar({
               : activePage === "settings-terminal"
                 ? "Terminal"
                 : "API Management";
-
-  const handleClose = () => {
-    setIsOpen(false);
-    setActivePage("root");
-  };
 
   const handleBack = () => {
     if (
@@ -165,125 +189,127 @@ export default function Sidebar({
             className="fixed inset-0 bg-black/50 z-[9999] sm:hidden"
             onClick={handleClose}
           />
-          <div
-            ref={sheetRef}
-            className="fixed bottom-0 left-0 right-0 sm:top-4 sm:left-4 sm:bottom-auto sm:right-auto sm:ml-2.5 w-full sm:w-[28rem] bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:max-h-[62vh] max-h-[70vh] flex flex-col transition-transform touch-none z-[10000] animate-[slideUp_0.3s_ease-out] sm:animate-none"
-          >
+          <div className="sm:fixed sm:top-4 sm:left-4 sm:z-[10000]">
             <div
-              className="sm:hidden w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
+              ref={sheetRef}
+              className="fixed bottom-0 left-0 right-0 sm:absolute sm:top-full sm:left-0 sm:right-auto sm:bottom-auto sm:mt-1.5 w-full sm:w-[28rem] bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:max-h-[62vh] max-h-[70vh] flex flex-col transition-transform touch-none z-[10000] animate-[slideUp_0.3s_ease-out] sm:animate-[fadeSlideIn_0.12s_ease-out]"
             >
-              <div className="w-10 h-1 bg-neutral-600 rounded-full" />
-            </div>
-            <div className="flex items-center justify-between border-b border-neutral-700 px-3 py-2.5 shrink-0">
-              <div className="flex items-center gap-1.5">
-                {activePage !== "root" && (
-                  <button
-                    onClick={handleBack}
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-400 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
-                    title="Back"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M15 18l-6-6 6-6" />
-                    </svg>
-                  </button>
-                )}
-                <h2 className="text-[13px] font-semibold text-neutral-200">
-                  {title}
-                </h2>
-              </div>
-              <button
-                onClick={handleClose}
-                className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-400 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
+              <div
+                className="sm:hidden w-full flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {activePage === "root" && (
-                <div className="p-2.5">
-                  <div className="space-y-1.5">
-                    {ROOT_ITEMS.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => setActivePage(item.id)}
-                        className="flex w-full items-center justify-between rounded-lg border border-neutral-700 bg-neutral-800/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:border-neutral-600 hover:bg-neutral-800"
+                <div className="w-10 h-1 bg-neutral-600 rounded-full" />
+              </div>
+              <div className="flex items-center justify-between border-b border-neutral-700 px-3 py-2.5 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  {activePage !== "root" && (
+                    <button
+                      onClick={handleBack}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-400 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
+                      title="Back"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                       >
-                        <div className="flex items-center gap-2.5">
-                          <span className="scale-90 text-neutral-300">
-                            {item.icon}
-                          </span>
-                          <div className="flex flex-col">
-                            <span className="text-[13px] font-medium text-neutral-100">
-                              {item.label}
-                            </span>
-                            {item.id === "projects" && activeProjectName && (
-                              <span className="text-[11px] text-neutral-500">
-                                {activeProjectName}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="shrink-0 text-neutral-500"
-                        >
-                          <path d="M9 18l6-6-6-6" />
-                        </svg>
-                      </button>
-                    ))}
-                  </div>
+                        <path d="M15 18l-6-6 6-6" />
+                      </svg>
+                    </button>
+                  )}
+                  <h2 className="text-[13px] font-semibold text-neutral-200">
+                    {title}
+                  </h2>
                 </div>
-              )}
-              {activePage === "projects" && <ProjectsPanel />}
-              {activePage === "ssh" && <SSHPanel />}
-              {activePage === "agents" && <AgentPanel />}
-              {(activePage === "settings" ||
-                activePage === "settings-terminal" ||
-                activePage === "settings-api-management") && (
-                <SettingsPanel
-                  currentPage={
-                    activePage === "settings-terminal"
-                      ? "terminal"
-                      : activePage === "settings-api-management"
-                        ? "api-management"
-                        : "root"
-                  }
-                  onOpenTerminal={() => setActivePage("settings-terminal")}
-                  onOpenApiManagement={() =>
-                    setActivePage("settings-api-management")
-                  }
-                />
-              )}
+                <button
+                  onClick={handleClose}
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-400 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {activePage === "root" && (
+                  <div className="p-2.5">
+                    <div className="space-y-1.5">
+                      {ROOT_ITEMS.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setActivePage(item.id)}
+                          className="flex w-full items-center justify-between rounded-lg border border-neutral-700 bg-neutral-800/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:border-neutral-600 hover:bg-neutral-800"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="scale-90 text-neutral-300">
+                              {item.icon}
+                            </span>
+                            <div className="flex flex-col">
+                              <span className="text-[13px] font-medium text-neutral-100">
+                                {item.label}
+                              </span>
+                              {item.id === "projects" && activeProjectName && (
+                                <span className="text-[11px] text-neutral-500">
+                                  {activeProjectName}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="shrink-0 text-neutral-500"
+                          >
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {activePage === "projects" && <ProjectsPanel />}
+                {activePage === "ssh" && <SSHPanel />}
+                {activePage === "agents" && <AgentPanel />}
+                {(activePage === "settings" ||
+                  activePage === "settings-terminal" ||
+                  activePage === "settings-api-management") && (
+                  <SettingsPanel
+                    currentPage={
+                      activePage === "settings-terminal"
+                        ? "terminal"
+                        : activePage === "settings-api-management"
+                          ? "api-management"
+                          : "root"
+                    }
+                    onOpenTerminal={() => setActivePage("settings-terminal")}
+                    onOpenApiManagement={() =>
+                      setActivePage("settings-api-management")
+                    }
+                  />
+                )}
+              </div>
             </div>
           </div>
         </>
