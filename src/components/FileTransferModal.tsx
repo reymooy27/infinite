@@ -239,6 +239,18 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
     });
   }, []);
 
+  const removeDownloadTarget = useCallback((targetPath: string) => {
+    setDownloadPath((current) => (
+      parseRemotePaths(current)
+        .filter((entry) => entry !== targetPath)
+        .join("\n")
+    ));
+  }, []);
+
+  const clearDownloadTargets = useCallback(() => {
+    setDownloadPath("");
+  }, []);
+
   useEffect(() => {
     if (!wsUrl || connectKey === 0) return;
     if (isUpload && selectedFilesRef.current.length === 0) return;
@@ -620,29 +632,12 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
 
         {isInput && !isUpload && (
           <>
-            <div className="mb-4">
-              <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider mb-1.5 block">
-                Remote paths
-              </label>
-              <textarea
-                value={downloadPath}
-                onChange={(e) => setDownloadPath(e.target.value)}
-                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleStart(); }}
-                placeholder={"/home/user/file-1.txt\n/home/user/project-folder"}
-                rows={4}
-                className="w-full px-2.5 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors resize-none"
-              />
-              <p className="mt-1 text-[10px] text-neutral-500">
-                One path per line. Folder paths download as `.tar.gz`.
-              </p>
-            </div>
-
             <div className="mb-4 border border-neutral-800 rounded-lg overflow-hidden bg-neutral-925">
               <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-[11px] font-medium text-white">Remote browser</p>
-                    <p className="text-[10px] text-neutral-500">Click folder to open. Use `+` to queue file or folder.</p>
+                    <p className="text-[10px] text-neutral-500">Open folders. Add files or folder archives to queue.</p>
                   </div>
                 </div>
               </div>
@@ -725,6 +720,50 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+
+            <div className="mb-4 border border-neutral-800 rounded-lg overflow-hidden bg-neutral-925">
+              <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-medium text-white">Download queue</p>
+                  <p className="text-[10px] text-neutral-500">
+                    {downloadTargets.length > 0
+                      ? `${downloadTargets.length} item${downloadTargets.length > 1 ? "s" : ""} selected`
+                      : "Select items from browser above"}
+                  </p>
+                </div>
+                {downloadTargets.length > 0 && (
+                  <button
+                    onClick={clearDownloadTargets}
+                    className="px-2 py-1 text-[10px] text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-32 overflow-auto bg-neutral-950">
+                {downloadTargets.length === 0 ? (
+                  <div className="px-3 py-4 text-xs text-neutral-500">
+                    No items queued yet.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-neutral-800">
+                    {downloadTargets.map((targetPath) => (
+                      <div key={targetPath} className="flex items-center gap-2 px-3 py-2">
+                        <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">{targetPath}</span>
+                        <button
+                          onClick={() => removeDownloadTarget(targetPath)}
+                          className="shrink-0 p-1 rounded-md text-neutral-500 hover:text-white transition-colors cursor-pointer"
+                          title="Remove from queue"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </>
