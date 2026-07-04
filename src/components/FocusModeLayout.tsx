@@ -5,6 +5,8 @@ import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown } from "lu
 import { SSHPane } from "@/apps/registry";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
+import TerminalNextButton from "@/components/TerminalNextButton";
+import { getNextSSHWindowId, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { getSSHMetadata } from "@/types";
@@ -42,14 +44,13 @@ export default function FocusModeLayout({
   const tabPanelRef = useRef<HTMLDivElement>(null);
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
 
-  const sshWindows = [...windows]
-    .filter((w) => w.appId === "ssh" && !w.minimized)
-    .sort((a, b) => b.z - a.z);
+  const sshWindows = getVisibleSSHWindows(windows);
   const activeWindow =
     sshWindows.find((w) => w.id === focusModeWindowId) ??
     sshWindows[0] ??
     null;
   const activeWindowId = activeWindow?.id ?? null;
+  const nextWindowId = getNextSSHWindowId(windows, activeWindowId);
 
   // Keep focusModeWindowId in sync when active window changes/closes
   useEffect(() => {
@@ -100,6 +101,12 @@ export default function FocusModeLayout({
     e.stopPropagation();
     if (!activeWindow || tabs.length <= 1) return;
     closeTerminalTab(activeWindow.id, tabId);
+  };
+
+  const handleNextWindow = () => {
+    if (!nextWindowId) return;
+    setFocusModeWindowId(nextWindowId);
+    focusWindow(nextWindowId);
   };
 
   // Close settings on outside click
@@ -183,6 +190,13 @@ export default function FocusModeLayout({
           >
             <RefreshCw size={14} />
           </button>
+
+          <TerminalNextButton
+            onClick={handleNextWindow}
+            disabled={!nextWindowId}
+            iconOnly
+            className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800 inline-flex items-center justify-center"
+          />
 
           {/* Settings */}
           <div className="relative">

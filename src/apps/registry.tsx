@@ -9,6 +9,7 @@ import { Copy, Download, FileTerminal, Globe, Monitor, NotepadText, RefreshCw, U
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
+import TerminalNextButton from "@/components/TerminalNextButton";
 import FileTransferWindow from "@/components/FileTransferModal";
 import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
@@ -18,6 +19,7 @@ import { useWindowStore } from "@/stores/useWindowStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { buildHttpBaseUrl, buildWsUrl } from "@/lib/ws";
+import { getNextSSHWindowId } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 
 const BROWSER_LAST_URL_STORAGE_KEY = "browser-canvas-last-url";
@@ -1914,14 +1916,17 @@ const SSHTerminal = ({
   windowId?: string;
 }) => {
   const win = useWindowStore((s) => s.windows.find((w) => w.id === windowId));
+  const windows = useWindowStore((s) => s.windows);
   const addTerminalTab = useWindowStore((s) => s.addTerminalTab);
   const closeTerminalTab = useWindowStore((s) => s.closeTerminalTab);
   const setActiveTerminalTab = useWindowStore((s) => s.setActiveTerminalTab);
+  const focusWindow = useWindowStore((s) => s.focusWindow);
 
   const sshMeta = win ? getSSHMetadata(win) : null;
   const tabs = sshMeta?.tabs ?? [{ id: "default", label: "Tab 1", connectionId }];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "default";
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
+  const nextWindowId = getNextSSHWindowId(windows, windowId);
 
   const handleAddTab = () => {
     if (!windowId) return;
@@ -1940,6 +1945,11 @@ const SSHTerminal = ({
 
   const handleRefresh = () => {
     setPaneRefreshKey((k) => k + 1);
+  };
+
+  const handleNextWindow = () => {
+    if (!nextWindowId) return;
+    focusWindow(nextWindowId);
   };
 
   return (
@@ -1973,6 +1983,12 @@ const SSHTerminal = ({
         >
           <RefreshCw size={14} />
         </button>
+        <TerminalNextButton
+          onClick={handleNextWindow}
+          disabled={!nextWindowId}
+          iconOnly
+          className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer shrink-0 disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
+        />
         <button
           onClick={handleAddTab}
           title="New tab"
