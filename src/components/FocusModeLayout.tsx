@@ -191,13 +191,6 @@ export default function FocusModeLayout({
             <RefreshCw size={14} />
           </button>
 
-          <TerminalNextButton
-            onClick={handleNextWindow}
-            disabled={!nextWindowId}
-            iconOnly
-            className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800 inline-flex items-center justify-center"
-          />
-
           {/* Settings */}
           <div className="relative">
             <button
@@ -258,6 +251,12 @@ export default function FocusModeLayout({
             </span>
             <ChevronDown size={11} className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`} />
           </button>
+          <TerminalNextButton
+            onClick={handleNextWindow}
+            disabled={!nextWindowId}
+            iconOnly
+            className="px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
+          />
         </div>
       )}
 
