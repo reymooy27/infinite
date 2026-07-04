@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useProjectStore } from "@/stores/useProjectStore";
+import type { Project } from "@/types";
 
 interface ProjectSwitcherProps {
   isOpen: boolean;
@@ -15,6 +16,34 @@ const SIDEBAR_SECTIONS = [
   { id: "agents", label: "Agents", icon: "agents" },
   { id: "settings", label: "Settings", icon: "settings" },
 ] as const;
+
+const RECENT_PROJECTS_KEY = "infinite-recent-projects";
+
+function readRecentProjectIds(): string[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const stored = localStorage.getItem(RECENT_PROJECTS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function sortProjectsByRecentOpen(projects: Project[], activeProjectId: string | null) {
+  const recencyRank = new Map(readRecentProjectIds().map((id, index) => [id, index]));
+
+  return projects
+    .filter((project) => project.id !== activeProjectId)
+    .sort((a, b) => {
+      const aRank = recencyRank.get(a.id) ?? Number.POSITIVE_INFINITY;
+      const bRank = recencyRank.get(b.id) ?? Number.POSITIVE_INFINITY;
+      return aRank - bRank;
+    });
+}
 
 export default function ProjectSwitcher({
   isOpen,
@@ -64,15 +93,29 @@ export default function ProjectSwitcher({
   // Reset focused index when opening
   useEffect(() => {
     if (isOpen) {
-      setFocusedIdx(0);
       requestAnimationFrame(() => dropdownRef.current?.focus());
     }
   }, [isOpen]);
 
+  const nonActiveProjects = sortProjectsByRecentOpen(projects, activeProjectId);
+
+  const handleSwitch = useCallback(async (id: string) => {
+    if (id === activeProjectId || switching) return;
+    setSwitching(id);
+    await switchProject(id);
+    setSwitching(null);
+    onOpenChange(false);
+  }, [activeProjectId, onOpenChange, switchProject, switching]);
+
+  const handleOpenSection = useCallback((section: string) => {
+    onOpenChange(false);
+    onOpenSection(section);
+  }, [onOpenChange, onOpenSection]);
+
   // Arrow key navigation
   const handleDropdownKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      const items = projects.filter((p) => p.id !== activeProjectId);
+      const items = nonActiveProjects;
       const totalItems = items.length + SIDEBAR_SECTIONS.length + 1; // projects + sections + manage
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -93,29 +136,15 @@ export default function ProjectSwitcher({
         }
       }
     },
-    [projects, activeProjectId, focusedIdx],
+    [focusedIdx, handleOpenSection, handleSwitch, nonActiveProjects],
   );
 
   // Switch button is inside the button group
   // So clicking the button doesn't open the dropdown when it's already open
   const handleButtonClick = () => {
+    setFocusedIdx(0);
     onOpenChange(!isOpen);
   };
-
-  const handleSwitch = async (id: string) => {
-    if (id === activeProjectId || switching) return;
-    setSwitching(id);
-    await switchProject(id);
-    setSwitching(null);
-    onOpenChange(false);
-  };
-
-  const handleOpenSection = (section: string) => {
-    onOpenChange(false);
-    onOpenSection(section);
-  };
-
-  const nonActiveProjects = projects.filter((p) => p.id !== activeProjectId);
   const itemClassName = (index: number, base = "") =>
     `${base} ${focusedIdx === index ? "bg-neutral-800 text-neutral-100" : ""}`;
 

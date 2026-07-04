@@ -1,6 +1,28 @@
 import { create } from "zustand";
 import type { Project } from "@/types";
 
+const RECENT_PROJECTS_KEY = "infinite-recent-projects";
+
+function readRecentProjectIds(): string[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const stored = localStorage.getItem(RECENT_PROJECTS_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function markProjectOpened(projectId: string) {
+  if (typeof window === "undefined") return;
+
+  const nextIds = [projectId, ...readRecentProjectIds().filter((id) => id !== projectId)];
+  localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(nextIds.slice(0, 100)));
+}
+
 interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
@@ -52,6 +74,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         projects[0];
 
       set({ projects, activeProjectId: active.id, loading: false });
+      markProjectOpened(active.id);
 
       const { useWindowStore } = await import("@/stores/useWindowStore");
       await useWindowStore.getState().loadProjectCanvas(active.id);
@@ -135,6 +158,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (typeof window !== "undefined") {
       localStorage.setItem("infinite-active-project", id);
     }
+    markProjectOpened(id);
     await useWindowStore.getState().loadProjectCanvas(id);
   },
 
