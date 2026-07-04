@@ -6,7 +6,7 @@ import { SSHPane } from "@/apps/registry";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
-import { getNextSSHWindowId, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
+import { getNextSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { getSSHMetadata } from "@/types";
@@ -50,7 +50,6 @@ export default function FocusModeLayout({
     sshWindows[0] ??
     null;
   const activeWindowId = activeWindow?.id ?? null;
-  const nextWindowId = getNextSSHWindowId(windows, activeWindowId);
 
   // Keep focusModeWindowId in sync when active window changes/closes
   useEffect(() => {
@@ -65,6 +64,7 @@ export default function FocusModeLayout({
   const sshMeta = activeWindow ? getSSHMetadata(activeWindow) : null;
   const tabs = sshMeta?.tabs ?? [];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "";
+  const nextTerminal = getNextSSHTerminalTarget(windows, activeWindowId, activeTabId);
   const connectionId = activeWindow?.metadata?.connectionId as number | undefined;
   const getWindowLabel = (windowId: string) => {
     const win = sshWindows.find((item) => item.id === windowId);
@@ -104,9 +104,10 @@ export default function FocusModeLayout({
   };
 
   const handleNextWindow = () => {
-    if (!nextWindowId) return;
-    setFocusModeWindowId(nextWindowId);
-    focusWindow(nextWindowId);
+    if (!nextTerminal) return;
+    setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
+    setFocusModeWindowId(nextTerminal.windowId);
+    focusWindow(nextTerminal.windowId);
   };
 
   // Close settings on outside click
@@ -253,7 +254,7 @@ export default function FocusModeLayout({
           </button>
           <TerminalNextButton
             onClick={handleNextWindow}
-            disabled={!nextWindowId}
+            disabled={!nextTerminal}
             iconOnly
             className="px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
           />

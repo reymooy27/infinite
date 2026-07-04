@@ -19,7 +19,7 @@ import { useWindowStore } from "@/stores/useWindowStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { buildHttpBaseUrl, buildWsUrl } from "@/lib/ws";
-import { getNextSSHWindowId } from "@/lib/sshWindowNavigation";
+import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 
 const BROWSER_LAST_URL_STORAGE_KEY = "browser-canvas-last-url";
@@ -1926,7 +1926,7 @@ const SSHTerminal = ({
   const tabs = sshMeta?.tabs ?? [{ id: "default", label: "Tab 1", connectionId }];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "default";
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
-  const nextWindowId = getNextSSHWindowId(windows, windowId);
+  const nextTerminal = getNextSSHTerminalTarget(windows, windowId, activeTabId);
 
   const handleAddTab = () => {
     if (!windowId) return;
@@ -1948,8 +1948,9 @@ const SSHTerminal = ({
   };
 
   const handleNextWindow = () => {
-    if (!nextWindowId) return;
-    focusWindow(nextWindowId);
+    if (!nextTerminal) return;
+    setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
+    focusWindow(nextTerminal.windowId);
   };
 
   return (
@@ -1985,7 +1986,7 @@ const SSHTerminal = ({
         </button>
         <TerminalNextButton
           onClick={handleNextWindow}
-          disabled={!nextWindowId}
+          disabled={!nextTerminal}
           iconOnly
           className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer shrink-0 disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
         />

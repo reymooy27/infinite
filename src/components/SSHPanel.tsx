@@ -78,9 +78,12 @@ export default function SSHPanel() {
   };
 
   const handleConnect = (conn: { id: number; name: string }) => {
+    const tabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     useWindowStore.getState().openApp("ssh", undefined, undefined, {
       connectionId: conn.id,
       title: conn.name,
+      tabs: [{ id: tabId, label: "Tab 1", connectionId: conn.id }],
+      activeTabId: tabId,
     });
   };
 

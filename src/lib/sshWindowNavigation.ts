@@ -1,4 +1,9 @@
-import type { WindowData } from "@/types";
+import { getSSHMetadata, type WindowData } from "@/types";
+
+export interface SSHTerminalTarget {
+  windowId: string;
+  tabId: string;
+}
 
 export function getVisibleSSHWindows(windows: WindowData[]) {
   return windows
@@ -6,15 +11,33 @@ export function getVisibleSSHWindows(windows: WindowData[]) {
     .sort((a, b) => b.z - a.z);
 }
 
-export function getNextSSHWindowId(
+export function getVisibleSSHTerminals(
+  windows: WindowData[],
+): SSHTerminalTarget[] {
+  return getVisibleSSHWindows(windows).flatMap((win) => {
+    const meta = getSSHMetadata(win);
+    const tabs = meta?.tabs ?? [];
+
+    return tabs.map((tab) => ({
+      windowId: win.id,
+      tabId: tab.id,
+    }));
+  });
+}
+
+export function getNextSSHTerminalTarget(
   windows: WindowData[],
   currentWindowId?: string | null,
+  currentTabId?: string | null,
 ) {
-  const sshWindows = getVisibleSSHWindows(windows);
-  if (sshWindows.length < 2 || !currentWindowId) return null;
+  const terminals = getVisibleSSHTerminals(windows);
+  if (terminals.length < 2 || !currentWindowId || !currentTabId) return null;
 
-  const currentIndex = sshWindows.findIndex((win) => win.id === currentWindowId);
-  if (currentIndex === -1) return sshWindows[0]?.id ?? null;
+  const currentIndex = terminals.findIndex(
+    (terminal) =>
+      terminal.windowId === currentWindowId && terminal.tabId === currentTabId,
+  );
+  if (currentIndex === -1) return terminals[0] ?? null;
 
-  return sshWindows[(currentIndex + 1) % sshWindows.length]?.id ?? null;
+  return terminals[(currentIndex + 1) % terminals.length] ?? null;
 }
