@@ -1,4 +1,5 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, CDPSession, KeyInput, Page } from "puppeteer";
 import { WebSocket } from "ws";
@@ -7,8 +8,7 @@ import { logger } from "./logger.js";
 const SESSION_CLEANUP_DELAY_MS = 30_000;
 const JPEG_QUALITY = 55;
 const SCREENCAST_EVERY_NTH_FRAME = 2;
-const BROWSER_USER_DATA_DIR_BASE =
-  process.env.BROWSER_USER_DATA_DIR || "/tmp/infinite-browser-profile";
+const BROWSER_USER_DATA_DIR_BASE = process.env.BROWSER_USER_DATA_DIR;
 
 interface BrowserSession {
   page: Page;
@@ -26,9 +26,18 @@ class BrowserManager {
 
   async init(): Promise<void> {
     const puppeteer = (await import("puppeteer")).default;
-    const userDataDir = await mkdtemp(
-      path.join(BROWSER_USER_DATA_DIR_BASE.replace(/\/+$/, ""), "-"),
-    );
+    const userDataDirBase = BROWSER_USER_DATA_DIR_BASE?.trim();
+    let userDataDir: string;
+    if (userDataDirBase) {
+      await mkdir(userDataDirBase, { recursive: true });
+      userDataDir = await mkdtemp(
+        path.join(userDataDirBase.replace(/\/+$/, ""), "profile-"),
+      );
+    } else {
+      userDataDir = await mkdtemp(
+        path.join(tmpdir(), "infinite-browser-profile-"),
+      );
+    }
     this.browser = await puppeteer.launch({
       headless: true,
       userDataDir,
