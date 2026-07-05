@@ -42,6 +42,9 @@ const BrowserCanvas = ({
   const lastClickRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
   const lastNavigatedUrlRef = useRef("");
   const frameCountRef = useRef(0);
+  const displayedFrameCountRef = useRef(0);
+  const latestFrameRef = useRef<string | null>(null);
+  const frameRenderRafRef = useRef<number | null>(null);
   const clickRippleRef = useRef<{ x: number; y: number; id: number } | null>(null);
   const rippleIdRef = useRef(0);
   const [clickRipple, setClickRipple] = useState<{ x: number; y: number; id: number } | null>(null);
@@ -111,6 +114,26 @@ const BrowserCanvas = ({
       wsRef.current.send(JSON.stringify({ type: "resize", width, height }));
     }
   }, [width, height]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const nextCount = frameCountRef.current;
+      if (displayedFrameCountRef.current === nextCount) return;
+      displayedFrameCountRef.current = nextCount;
+      setFrameCount(nextCount);
+    }, 250);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (frameRenderRafRef.current !== null) {
+        cancelAnimationFrame(frameRenderRafRef.current);
+        frameRenderRafRef.current = null;
+      }
+    };
+  }, []);
 
   const resolveTargetUrl = useCallback(
     async (rawUrl: string) => {
@@ -199,6 +222,8 @@ const BrowserCanvas = ({
         setWsStatus("connected");
         setError(null);
         frameCountRef.current = 0;
+        displayedFrameCountRef.current = 0;
+        latestFrameRef.current = null;
         setFrameCount(0);
         ws.send(JSON.stringify({ type: "resize", width, height }));
         if (url) {
@@ -214,9 +239,14 @@ const BrowserCanvas = ({
           switch (msg.type) {
             case "frame":
               frameCountRef.current++;
-              setFrameCount((c) => c + 1);
-              if (imgRef.current) {
-                imgRef.current.src = `data:image/jpeg;base64,${msg.data}`;
+              latestFrameRef.current = msg.data;
+              if (frameRenderRafRef.current === null) {
+                frameRenderRafRef.current = requestAnimationFrame(() => {
+                  frameRenderRafRef.current = null;
+                  const latestFrame = latestFrameRef.current;
+                  if (!latestFrame || !imgRef.current) return;
+                  imgRef.current.src = `data:image/jpeg;base64,${latestFrame}`;
+                });
               }
               setIsLoading(false);
               break;
