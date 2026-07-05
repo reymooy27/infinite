@@ -78,7 +78,7 @@ export default function SSHPanel() {
   };
 
   const handleConnect = (conn: { id: number; name: string }) => {
-    const tabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const tabId = `tab-${crypto.randomUUID()}`;
     useWindowStore.getState().openApp("ssh", undefined, undefined, {
       connectionId: conn.id,
       title: conn.name,

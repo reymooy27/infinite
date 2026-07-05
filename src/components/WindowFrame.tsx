@@ -185,7 +185,7 @@ export default function WindowFrame({
     });
   }, []);
 
-  const getViewBounds = useCallback(() => {
+  const _getViewBoundsLocal = useCallback(() => {
     const inst = canvasTransform.getInstance() as any;
     if (!inst) return { x: 0, y: 0, width: 1000, height: 800 };
     const wrapper = inst.wrapperComponent;
@@ -203,9 +203,11 @@ export default function WindowFrame({
       height: vh / sc,
     };
   }, []);
+  void _getViewBoundsLocal;
 
   const handleDragStart = useCallback(
     (e: any, _d: any) => {
+      void _d;
       const elapsed = Date.now() - pointerDownTime.current;
       const dx = e.clientX - pointerDownPos.current.x;
       const dy = e.clientY - pointerDownPos.current.y;

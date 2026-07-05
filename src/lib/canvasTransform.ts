@@ -50,7 +50,7 @@ const applyTransform = (
 ) => {
   if (!inst) return false;
   if (inst?.setTransform) {
-    const { disabled, wrapperComponent, contentComponent } = inst as any;
+    const { disabled, wrapperComponent, contentComponent } = inst as Record<string, unknown>;
     if (disabled || !wrapperComponent || !contentComponent) return false;
     inst.setTransform(positionX, positionY, scale, 0);
     return true;

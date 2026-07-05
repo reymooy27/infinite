@@ -49,8 +49,10 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     // Must set canvasTransform.current immediately so tryRestore and other
     // callers can access the ZoomPanPinch instance. The rAF loop below
     // handles the case where wrapperComponent isn't initialized yet.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const inst = (tw as any).instance ?? tw;
     canvasTransform.setCurrent(inst);
+
     let frame = 0;
     let attempts = 0;
     const applyInitialTransform = () => {
@@ -150,14 +152,14 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       e.stopPropagation();
-      const inst = canvasTransform.getInstance() as any;
+      const inst = canvasTransform.getInstance();
       if (!inst?.state) return;
       const wrapper = inst.wrapperComponent as HTMLElement | undefined;
       if (!wrapper) return;
       const rect = wrapper.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      const { scale, positionX, positionY } = inst.state;
+      const { scale = 1, positionX = 0, positionY = 0 } = inst.state;
       const delta = -e.deltaY * 0.005;
       const newScale = scale * Math.exp(delta);
       const clamped = Math.min(20, Math.max(0.1, newScale));
@@ -198,7 +200,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         const conns = useSSHStore.getState().connections;
         if (placingAppId === "ssh" && conns.length > 0) {
           const conn = conns[0];
-          const tabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          const tabId = `tab-${crypto.randomUUID()}`;
           openApp("ssh", x, y, {
             connectionId: conn.id,
             title: conn.name,
@@ -297,6 +299,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       const scale = state?.scale ?? 1;
       const tx = middlePanStart.current.tx + dx;
       const ty = middlePanStart.current.ty + dy;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       canvasTransform.applyTransform((tw as any).instance ?? tw, tx, ty, scale);
     };
 
@@ -331,7 +334,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   const handleSelectConnection = (conn: { id: number; name: string }) => {
     if (!pendingConnectionApp) return;
     const isSsh = pendingConnectionApp.appId === "ssh";
-    const tabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const tabId = `tab-${crypto.randomUUID()}`;
     openApp(
       pendingConnectionApp.appId,
       pendingConnectionApp.x,
@@ -364,7 +367,8 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   };
 
   const isDragging = draggingId !== null;
-  const gridColor = isDragging ? "#444" : "#333";
+  const _gridColor = isDragging ? "#444" : "#333";
+  void _gridColor;
   const settingsBg = useSettingsStore((s) => s.bgColor);
   const bgColor = isDragging ? "#1e1e2e" : settingsBg;
   const placingApp = placingAppId ? registry[placingAppId] : null;
@@ -422,10 +426,11 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           excluded: ["window-drag-handle"],
         }}
       >
-        {({ zoomIn, zoomOut, resetTransform }) => {
+        {({ zoomIn, zoomOut, resetTransform: _resetTransform }) => {
+          void _resetTransform;
           zoomRef.current = { zoomIn, zoomOut };
           const handleReset = () => {
-            const inst = canvasTransform.getInstance() as any;
+            const inst = canvasTransform.getInstance();
             const wrapper = inst?.wrapperComponent as HTMLElement | undefined;
             if (wrapper && (inst?.setTransform || inst?.setState)) {
               canvasTransform.applyTransform(

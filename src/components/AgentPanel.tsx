@@ -34,6 +34,7 @@ export default function AgentPanel() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAgents();
     fetchStatus();
     const interval = setInterval(fetchStatus, 10000);

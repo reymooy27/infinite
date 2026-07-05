@@ -89,7 +89,7 @@ export default function FocusModeLayout({
 
   const handleAddTab = () => {
     if (!activeWindow) return;
-    const newTabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const newTabId = `tab-${crypto.randomUUID()}`;
     addTerminalTab(activeWindow.id, {
       id: newTabId,
       label: `Tab ${tabs.length + 1}`,

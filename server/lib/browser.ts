@@ -1,3 +1,5 @@
+import { mkdtemp } from "node:fs/promises";
+import path from "node:path";
 import type { Browser, CDPSession, KeyInput, Page } from "puppeteer";
 import { WebSocket } from "ws";
 import { logger } from "./logger.js";
@@ -5,7 +7,7 @@ import { logger } from "./logger.js";
 const SESSION_CLEANUP_DELAY_MS = 30_000;
 const JPEG_QUALITY = 55;
 const SCREENCAST_EVERY_NTH_FRAME = 2;
-const BROWSER_USER_DATA_DIR =
+const BROWSER_USER_DATA_DIR_BASE =
   process.env.BROWSER_USER_DATA_DIR || "/tmp/infinite-browser-profile";
 
 interface BrowserSession {
@@ -24,9 +26,12 @@ class BrowserManager {
 
   async init(): Promise<void> {
     const puppeteer = (await import("puppeteer")).default;
+    const userDataDir = await mkdtemp(
+      path.join(BROWSER_USER_DATA_DIR_BASE.replace(/\/+$/, ""), "-"),
+    );
     this.browser = await puppeteer.launch({
       headless: true,
-      userDataDir: BROWSER_USER_DATA_DIR,
+      userDataDir,
       ignoreDefaultArgs: ["--enable-automation"],
       args: [
         "--no-sandbox",
@@ -45,14 +50,14 @@ class BrowserManager {
         "--no-first-run",
       ],
     });
-    logger.info("[browser] Puppeteer launched");
+    logger.info("[browser] Puppeteer launched", { userDataDir });
   }
 
   async handleConnection(
     ws: WebSocket,
     windowId: string,
     width: number,
-    height: number
+    height: number,
   ): Promise<void> {
     const existing = this.sessions.get(windowId);
     if (existing) {
@@ -107,7 +112,8 @@ class BrowserManager {
     page.on("load", () => {
       this.send(session, { type: "loading", loading: false });
       this.send(session, { type: "title", title: "" });
-      page.title()
+      page
+        .title()
         .then((title) => this.send(session, { type: "title", title }))
         .catch(() => {});
     });
@@ -126,7 +132,7 @@ class BrowserManager {
   private attachListeners(
     ws: WebSocket,
     session: BrowserSession,
-    windowId: string
+    windowId: string,
   ): void {
     ws.on("message", (data) => {
       session.lastActivityAt = Date.now();
@@ -154,22 +160,24 @@ class BrowserManager {
 
   private handleClientMessage(
     session: BrowserSession,
-    msg: Record<string, unknown>
+    msg: Record<string, unknown>,
   ): void {
     const page = session.page;
     switch (msg.type) {
       case "navigate": {
         const raw = String(msg.url ?? "");
-        const url = raw.startsWith("http://") || raw.startsWith("https://")
-          ? raw
-          : `http://${raw}`;
+        const url =
+          raw.startsWith("http://") || raw.startsWith("https://")
+            ? raw
+            : `http://${raw}`;
         this.navigate(page, url, session);
         break;
       }
       case "resize": {
         const w = Number(msg.width) || 1024;
         const h = Number(msg.height) || 768;
-        page.setViewport({ width: w, height: h })
+        page
+          .setViewport({ width: w, height: h })
           .then(() => this.restartScreencast(session))
           .catch(() => {});
         break;
@@ -184,12 +192,15 @@ class BrowserManager {
       case "wheel": {
         const x = Number(msg.x);
         const y = Number(msg.y);
-        page.mouse.move(x, y).then(() =>
-          page.mouse.wheel({
-            deltaX: Number(msg.deltaX) || 0,
-            deltaY: Number(msg.deltaY) || 0,
-          })
-        ).catch(() => {});
+        page.mouse
+          .move(x, y)
+          .then(() =>
+            page.mouse.wheel({
+              deltaX: Number(msg.deltaX) || 0,
+              deltaY: Number(msg.deltaY) || 0,
+            }),
+          )
+          .catch(() => {});
         break;
       }
       case "mousemove": {
@@ -209,9 +220,11 @@ class BrowserManager {
         break;
       }
       case "refresh": {
-        page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch((err) => {
-          this.send(session, { type: "error", message: this.errorMessage(err) });
-        });
+        page
+          .reload({ waitUntil: "domcontentloaded", timeout: 30_000 })
+          .catch((err) => {
+            this.send(session, { type: "error", message: this.errorMessage(err) });
+          });
         break;
       }
       case "goBack": {
@@ -227,7 +240,8 @@ class BrowserManager {
 
   private navigate(page: Page, url: string, session: BrowserSession): void {
     this.send(session, { type: "loading", loading: true });
-    page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })
+    page
+      .goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })
       .catch((err) => {
         this.send(session, { type: "error", message: this.errorMessage(err) });
       })

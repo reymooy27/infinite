@@ -14,5 +14,6 @@ export const logger = {
 };
 
 export function logApiRequest(method: string, path: string, status: number, duration: number, _err?: unknown) {
+  void _err;
   logger.info(`${method} ${path} ${status} ${duration}ms`);
 }

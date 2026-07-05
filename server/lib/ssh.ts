@@ -832,7 +832,7 @@ export function createSSHSocket(
       rows: initialRows,
     };
 
-    conn.shell(shellOptions, (err: Error | null, stream: ClientChannel) => {
+    (conn.shell as (...args: unknown[]) => void)(shellOptions, (err: Error | undefined, stream: ClientChannel) => {
       if (err) {
         logger.error(`[SSH] Shell error for connection ${connection.id}`, { error: err.message });
         safeSocketSend(
@@ -853,6 +853,7 @@ export function createSSHSocket(
         recentOutput: [],
         recentOutputBytes: 0,
       };
+      const currentSession = session;
       if (windowId) sessions.set(windowId, session);
 
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
@@ -862,12 +863,12 @@ export function createSSHSocket(
       }
 
       stream.on("data", (data: Buffer) => {
-        appendRecentOutput(session, data);
-        safeSocketSend(session.ws, data);
+        appendRecentOutput(currentSession, data);
+        safeSocketSend(currentSession.ws, data);
       });
       stream.stderr.on("data", (data: Buffer) => {
-        appendRecentOutput(session, data);
-        safeSocketSend(session.ws, data);
+        appendRecentOutput(currentSession, data);
+        safeSocketSend(currentSession.ws, data);
       });
 
       ws.on("message", (msg: unknown) => {
@@ -887,6 +888,7 @@ export function createSSHSocket(
 
       stream.on("close", () => {
         logger.info(`[SSH] Shell stream closed for connection ${connection.id}`);
+        if (!session) return;
         safeSocketSend(session.ws, JSON.stringify({ type: "disconnected" }));
         safeSocketClose(session.ws);
         if (windowId) sessions.delete(windowId);
@@ -907,6 +909,11 @@ export function createSSHSocket(
 
       ws.on("close", () => {
         if (windowId && sessions.get(windowId) !== session) return;
+        if (!session) {
+          logger.info(`[SSH] WebSocket closed before session init for connection ${connection.id}`);
+          conn.end();
+          return;
+        }
         if (windowId) {
           logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
           session.ws = undefined;

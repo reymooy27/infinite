@@ -12,7 +12,7 @@ interface SSHState {
   deleteConnection: (id: number) => Promise<void>;
 }
 
-export const useSSHStore = create<SSHState>((set, get) => ({
+export const useSSHStore = create<SSHState>((set) => ({
   connections: [],
   limit: Infinity,
   plan: "local",

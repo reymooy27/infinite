@@ -24,6 +24,7 @@ import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 
 const BROWSER_LAST_URL_STORAGE_KEY = "browser-canvas-last-url";
 
+/* eslint-disable @next/next/no-img-element -- Browser screencast */
 const BrowserCanvas = ({
   windowId,
   connectionId,
@@ -43,6 +44,7 @@ const BrowserCanvas = ({
   const frameCountRef = useRef(0);
   const clickRippleRef = useRef<{ x: number; y: number; id: number } | null>(null);
   const rippleIdRef = useRef(0);
+  const [clickRipple, setClickRipple] = useState<{ x: number; y: number; id: number } | null>(null);
   const histIdxRef = useRef(-1);
   const storageKey = windowId
     ? `${BROWSER_LAST_URL_STORAGE_KEY}:${windowId}`
@@ -71,6 +73,7 @@ const BrowserCanvas = ({
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(700);
   const [retryKey, setRetryKey] = useState(0);
+  const [frameCount, setFrameCount] = useState(0);
 
   const wsUrl = useMemo(() => {
     return buildWsUrl("/ws/browser", { width, height, windowId: windowId || "", r: retryKey });
@@ -196,6 +199,7 @@ const BrowserCanvas = ({
         setWsStatus("connected");
         setError(null);
         frameCountRef.current = 0;
+        setFrameCount(0);
         ws.send(JSON.stringify({ type: "resize", width, height }));
         if (url) {
           setIsLoading(true);
@@ -210,6 +214,7 @@ const BrowserCanvas = ({
           switch (msg.type) {
             case "frame":
               frameCountRef.current++;
+              setFrameCount((c) => c + 1);
               if (imgRef.current) {
                 imgRef.current.src = `data:image/jpeg;base64,${msg.data}`;
               }
@@ -265,10 +270,12 @@ const BrowserCanvas = ({
       ws.onclose = () => {
         setIsConnected(false);
         setWsStatus("disconnected");
+        setIsLoading(false);
+        setError((current) => current ?? "Browser backend disconnected");
       };
 
       ws.onerror = () => {
-        setError("WebSocket connection failed");
+        setError((current) => current ?? "WebSocket connection failed");
         setIsConnected(false);
         setWsStatus("error");
         setIsLoading(false);
@@ -416,9 +423,9 @@ const BrowserCanvas = ({
   );
 
   useEffect(() => {
-    const handleScrollEvent = (e: any) => {
+    const handleScrollEvent = (e: Event) => {
       if (!wsRef.current) return;
-      const { amount } = e.detail;
+      const { amount } = (e as CustomEvent).detail as { amount: number };
 
       // Use center of viewport for scrolling
       const rect = containerRef.current?.getBoundingClientRect();
@@ -439,7 +446,7 @@ const BrowserCanvas = ({
       );
     };
 
-    const handlePageEvent = (e: any) => {
+    const handlePageEvent = (e: Event) => {
       if (!wsRef.current) return;
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -447,7 +454,8 @@ const BrowserCanvas = ({
       const centerX = rect.width / 2;
       const centerY = rect.height / 2;
       const { x, y } = getViewportCoords(centerX, centerY);
-      const deltaY = e.detail.action === "pageup" ? -400 : 400;
+      const detail = (e as CustomEvent).detail as { action: string };
+      const deltaY = detail.action === "pageup" ? -400 : 400;
 
       wsRef.current.send(
         JSON.stringify({
@@ -467,6 +475,18 @@ const BrowserCanvas = ({
       window.removeEventListener(`app-page-${windowId}`, handlePageEvent);
     };
   }, [windowId, getViewportCoords]);
+
+  const showRipple = useCallback((cx: number, cy: number) => {
+    const id = ++rippleIdRef.current;
+    clickRippleRef.current = { x: cx, y: cy, id };
+    setClickRipple({ x: cx, y: cy, id });
+    setTimeout(() => {
+      if (clickRippleRef.current?.id === id) {
+        clickRippleRef.current = null;
+        setClickRipple(null);
+      }
+    }, 400);
+  }, []);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -494,7 +514,7 @@ const BrowserCanvas = ({
 
       hiddenInputRef.current?.focus();
     },
-    [getCoords, getViewportCoords],
+    [getCoords, getViewportCoords, showRipple],
   );
 
   const handleWheel = useCallback(
@@ -519,7 +539,6 @@ const BrowserCanvas = ({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (!wsRef.current) return;
-      // Don't intercept modifier-only keydowns or the input field's events
       if (
         e.key === "Control" ||
         e.key === "Shift" ||
@@ -574,16 +593,6 @@ const BrowserCanvas = ({
     },
     [],
   );
-
-  const showRipple = useCallback((cx: number, cy: number) => {
-    const id = ++rippleIdRef.current;
-    clickRippleRef.current = { x: cx, y: cy, id };
-    setTimeout(() => {
-      if (clickRippleRef.current?.id === id) {
-        clickRippleRef.current = null;
-      }
-    }, 400);
-  }, []);
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -822,13 +831,13 @@ const BrowserCanvas = ({
               className="w-full h-full object-contain select-none"
               draggable={false}
             />
-            {clickRippleRef.current && (
+            {clickRipple && (
               <div
-                key={clickRippleRef.current.id}
+                key={clickRipple.id}
                 className="absolute pointer-events-none"
                 style={{
-                  left: clickRippleRef.current.x,
-                  top: clickRippleRef.current.y,
+                  left: clickRipple.x,
+                  top: clickRipple.y,
                   transform: "translate(-50%, -50%)",
                 }}
               >
@@ -856,7 +865,7 @@ const BrowserCanvas = ({
           </span>
           <span className="text-neutral-600">|</span>
           <span className="text-neutral-500">
-            frames: <span className="text-neutral-300">{frameCountRef.current}</span>
+            frames: <span className="text-neutral-300">{frameCount}</span>
           </span>
           <span className="text-neutral-600">|</span>
           <span className="text-neutral-500 truncate">
@@ -895,7 +904,10 @@ export const SSHPane = ({
   const [retryKey, setRetryKey] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [pasteFeedback, setPasteFeedback] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 767px)").matches;
+  });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
@@ -909,10 +921,16 @@ export const SSHPane = ({
   });
   const bufferKeyRef = useRef(`${windowId}-${tabId}`);
   const statusRef = useRef(status);
-  statusRef.current = status;
   const isActiveRef = useRef(isActive);
-  isActiveRef.current = isActive;
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
   const viewportOffsetRef = useRef(0);
   const pendingViewportRestoreRef = useRef<number | null>(null);
   const restoreViewportRafRef = useRef<number | null>(null);
@@ -1095,7 +1113,6 @@ export const SSHPane = ({
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
-    setIsMobile(mq.matches);
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
@@ -1113,10 +1130,10 @@ export const SSHPane = ({
   }, [connectionId, projectDirectory, windowId, tabId, retryKey]);
 
   useEffect(() => {
-    const handleScrollEvent = (e: any) => {
+    const handleScrollEvent = (e: Event) => {
       if (!isActiveRef.current) return;
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        const { action } = e.detail;
+        const { action } = (e as CustomEvent).detail as { action: string };
         const key = action === "pageup" ? "\x1b[5~" : "\x1b[6~";
         wsRef.current.send(JSON.stringify({ type: "data", data: key }));
       }
@@ -1281,7 +1298,7 @@ export const SSHPane = ({
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, [focusTerminal, forceTerminalRepaint, forwardReservedTerminalShortcut, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer]);
+  }, [focusTerminal, forceTerminalRepaint, forwardReservedTerminalShortcut, getViewportOffsetFromBottom, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer, tabId, terminalFontSize, windowId]);
 
   useEffect(() => {
     if (isActive) {
@@ -1309,6 +1326,7 @@ export const SSHPane = ({
     ) {
       ws.close();
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRetryKey((k) => k + 1);
   }, [refreshNonce, snapshotTerminalBuffer]);
 
@@ -1463,6 +1481,29 @@ export const SSHPane = ({
     }
   }, []);
 
+  const tmuxButtons = useMemo(() => {
+    const tmux = quickBarSlots.filter((s) => s.isTmux);
+    if (tmux.length === 0) return null;
+    // eslint-disable-next-line react-hooks/refs
+    const buttons = tmux.map((s) => (
+      <button
+        key={s.data}
+        onClick={sendTmux.bind(null, s.data)}
+        className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
+      >
+        {s.label}
+      </button>
+    ));
+    return (
+      <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-600 rounded-lg">
+        <span className="text-[9px] text-neutral-600 font-mono shrink-0 mr-0.5">
+          tmux
+        </span>
+        {buttons}
+      </div>
+    );
+  }, [quickBarSlots, sendTmux]);
+
   const writeClipboardText = useCallback(async (text: string) => {
     if (!text) return false;
 
@@ -1540,6 +1581,7 @@ export const SSHPane = ({
     const ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
     setStatus("connecting");
 
     ws.onopen = () => {
@@ -1855,24 +1897,7 @@ export const SSHPane = ({
               <Download size={12} />
             </button>
           </div>
-          {showTmuxShortcuts && (() => {
-            const tmux = quickBarSlots.filter((s) => s.isTmux);
-            return tmux.length > 0 ? (
-            <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-600 rounded-lg">
-              <span className="text-[9px] text-neutral-600 font-mono shrink-0 mr-0.5">
-                tmux
-              </span>
-              {tmux.map((s) => (
-                <button
-                  key={s.data}
-                  onClick={() => sendTmux(s.data)}
-                  className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          ) : null})()}
+           {showTmuxShortcuts && tmuxButtons}
         </div>
       )}
       {status !== "connected" && (

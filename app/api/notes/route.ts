@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { logger, logApiRequest } from "@/lib/logger";
 import { LOCAL_USER_ID } from "@/lib/auth";
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
+  void _req;
   const start = Date.now();
   const method = "GET";
   const path = "/api/notes";

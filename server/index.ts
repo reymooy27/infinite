@@ -145,10 +145,12 @@ interface ConnectionRow {
 
 // Local-only mode: no auth required
 function getUserIdFromRequest(_req: express.Request): string {
+  void _req;
   return LOCAL_USER_ID;
 }
 
 function getUserIdFromSession(_req: IncomingMessage): string {
+  void _req;
   return LOCAL_USER_ID;
 }
 
@@ -365,7 +367,11 @@ wss.on("connection", async (ws, req) => {
     const width = parseInt(u.searchParams.get("width") || "1024", 10);
     const height = parseInt(u.searchParams.get("height") || "768", 10);
     browserManager.handleConnection(ws, windowId, width, height).catch((err) => {
-      logger.error("[browser] handleConnection error", { err: String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("[browser] handleConnection error", { err: message });
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "error", message }));
+      }
       ws.close(1011, "Browser error");
     });
     return;

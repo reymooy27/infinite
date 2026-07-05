@@ -5,11 +5,14 @@ COPY package.json package-lock.json ./
 COPY patches/ ./patches/
 COPY prisma/ ./prisma/
 COPY prisma.config.ts ./
+COPY server/tsconfig.json ./server/tsconfig.json
+COPY server/tsconfig.build.json ./server/tsconfig.build.json
 ENV DATABASE_URL=postgresql://x:x@localhost:5432/x
 ENV DIRECT_URL=postgresql://x:x@localhost:5432/x
 RUN npm ci
 
 COPY server/ ./server/
+RUN npx tsc -p server/tsconfig.build.json
 
 EXPOSE 7891
-CMD ["sh", "-c", "npx prisma db push && npx prisma generate && npx tsx server/index.ts"]
+CMD ["sh", "-c", "npx prisma db push && npx prisma generate && node .server-build/index.js"]

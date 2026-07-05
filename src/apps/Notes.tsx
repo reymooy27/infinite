@@ -52,12 +52,13 @@ export default function Notes() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchNotes().then((data) => {
       if (data.length > 0) {
         loadNote(data[0].id);
       }
     });
-  }, []);
+  }, [fetchNotes, loadNote]);
 
   useEffect(() => {
     return () => {
@@ -109,7 +110,7 @@ export default function Notes() {
       });
       if (!res.ok) return;
       const note: Note = await res.json();
-      const data = await fetchNotes();
+      await fetchNotes();
       setActiveId(note.id);
       setTitle(note.title);
       setContent(note.content);
