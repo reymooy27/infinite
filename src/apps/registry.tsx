@@ -131,7 +131,7 @@ const BrowserCanvas = ({
       if (isLocalhost) {
         formatted = `http://${trimmed}`;
       } else if (!hasProtocol) {
-        formatted = `https://${trimmed}`;
+        formatted = `http://${trimmed}`;
       }
 
       const parsed = new URL(formatted);

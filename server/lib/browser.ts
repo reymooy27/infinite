@@ -3,7 +3,8 @@ import { WebSocket } from "ws";
 import { logger } from "./logger.js";
 
 const SESSION_CLEANUP_DELAY_MS = 30_000;
-const JPEG_QUALITY = 65;
+const JPEG_QUALITY = 55;
+const SCREENCAST_EVERY_NTH_FRAME = 2;
 const BROWSER_USER_DATA_DIR =
   process.env.BROWSER_USER_DATA_DIR || "/tmp/infinite-browser-profile";
 
@@ -161,7 +162,7 @@ class BrowserManager {
         const raw = String(msg.url ?? "");
         const url = raw.startsWith("http://") || raw.startsWith("https://")
           ? raw
-          : `https://${raw}`;
+          : `http://${raw}`;
         this.navigate(page, url, session);
         break;
       }
@@ -249,7 +250,7 @@ class BrowserManager {
     await session.client.send("Page.startScreencast", {
       format: "jpeg",
       quality: JPEG_QUALITY,
-      everyNthFrame: 1,
+      everyNthFrame: SCREENCAST_EVERY_NTH_FRAME,
     });
     session.screencastActive = true;
   }

@@ -30,9 +30,19 @@ const wss = new WebSocketServer({
 });
 const agentRegistry = new Map<string, WebSocket>();
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:7890")
+const DEFAULT_ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:7890",
+  "http://127.0.0.1:7890",
+];
+
+const ALLOWED_ORIGINS = (
+  process.env.ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS.join(",")
+)
   .split(",")
-  .map((o) => o.trim());
+  .map((o) => o.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
