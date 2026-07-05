@@ -9,6 +9,7 @@ const SESSION_CLEANUP_DELAY_MS = 30_000;
 const JPEG_QUALITY = 55;
 const SCREENCAST_EVERY_NTH_FRAME = 2;
 const BROWSER_USER_DATA_DIR_BASE = process.env.BROWSER_USER_DATA_DIR;
+const PUPPETEER_EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH;
 
 interface BrowserSession {
   page: Page;
@@ -40,6 +41,7 @@ class BrowserManager {
     }
     this.browser = await puppeteer.launch({
       headless: true,
+      executablePath: PUPPETEER_EXECUTABLE_PATH,
       userDataDir,
       ignoreDefaultArgs: ["--enable-automation"],
       args: [

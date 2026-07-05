@@ -1,6 +1,8 @@
 FROM node:20-alpine
 WORKDIR /app
 
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
+
 COPY package.json package-lock.json ./
 COPY patches/ ./patches/
 COPY prisma/ ./prisma/
@@ -9,6 +11,8 @@ COPY server/tsconfig.json ./server/tsconfig.json
 COPY server/tsconfig.build.json ./server/tsconfig.build.json
 ENV DATABASE_URL=postgresql://x:x@localhost:5432/x
 ENV DIRECT_URL=postgresql://x:x@localhost:5432/x
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN npm ci
 
 COPY server/ ./server/
