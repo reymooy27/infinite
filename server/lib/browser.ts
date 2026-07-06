@@ -1,11 +1,13 @@
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, CDPSession, KeyInput, Page } from "puppeteer";
+import type { ChildProcess } from "node:child_process";
 import { WebSocket } from "ws";
 import { logger } from "./logger.js";
 
 const SESSION_CLEANUP_DELAY_MS = 30_000;
+const BROWSER_CLOSE_TIMEOUT_MS = 5_000;
 const JPEG_QUALITY = 55;
 const SCREENCAST_EVERY_NTH_FRAME = 2;
 const BROWSER_USER_DATA_DIR_BASE = process.env.BROWSER_USER_DATA_DIR;
@@ -23,6 +25,8 @@ interface BrowserSession {
 
 class BrowserManager {
   private browser: Browser | null = null;
+  private browserUserDataDir: string | null = null;
+  private browserClosePromise: Promise<void> | null = null;
   private sessions = new Map<string, BrowserSession>();
 
   async init(): Promise<void> {
@@ -60,6 +64,10 @@ class BrowserManager {
         "--no-default-browser-check",
         "--no-first-run",
       ],
+    });
+    this.browserUserDataDir = userDataDir;
+    this.browser.on("disconnected", () => {
+      this.browser = null;
     });
     logger.info("[browser] Puppeteer launched", { userDataDir });
   }
@@ -311,6 +319,10 @@ class BrowserManager {
   private async destroySession(windowId: string): Promise<void> {
     const session = this.sessions.get(windowId);
     if (!session) return;
+    if (session.cleanupTimer) {
+      clearTimeout(session.cleanupTimer);
+      session.cleanupTimer = null;
+    }
     await this.stopScreencast(session);
     try {
       await session.client.detach();
@@ -324,17 +336,91 @@ class BrowserManager {
     }
     this.sessions.delete(windowId);
     logger.info("[browser] Session destroyed", { windowId });
+    if (this.sessions.size === 0) {
+      await this.closeBrowser("idle");
+    }
   }
 
   async shutdown(): Promise<void> {
     for (const [windowId] of this.sessions) {
       await this.destroySession(windowId);
     }
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
+    await this.closeBrowser("shutdown");
     logger.info("[browser] Puppeteer shutdown");
+  }
+
+  private async closeBrowser(reason: "idle" | "shutdown"): Promise<void> {
+    if (this.browserClosePromise) {
+      await this.browserClosePromise;
+      return;
+    }
+    if (!this.browser) return;
+
+    const browser = this.browser;
+    const userDataDir = this.browserUserDataDir;
+    const proc = browser.process();
+    this.browser = null;
+    this.browserUserDataDir = null;
+
+    this.browserClosePromise = this.forceCloseBrowser(browser, proc, reason)
+      .finally(async () => {
+        this.browserClosePromise = null;
+        if (userDataDir) {
+          try {
+            await rm(userDataDir, { recursive: true, force: true });
+          } catch (err) {
+            logger.warn("[browser] Failed to remove user data dir", {
+              userDataDir,
+              err: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      });
+
+    await this.browserClosePromise;
+  }
+
+  private async forceCloseBrowser(
+    browser: Browser,
+    proc: ChildProcess | null,
+    reason: "idle" | "shutdown",
+  ): Promise<void> {
+    let timedOut = false;
+    try {
+      await Promise.race([
+        browser.close(),
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, BROWSER_CLOSE_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (err) {
+      logger.warn("[browser] Browser close failed", {
+        reason,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    if ((timedOut || browser.connected) && proc && proc.exitCode === null) {
+      try {
+        browser.disconnect();
+      } catch {
+        // ignore
+      }
+      proc.kill("SIGKILL");
+      logger.warn("[browser] Chromium process killed", {
+        reason,
+        pid: proc.pid,
+      });
+      return;
+    }
+
+    logger.info("[browser] Chromium process closed", {
+      reason,
+      pid: proc?.pid,
+    });
   }
 }
 

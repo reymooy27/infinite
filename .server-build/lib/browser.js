@@ -1,15 +1,18 @@
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
 import { logger } from "./logger.js";
 const SESSION_CLEANUP_DELAY_MS = 30_000;
+const BROWSER_CLOSE_TIMEOUT_MS = 5_000;
 const JPEG_QUALITY = 55;
 const SCREENCAST_EVERY_NTH_FRAME = 2;
 const BROWSER_USER_DATA_DIR_BASE = process.env.BROWSER_USER_DATA_DIR;
 const PUPPETEER_EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH;
 class BrowserManager {
     browser = null;
+    browserUserDataDir = null;
+    browserClosePromise = null;
     sessions = new Map();
     async init() {
         const puppeteer = (await import("puppeteer")).default;
@@ -43,6 +46,10 @@ class BrowserManager {
                 "--no-default-browser-check",
                 "--no-first-run",
             ],
+        });
+        this.browserUserDataDir = userDataDir;
+        this.browser.on("disconnected", () => {
+            this.browser = null;
         });
         logger.info("[browser] Puppeteer launched", { userDataDir });
     }
@@ -263,6 +270,10 @@ class BrowserManager {
         const session = this.sessions.get(windowId);
         if (!session)
             return;
+        if (session.cleanupTimer) {
+            clearTimeout(session.cleanupTimer);
+            session.cleanupTimer = null;
+        }
         await this.stopScreencast(session);
         try {
             await session.client.detach();
@@ -278,16 +289,83 @@ class BrowserManager {
         }
         this.sessions.delete(windowId);
         logger.info("[browser] Session destroyed", { windowId });
+        if (this.sessions.size === 0) {
+            await this.closeBrowser("idle");
+        }
     }
     async shutdown() {
         for (const [windowId] of this.sessions) {
             await this.destroySession(windowId);
         }
-        if (this.browser) {
-            await this.browser.close();
-            this.browser = null;
-        }
+        await this.closeBrowser("shutdown");
         logger.info("[browser] Puppeteer shutdown");
+    }
+    async closeBrowser(reason) {
+        if (this.browserClosePromise) {
+            await this.browserClosePromise;
+            return;
+        }
+        if (!this.browser)
+            return;
+        const browser = this.browser;
+        const userDataDir = this.browserUserDataDir;
+        const proc = browser.process();
+        this.browser = null;
+        this.browserUserDataDir = null;
+        this.browserClosePromise = this.forceCloseBrowser(browser, proc, reason)
+            .finally(async () => {
+            this.browserClosePromise = null;
+            if (userDataDir) {
+                try {
+                    await rm(userDataDir, { recursive: true, force: true });
+                }
+                catch (err) {
+                    logger.warn("[browser] Failed to remove user data dir", {
+                        userDataDir,
+                        err: err instanceof Error ? err.message : String(err),
+                    });
+                }
+            }
+        });
+        await this.browserClosePromise;
+    }
+    async forceCloseBrowser(browser, proc, reason) {
+        let timedOut = false;
+        try {
+            await Promise.race([
+                browser.close(),
+                new Promise((resolve) => {
+                    setTimeout(() => {
+                        timedOut = true;
+                        resolve();
+                    }, BROWSER_CLOSE_TIMEOUT_MS);
+                }),
+            ]);
+        }
+        catch (err) {
+            logger.warn("[browser] Browser close failed", {
+                reason,
+                err: err instanceof Error ? err.message : String(err),
+            });
+        }
+        if ((timedOut || browser.connected) && proc && proc.exitCode === null) {
+            try {
+                browser.disconnect();
+            }
+            catch {
+                // ignore
+            }
+            proc.kill("SIGKILL");
+            logger.warn("[browser] Chromium process killed", {
+                reason,
+                pid: proc.pid,
+            });
+            return;
+        }
+        logger.info("[browser] Chromium process closed", {
+            reason,
+            pid: proc?.pid,
+        });
     }
 }
 export const browserManager = new BrowserManager();
