@@ -6,6 +6,7 @@ import { SSHPane } from "@/apps/registry";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
+import { getBrowserId } from "@/lib/browserId";
 import { getNextSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
@@ -89,7 +90,7 @@ export default function FocusModeLayout({
 
   const handleAddTab = () => {
     if (!activeWindow) return;
-    const newTabId = `tab-${crypto.randomUUID()}`;
+    const newTabId = getBrowserId("tab-");
     addTerminalTab(activeWindow.id, {
       id: newTabId,
       label: `Tab ${tabs.length + 1}`,

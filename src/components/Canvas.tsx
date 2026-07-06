@@ -1,6 +1,7 @@
 "use client";
 
 import registry from "@/apps/registry";
+import { getBrowserId } from "@/lib/browserId";
 import { canvasTransform } from "@/lib/canvasTransform";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
@@ -200,7 +201,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
         const conns = useSSHStore.getState().connections;
         if (placingAppId === "ssh" && conns.length > 0) {
           const conn = conns[0];
-          const tabId = `tab-${crypto.randomUUID()}`;
+          const tabId = getBrowserId("tab-");
           openApp("ssh", x, y, {
             connectionId: conn.id,
             title: conn.name,
@@ -334,7 +335,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   const handleSelectConnection = (conn: { id: number; name: string }) => {
     if (!pendingConnectionApp) return;
     const isSsh = pendingConnectionApp.appId === "ssh";
-    const tabId = `tab-${crypto.randomUUID()}`;
+    const tabId = getBrowserId("tab-");
     openApp(
       pendingConnectionApp.appId,
       pendingConnectionApp.x,

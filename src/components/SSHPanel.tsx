@@ -1,5 +1,6 @@
 "use client";
 
+import { getBrowserId } from "@/lib/browserId";
 import { useState, useEffect } from "react";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
@@ -78,7 +79,7 @@ export default function SSHPanel() {
   };
 
   const handleConnect = (conn: { id: number; name: string }) => {
-    const tabId = `tab-${crypto.randomUUID()}`;
+    const tabId = getBrowserId("tab-");
     useWindowStore.getState().openApp("ssh", undefined, undefined, {
       connectionId: conn.id,
       title: conn.name,

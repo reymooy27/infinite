@@ -1222,7 +1222,7 @@ export const SSHPane = ({
         cursor: "#e0e0e0",
       },
       fontSize: terminalFontSize,
-      fontFamily: '"JetBrains Mono", "JetBrainsMono Nerd Font", monospace',
+      fontFamily: '"JetBrains Mono", monospace',
       allowProposedApi: true,
       cursorBlink: true,
       scrollback: 3000,

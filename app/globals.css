@@ -31,17 +31,10 @@
   font-style: italic;
 }
 
-@font-face {
-  font-family: "JetBrainsMono Nerd Font";
-  src: url("/fonts/JetBrainsMonoNerdFont-Regular.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-}
-
 @theme {
   --font-mono:
-    "JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, SFMono-Regular,
-    Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
 html,
