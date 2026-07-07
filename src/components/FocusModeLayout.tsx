@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
-import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import { getBrowserId } from "@/lib/browserId";
 import { getNextSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
@@ -34,14 +33,11 @@ export default function FocusModeLayout({
   const focusWindow = useWindowStore((s) => s.focusWindow);
 
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsPage, setSettingsPage] = useState<
-    "root" | "terminal" | "api-management"
-  >("terminal");
+  const [switcherPage, setSwitcherPage] = useState<
+    "root" | "settings" | "settings-terminal" | "settings-api-management" | null
+  >(null);
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const settingsRef = useRef<HTMLDivElement>(null);
-  const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -111,23 +107,6 @@ export default function FocusModeLayout({
     focusWindow(nextTerminal.windowId);
   };
 
-  // Close settings on outside click
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        settingsRef.current &&
-        !settingsRef.current.contains(e.target as Node) &&
-        settingsBtnRef.current &&
-        !settingsBtnRef.current.contains(e.target as Node)
-      ) {
-        setSettingsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler, true);
-    return () => document.removeEventListener("mousedown", handler, true);
-  }, [settingsOpen]);
-
   // Close tab panel on outside click (exclude toggle button so its own onClick can toggle)
   useEffect(() => {
     if (!tabPanelOpen) return;
@@ -177,6 +156,8 @@ export default function FocusModeLayout({
             isOpen={switcherOpen}
             onOpenChange={setSwitcherOpen}
             onOpenSection={onOpenSection}
+            openPage={switcherPage}
+            onOpenPageConsumed={() => setSwitcherPage(null)}
           />
         </div>
 
@@ -194,36 +175,20 @@ export default function FocusModeLayout({
           </button>
 
           {/* Settings */}
-          <div className="relative">
-            <button
-              ref={settingsBtnRef}
-              onClick={() => {
-                setSettingsPage("terminal");
-                setSettingsOpen((prev) => !prev);
-              }}
-              title="Terminal settings"
-              className={`p-1.5 transition-colors cursor-pointer rounded ${
-                settingsOpen
-                  ? "text-white bg-neutral-800"
-                  : "text-neutral-500 hover:text-white hover:bg-neutral-800"
-              }`}
-            >
-              <Settings size={14} />
-            </button>
-            {settingsOpen && (
-              <div
-                ref={settingsRef}
-                className="absolute top-full right-0 mt-1 w-72 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl z-[10000] overflow-y-auto"
-                style={{ maxHeight: "min(480px, calc(100vh - 60px))" }}
-              >
-                <SettingsPanel
-                  currentPage={settingsPage}
-                  onOpenTerminal={() => setSettingsPage("terminal")}
-                  onOpenApiManagement={() => setSettingsPage("api-management")}
-                />
-              </div>
-            )}
-          </div>
+          <button
+            onClick={() => {
+              setSwitcherPage("settings-terminal");
+              setSwitcherOpen(true);
+            }}
+            title="Terminal settings"
+            className={`p-1.5 transition-colors cursor-pointer rounded ${
+              switcherOpen && switcherPage?.startsWith("settings")
+                ? "text-white bg-neutral-800"
+                : "text-neutral-500 hover:text-white hover:bg-neutral-800"
+            }`}
+          >
+            <Settings size={14} />
+          </button>
 
           {/* Switch to Canvas mode */}
           <button
