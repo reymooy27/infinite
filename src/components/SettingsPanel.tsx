@@ -6,6 +6,7 @@ import {
   AVAILABLE_SHORTCUTS,
   AVAILABLE_TMUX_SHORTCUTS,
 } from "@/stores/useSettingsStore";
+import { DEFAULT_ROUTER_USAGE_BASE_URL, normalizeRouterUsageBaseUrl } from "@/lib/routerUsage";
 import type { AIProviderRecord } from "@/types/aiProvider";
 
 interface SettingsPanelProps {
@@ -92,6 +93,8 @@ export default function SettingsPanel({
   const setBgColor = useSettingsStore((s) => s.setBgColor);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const setQuickBarSlots = useSettingsStore((s) => s.setQuickBarSlots);
+  const routerUsageBaseUrl = useSettingsStore((s) => s.routerUsageBaseUrl);
+  const setRouterUsageBaseUrl = useSettingsStore((s) => s.setRouterUsageBaseUrl);
 
   // provider form state
   const [providerName, setProviderName] = useState("");
@@ -462,6 +465,31 @@ export default function SettingsPanel({
             </svg>
           </div>
         </button>
+
+        <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 px-3 py-2.5">
+          <div className="text-[13px] font-medium text-neutral-100">
+            9router usage endpoint
+          </div>
+          <div className="mt-0.5 text-[11px] text-neutral-400">
+            Global source for usage viewer.
+          </div>
+          <div className="mt-2 flex gap-2">
+            <input
+              value={routerUsageBaseUrl}
+              onChange={(e) => setRouterUsageBaseUrl(e.target.value)}
+              placeholder={DEFAULT_ROUTER_USAGE_BASE_URL}
+              className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
+            />
+            <button
+              onClick={() =>
+                setRouterUsageBaseUrl(DEFAULT_ROUTER_USAGE_BASE_URL)
+              }
+              className="shrink-0 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -810,6 +838,37 @@ export default function SettingsPanel({
 
   return (
     <div className="space-y-2.5 p-2.5 overflow-y-auto max-h-full">
+      <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+        <h3 className="text-[13px] font-medium text-neutral-100">
+          9router usage source
+        </h3>
+        <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+          Infinite server fetches usage from this 9router base URL.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <input
+            value={routerUsageBaseUrl}
+            onChange={(e) => setRouterUsageBaseUrl(e.target.value)}
+            placeholder={DEFAULT_ROUTER_USAGE_BASE_URL}
+            className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500"
+          />
+          <button
+            onClick={() =>
+              setRouterUsageBaseUrl(DEFAULT_ROUTER_USAGE_BASE_URL)
+            }
+            className="shrink-0 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-neutral-100"
+          >
+            Default
+          </button>
+        </div>
+        <p className="mt-2 text-[10px] text-neutral-500">
+          Normalized: {normalizeRouterUsageBaseUrl(routerUsageBaseUrl)}
+        </p>
+        <p className="mt-1 text-[10px] text-neutral-500">
+          Must be reachable from Infinite runtime. Local default uses port 20128.
+        </p>
+      </div>
+
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
         <h3 className="text-[13px] font-medium text-neutral-100">Font size</h3>
         <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">

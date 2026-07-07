@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { DEFAULT_ROUTER_USAGE_BASE_URL } from "@/lib/routerUsage";
 
 export interface QuickBarSlot {
   label: string;
@@ -56,6 +57,7 @@ interface SettingsState {
   terminalFontSize: number;
   bgColor: string;
   quickBarSlots: QuickBarSlot[];
+  routerUsageBaseUrl: string;
   focusMode: boolean;
   focusModeWindowId: string | null;
   setShowTerminalShortcuts: (value: boolean) => void;
@@ -63,6 +65,7 @@ interface SettingsState {
   setTerminalFontSize: (value: number) => void;
   setBgColor: (color: string) => void;
   setQuickBarSlots: (slots: QuickBarSlot[]) => void;
+  setRouterUsageBaseUrl: (value: string) => void;
   setFocusMode: (value: boolean) => void;
   setFocusModeWindowId: (id: string | null) => void;
 }
@@ -75,6 +78,7 @@ export const useSettingsStore = create<SettingsState>()(
       terminalFontSize: 13,
       bgColor: "#171717",
       quickBarSlots: DEFAULT_QUICK_BAR,
+      routerUsageBaseUrl: DEFAULT_ROUTER_USAGE_BASE_URL,
       focusMode: false,
       focusModeWindowId: null,
       setShowTerminalShortcuts: (value) =>
@@ -83,6 +87,7 @@ export const useSettingsStore = create<SettingsState>()(
       setTerminalFontSize: (value) => set({ terminalFontSize: value }),
       setBgColor: (color) => set({ bgColor: color }),
       setQuickBarSlots: (slots) => set({ quickBarSlots: slots }),
+      setRouterUsageBaseUrl: (value) => set({ routerUsageBaseUrl: value }),
       setFocusMode: (value) =>
         set((state) => (state.focusMode === value ? state : { focusMode: value })),
       setFocusModeWindowId: (id) =>

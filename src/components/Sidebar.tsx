@@ -5,6 +5,7 @@ import SSHPanel from "./SSHPanel";
 import AgentPanel from "./AgentPanel";
 import SettingsPanel from "./SettingsPanel";
 import ProjectsPanel from "./ProjectsPanel";
+import UsagePanel from "./UsagePanel";
 import { useProjectStore } from "@/stores/useProjectStore";
 
 type SidebarPage =
@@ -12,6 +13,7 @@ type SidebarPage =
   | "projects"
   | "ssh"
   | "agents"
+  | "usage"
   | "settings"
   | "settings-terminal"
   | "settings-api-management";
@@ -44,6 +46,16 @@ const ROOT_ITEMS = [
         <rect x="2" y="3" width="20" height="14" rx="2" />
         <path d="M8 21h8M12 17v4" />
         <circle cx="12" cy="10" r="2" />
+      </svg>
+    ),
+  },
+  {
+    id: "usage",
+    label: "Usage",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 3v18h18" />
+        <path d="M7 15l4-4 3 3 5-7" />
       </svg>
     ),
   },
@@ -81,6 +93,7 @@ export default function Sidebar({
     value === "projects" ||
     value === "ssh" ||
     value === "agents" ||
+    value === "usage" ||
     value === "settings" ||
     value === "settings-terminal" ||
     value === "settings-api-management";
@@ -160,8 +173,10 @@ export default function Sidebar({
         ? "Projects"
         : activePage === "ssh"
           ? "SSH Manager"
-          : activePage === "agents"
-            ? "Agents"
+        : activePage === "agents"
+          ? "Agents"
+          : activePage === "usage"
+            ? "Usage"
             : activePage === "settings"
               ? "Settings"
               : activePage === "settings-terminal"
@@ -176,7 +191,7 @@ export default function Sidebar({
       setActivePage("settings");
       return;
     }
-    if (activePage === "ssh" || activePage === "agents" || activePage === "settings" || activePage === "projects") {
+    if (activePage === "ssh" || activePage === "agents" || activePage === "usage" || activePage === "settings" || activePage === "projects") {
       setActivePage("root");
     }
   };
@@ -292,6 +307,7 @@ export default function Sidebar({
                 {activePage === "projects" && <ProjectsPanel />}
                 {activePage === "ssh" && <SSHPanel />}
                 {activePage === "agents" && <AgentPanel />}
+                {activePage === "usage" && <UsagePanel />}
                 {(activePage === "settings" ||
                   activePage === "settings-terminal" ||
                   activePage === "settings-api-management") && (
