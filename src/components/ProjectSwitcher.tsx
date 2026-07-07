@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { normalizeRouterUsageBaseUrl } from "@/lib/routerUsage";
 import { useProjectStore } from "@/stores/useProjectStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import type { Project } from "@/types";
 
 interface ProjectSwitcherProps {
@@ -45,6 +47,24 @@ function sortProjectsByRecentOpen(projects: Project[], activeProjectId: string |
     });
 }
 
+type ProjectSwitcherUsageStats = {
+  totalPromptTokens?: number;
+  byModel?: Record<
+    string,
+    {
+      rawModel?: string;
+      promptTokens?: number;
+    }
+  >;
+};
+
+function formatCompact(value: number | undefined) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value ?? 0);
+}
+
 export default function ProjectSwitcher({
   isOpen,
   onOpenChange,
@@ -54,9 +74,13 @@ export default function ProjectSwitcher({
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const switchProject = useProjectStore((s) => s.switchProject);
+  const routerUsageBaseUrl = useSettingsStore((s) => s.routerUsageBaseUrl);
   const activeProjectName = projects.find((p) => p.id === activeProjectId)?.name ?? null;
   const [switching, setSwitching] = useState<string | null>(null);
   const [focusedIdx, setFocusedIdx] = useState(0);
+  const [usageStats, setUsageStats] = useState<ProjectSwitcherUsageStats | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -97,7 +121,57 @@ export default function ProjectSwitcher({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+
+    async function loadUsage() {
+      setUsageLoading(true);
+      setUsageError("");
+
+      try {
+        const query = new URLSearchParams({
+          period: "today",
+          baseUrl: normalizeRouterUsageBaseUrl(routerUsageBaseUrl),
+        });
+        const res = await fetch(`/api/router-usage/stats?${query.toString()}`, {
+          cache: "no-store",
+        });
+        const body = await res.json();
+
+        if (!res.ok) {
+          throw new Error(body.error || "Failed to load usage");
+        }
+
+        if (cancelled) return;
+        setUsageStats(body);
+      } catch (err) {
+        if (cancelled) return;
+        setUsageError(
+          err instanceof Error ? err.message : "Failed to load usage",
+        );
+      } finally {
+        if (cancelled) return;
+        setUsageLoading(false);
+      }
+    }
+
+    void loadUsage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, routerUsageBaseUrl]);
+
   const nonActiveProjects = sortProjectsByRecentOpen(projects, activeProjectId);
+  const topModels = Object.values(usageStats?.byModel ?? {})
+    .map((entry) => ({
+      model: entry.rawModel || "Unknown model",
+      promptTokens: entry.promptTokens ?? 0,
+    }))
+    .sort((a, b) => b.promptTokens - a.promptTokens)
+    .slice(0, 3);
 
   const handleSwitch = useCallback(async (id: string) => {
     if (id === activeProjectId || switching) return;
@@ -305,7 +379,7 @@ export default function ProjectSwitcher({
               onClick={() => handleOpenSection("projects")}
               className={itemClassName(
                 nonActiveProjects.length + SIDEBAR_SECTIONS.length,
-                "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer rounded-b-xl",
+                "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
               )}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
@@ -313,6 +387,47 @@ export default function ProjectSwitcher({
               </svg>
               Manage projects...
             </button>
+          </div>
+
+          <div className="border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+                Usage Today
+              </div>
+              <div className="text-[10px] text-neutral-400">
+                Input {formatCompact(usageStats?.totalPromptTokens)}
+              </div>
+            </div>
+
+            {usageLoading ? (
+              <div className="mt-2 text-[11px] text-neutral-500">
+                Loading usage...
+              </div>
+            ) : usageError ? (
+              <div className="mt-2 text-[11px] text-red-300">
+                {usageError}
+              </div>
+            ) : topModels.length === 0 ? (
+              <div className="mt-2 text-[11px] text-neutral-500">
+                No model usage yet.
+              </div>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {topModels.map((item) => (
+                  <div
+                    key={item.model}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <div className="min-w-0 truncate text-neutral-300">
+                      {item.model}
+                    </div>
+                    <div className="shrink-0 font-mono text-neutral-500">
+                      {formatCompact(item.promptTokens)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
