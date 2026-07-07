@@ -2,29 +2,21 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { normalizeRouterUsageBaseUrl } from "@/lib/routerUsage";
-import SettingsPanel from "@/components/SettingsPanel";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import type { Project } from "@/types";
-
-type ProjectSwitcherPage =
-  | "root"
-  | "settings"
-  | "settings-terminal"
-  | "settings-api-management";
 
 interface ProjectSwitcherProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenSection: (section: string) => void;
   embedded?: boolean;
-  openPage?: ProjectSwitcherPage | null;
-  onOpenPageConsumed?: () => void;
 }
 
 const SIDEBAR_SECTIONS = [
   { id: "ssh", label: "SSH Manager", icon: "ssh" },
   { id: "agents", label: "Agents", icon: "agents" },
+  { id: "usage", label: "Usage", icon: "usage" },
   { id: "settings", label: "Settings", icon: "settings" },
 ] as const;
 
@@ -79,8 +71,6 @@ export default function ProjectSwitcher({
   onOpenChange,
   onOpenSection,
   embedded = false,
-  openPage,
-  onOpenPageConsumed,
 }: ProjectSwitcherProps) {
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -89,17 +79,12 @@ export default function ProjectSwitcher({
   const activeProjectName = projects.find((p) => p.id === activeProjectId)?.name ?? null;
   const [switching, setSwitching] = useState<string | null>(null);
   const [focusedIdx, setFocusedIdx] = useState(0);
-  const [internalPage, setInternalPage] = useState<ProjectSwitcherPage>("root");
   const [usageStats, setUsageStats] = useState<ProjectSwitcherUsageStats | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const resolvedPage: ProjectSwitcherPage = !isOpen
-    ? "root"
-    : openPage ?? internalPage;
 
-  // Close on outside click
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
@@ -116,7 +101,6 @@ export default function ProjectSwitcher({
     return () => document.removeEventListener("mousedown", handler, true);
   }, [isOpen, onOpenChange]);
 
-  // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -129,7 +113,6 @@ export default function ProjectSwitcher({
     return () => document.removeEventListener("keydown", handler);
   }, [isOpen, onOpenChange]);
 
-  // Reset focused index when opening
   useEffect(() => {
     if (isOpen) {
       requestAnimationFrame(() => dropdownRef.current?.focus());
@@ -137,17 +120,7 @@ export default function ProjectSwitcher({
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && openPage) {
-      const frame = requestAnimationFrame(() => {
-        setInternalPage(openPage);
-        onOpenPageConsumed?.();
-      });
-      return () => cancelAnimationFrame(frame);
-    }
-  }, [isOpen, onOpenPageConsumed, openPage]);
-
-  useEffect(() => {
-    if (!isOpen || resolvedPage !== "root") return;
+    if (!isOpen) return;
 
     let cancelled = false;
 
@@ -187,7 +160,7 @@ export default function ProjectSwitcher({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, resolvedPage, routerUsageBaseUrl]);
+  }, [isOpen, routerUsageBaseUrl]);
 
   const nonActiveProjects = sortProjectsByRecentOpen(projects, activeProjectId);
   const topModels = Object.values(usageStats?.byModel ?? {})
@@ -211,17 +184,10 @@ export default function ProjectSwitcher({
     onOpenSection(section);
   }, [onOpenChange, onOpenSection]);
 
-  const handleOpenSettings = useCallback(() => {
-    setInternalPage("settings");
-    setFocusedIdx(0);
-  }, []);
-
-  // Arrow key navigation
   const handleDropdownKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (resolvedPage !== "root") return;
       const items = nonActiveProjects;
-      const totalItems = items.length + SIDEBAR_SECTIONS.length + 1; // projects + sections + manage
+      const totalItems = items.length + SIDEBAR_SECTIONS.length + 1;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setFocusedIdx((prev) => Math.min(prev + 1, totalItems - 1));
@@ -235,44 +201,25 @@ export default function ProjectSwitcher({
         if (focusedIdx < items.length) {
           handleSwitch(items[focusedIdx].id);
         } else if (focusedIdx < manageIdx) {
-          const sectionId = SIDEBAR_SECTIONS[focusedIdx - sectionIdx].id;
-          if (sectionId === "settings") {
-            handleOpenSettings();
-          } else {
-            handleOpenSection(sectionId);
-          }
+          handleOpenSection(SIDEBAR_SECTIONS[focusedIdx - sectionIdx].id);
         } else {
           handleOpenSection("projects");
         }
       }
     },
-    [focusedIdx, handleOpenSection, handleOpenSettings, handleSwitch, nonActiveProjects, resolvedPage],
+    [focusedIdx, handleOpenSection, handleSwitch, nonActiveProjects],
   );
 
-  // Switch button is inside the button group
-  // So clicking the button doesn't open the dropdown when it's already open
   const handleButtonClick = () => {
     setFocusedIdx(0);
     onOpenChange(!isOpen);
   };
+
   const itemClassName = (index: number, base = "") =>
     `${base} ${focusedIdx === index ? "bg-neutral-800 text-neutral-100" : ""}`;
-  const settingsPanelPage =
-    resolvedPage === "settings-terminal"
-      ? "terminal"
-      : resolvedPage === "settings-api-management"
-        ? "api-management"
-        : "root";
-  const settingsTitle =
-    resolvedPage === "settings-terminal"
-      ? "Terminal"
-      : resolvedPage === "settings-api-management"
-        ? "API Management"
-        : "Settings";
 
   return (
     <div className={embedded ? "relative" : "fixed top-4 left-4 z-[10000]"}>
-      {/* Trigger button */}
       <button
         ref={buttonRef}
         onClick={handleButtonClick}
@@ -306,245 +253,177 @@ export default function ProjectSwitcher({
         </span>
       </button>
 
-      {/* Dropdown */}
       {isOpen && (
         <div
           ref={dropdownRef}
           role="listbox"
           tabIndex={-1}
           onKeyDown={handleDropdownKeyDown}
-          className={`absolute top-full left-0 mt-1.5 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden animate-[fadeSlideIn_0.12s_ease-out] ${
-            resolvedPage === "root" ? "w-56" : "w-72"
-          }`}
+          className="absolute top-full left-0 mt-1.5 w-56 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden animate-[fadeSlideIn_0.12s_ease-out]"
         >
-          {resolvedPage === "root" ? (
-            <>
-              <div className="max-h-64 overflow-y-auto py-1">
-                {projects.length === 0 && (
-                  <div className="px-3 py-3 text-[12px] text-neutral-500 text-center">
-                    No projects yet
-                  </div>
-                )}
-
-                {activeProjectId && (() => {
-                  const active = projects.find((p) => p.id === activeProjectId);
-                  if (!active) return null;
-                  return (
-                    <button
-                      key={active.id}
-                      role="option"
-                      aria-selected
-                      onClick={() => onOpenChange(false)}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer bg-blue-950/30"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-neutral-100 truncate">
-                          {active.name}
-                        </div>
-                        {active.directory && (
-                          <div className="text-[10px] text-neutral-500 font-mono truncate">
-                            {active.directory}
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-blue-400 shrink-0">active</span>
-                    </button>
-                  );
-                })()}
-
-                {nonActiveProjects.map((project, index) => (
-                  <button
-                    key={project.id}
-                    role="option"
-                    aria-selected={focusedIdx === index}
-                    disabled={switching === project.id}
-                    onClick={() => handleSwitch(project.id)}
-                    className={itemClassName(
-                      index,
-                      "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer hover:bg-neutral-800 disabled:opacity-50 text-neutral-100",
-                    )}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-600 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] text-neutral-100 truncate">
-                        {switching === project.id ? "Switching…" : project.name}
-                      </div>
-                      {project.directory && (
-                        <div className="text-[10px] text-neutral-500 font-mono truncate">
-                          {project.directory}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                ))}
+          <div className="max-h-64 overflow-y-auto py-1">
+            {projects.length === 0 && (
+              <div className="px-3 py-3 text-[12px] text-neutral-500 text-center">
+                No projects yet
               </div>
+            )}
 
-              <div className="border-t border-neutral-700">
-                {SIDEBAR_SECTIONS.map((section, sectionIndex) => {
-                  const index = nonActiveProjects.length + sectionIndex;
-                  return (
-                    <button
-                      key={section.id}
-                      role="option"
-                      aria-selected={focusedIdx === index}
-                      onClick={() =>
-                        section.id === "settings"
-                          ? handleOpenSettings()
-                          : handleOpenSection(section.id)
-                      }
-                      className={itemClassName(
-                        index,
-                        "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
-                      )}
-                    >
-                      {section.icon === "ssh" ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                          <path d="M4 17l6-6-6-6" />
-                          <path d="M10 17l6-6-6-6" />
-                        </svg>
-                      ) : section.icon === "agents" ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                          <rect x="2" y="3" width="20" height="14" rx="2" />
-                          <path d="M8 21h8M12 17v4" />
-                          <circle cx="12" cy="10" r="2" />
-                        </svg>
-                      ) : (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                          <circle cx="12" cy="12" r="3" />
-                          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33h.01A1.65 1.65 0 009 3.09V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51h.01a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.01a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
-                        </svg>
-                      )}
-                      {section.label}
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-auto shrink-0 text-neutral-600">
-                        <path d="M9 18l6-6-6-6" />
-                      </svg>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="border-t border-neutral-700">
+            {activeProjectId && (() => {
+              const active = projects.find((p) => p.id === activeProjectId);
+              if (!active) return null;
+              return (
                 <button
+                  key={active.id}
                   role="option"
-                  aria-selected={focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length}
-                  onClick={() => handleOpenSection("projects")}
+                  aria-selected
+                  onClick={() => onOpenChange(false)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer bg-blue-950/30"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-medium text-neutral-100 truncate">
+                      {active.name}
+                    </div>
+                    {active.directory && (
+                      <div className="text-[10px] text-neutral-500 font-mono truncate">
+                        {active.directory}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-blue-400 shrink-0">active</span>
+                </button>
+              );
+            })()}
+
+            {nonActiveProjects.map((project, index) => (
+              <button
+                key={project.id}
+                role="option"
+                aria-selected={focusedIdx === index}
+                disabled={switching === project.id}
+                onClick={() => handleSwitch(project.id)}
+                className={itemClassName(
+                  index,
+                  "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer hover:bg-neutral-800 disabled:opacity-50 text-neutral-100",
+                )}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-neutral-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] text-neutral-100 truncate">
+                    {switching === project.id ? "Switching…" : project.name}
+                  </div>
+                  {project.directory && (
+                    <div className="text-[10px] text-neutral-500 font-mono truncate">
+                      {project.directory}
+                    </div>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="border-t border-neutral-700">
+            {SIDEBAR_SECTIONS.map((section, sectionIndex) => {
+              const index = nonActiveProjects.length + sectionIndex;
+              return (
+                <button
+                  key={section.id}
+                  role="option"
+                  aria-selected={focusedIdx === index}
+                  onClick={() => handleOpenSection(section.id)}
                   className={itemClassName(
-                    nonActiveProjects.length + SIDEBAR_SECTIONS.length,
+                    index,
                     "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
                   )}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                    <path d="M2 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V7z" />
-                  </svg>
-                  Manage projects...
-                </button>
-              </div>
-
-              <div className="border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[10px] uppercase tracking-wide text-neutral-500">
-                    Usage Today
-                  </div>
-                  <div className="text-[10px] text-neutral-400">
-                    Input {formatCompact(usageStats?.totalPromptTokens)}
-                  </div>
-                </div>
-
-                {usageLoading ? (
-                  <div className="mt-2 text-[11px] text-neutral-500">
-                    Loading usage...
-                  </div>
-                ) : usageError ? (
-                  <div className="mt-2 text-[11px] text-red-300">
-                    {usageError}
-                  </div>
-                ) : topModels.length === 0 ? (
-                  <div className="mt-2 text-[11px] text-neutral-500">
-                    No model usage yet.
-                  </div>
-                ) : (
-                  <div className="mt-2 space-y-1.5">
-                    {topModels.map((item) => (
-                      <div
-                        key={item.model}
-                        className="flex items-center justify-between gap-2 text-[11px]"
-                      >
-                        <div className="min-w-0 truncate text-neutral-300">
-                          {item.model}
-                        </div>
-                        <div className="shrink-0 font-mono text-neutral-500">
-                          {formatCompact(item.promptTokens)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center justify-between border-b border-neutral-700 px-3 py-2.5">
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() =>
-                      setInternalPage(
-                        resolvedPage === "settings-terminal" || resolvedPage === "settings-api-management"
-                          ? "settings"
-                          : "root",
-                      )
-                    }
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-400 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
-                    title="Back"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M15 18l-6-6 6-6" />
+                  {section.icon === "ssh" ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                      <path d="M4 17l6-6-6-6" />
+                      <path d="M10 17l6-6-6-6" />
                     </svg>
-                  </button>
-                  <h2 className="text-[13px] font-semibold text-neutral-200">
-                    {settingsTitle}
-                  </h2>
-                </div>
-                <button
-                  onClick={() => onOpenChange(false)}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-400 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
-                  title="Close"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M18 6L6 18M6 6l12 12" />
+                  ) : section.icon === "agents" ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                      <rect x="2" y="3" width="20" height="14" rx="2" />
+                      <path d="M8 21h8M12 17v4" />
+                      <circle cx="12" cy="10" r="2" />
+                    </svg>
+                  ) : section.icon === "usage" ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                      <path d="M3 3v18h18" />
+                      <path d="M7 15l4-4 3 3 5-7" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33h.01A1.65 1.65 0 009 3.09V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51h.01a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.01a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+                    </svg>
+                  )}
+                  {section.label}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-auto shrink-0 text-neutral-600">
+                    <path d="M9 18l6-6-6-6" />
                   </svg>
                 </button>
+              );
+            })}
+          </div>
+
+          <div className="border-t border-neutral-700">
+            <button
+              role="option"
+              aria-selected={focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length}
+              onClick={() => handleOpenSection("projects")}
+              className={itemClassName(
+                nonActiveProjects.length + SIDEBAR_SECTIONS.length,
+                "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
+              )}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <path d="M2 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V7z" />
+              </svg>
+              Manage projects...
+            </button>
+          </div>
+
+          <div className="border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+                Usage Today
               </div>
-              <div
-                className="overflow-y-auto"
-                style={{ maxHeight: "min(480px, calc(100vh - 60px))" }}
-              >
-                <SettingsPanel
-                  currentPage={settingsPanelPage}
-                  onOpenTerminal={() => setInternalPage("settings-terminal")}
-                  onOpenApiManagement={() => setInternalPage("settings-api-management")}
-                />
+              <div className="text-[10px] text-neutral-400">
+                Input {formatCompact(usageStats?.totalPromptTokens)}
               </div>
-            </>
-          )}
+            </div>
+
+            {usageLoading ? (
+              <div className="mt-2 text-[11px] text-neutral-500">
+                Loading usage...
+              </div>
+            ) : usageError ? (
+              <div className="mt-2 text-[11px] text-red-300">
+                {usageError}
+              </div>
+            ) : topModels.length === 0 ? (
+              <div className="mt-2 text-[11px] text-neutral-500">
+                No model usage yet.
+              </div>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {topModels.map((item) => (
+                  <div
+                    key={item.model}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <div className="min-w-0 truncate text-neutral-300">
+                      {item.model}
+                    </div>
+                    <div className="shrink-0 font-mono text-neutral-500">
+                      {formatCompact(item.promptTokens)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

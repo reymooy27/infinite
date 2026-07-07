@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
+import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import { getBrowserId } from "@/lib/browserId";
 import { getNextSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
@@ -33,11 +34,14 @@ export default function FocusModeLayout({
   const focusWindow = useWindowStore((s) => s.focusWindow);
 
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
-  const [switcherPage, setSwitcherPage] = useState<
-    "root" | "settings" | "settings-terminal" | "settings-api-management" | null
-  >(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<
+    "root" | "terminal" | "api-management"
+  >("terminal");
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -48,7 +52,6 @@ export default function FocusModeLayout({
     null;
   const activeWindowId = activeWindow?.id ?? null;
 
-  // Keep focusModeWindowId in sync when active window changes/closes
   useEffect(() => {
     if (activeWindowId && activeWindowId !== focusModeWindowId) {
       setFocusModeWindowId(activeWindowId);
@@ -107,7 +110,22 @@ export default function FocusModeLayout({
     focusWindow(nextTerminal.windowId);
   };
 
-  // Close tab panel on outside click (exclude toggle button so its own onClick can toggle)
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        settingsRef.current &&
+        !settingsRef.current.contains(e.target as Node) &&
+        settingsBtnRef.current &&
+        !settingsBtnRef.current.contains(e.target as Node)
+      ) {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler, true);
+    return () => document.removeEventListener("mousedown", handler, true);
+  }, [settingsOpen]);
+
   useEffect(() => {
     if (!tabPanelOpen) return;
     const handler = (e: MouseEvent) => {
@@ -125,7 +143,6 @@ export default function FocusModeLayout({
     return () => document.removeEventListener("mousedown", handler, true);
   }, [tabPanelOpen]);
 
-  // Detect mobile keyboard and raise terminal content above it
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
     if (!mq.matches) return;
@@ -147,23 +164,18 @@ export default function FocusModeLayout({
 
   return (
     <div className="flex flex-col h-full w-full" style={{ backgroundColor: bgColor }}>
-      {/* Header */}
       <div className="flex items-center h-10 shrink-0 bg-neutral-950 border-b border-neutral-800 px-1 gap-1">
-        {/* Left: Project switcher */}
         <div className="shrink-0 relative z-[10001]">
           <ProjectSwitcher
             embedded
             isOpen={switcherOpen}
             onOpenChange={setSwitcherOpen}
             onOpenSection={onOpenSection}
-            openPage={switcherPage}
-            onOpenPageConsumed={() => setSwitcherPage(null)}
           />
         </div>
 
         <div className="flex-1" />
 
-        {/* Right: Toolbar */}
         <div className="flex items-center gap-0.5 shrink-0">
           <button
             onClick={() => setPaneRefreshKey((k) => k + 1)}
@@ -174,23 +186,37 @@ export default function FocusModeLayout({
             <RefreshCw size={14} />
           </button>
 
-          {/* Settings */}
-          <button
-            onClick={() => {
-              setSwitcherPage("settings-terminal");
-              setSwitcherOpen(true);
-            }}
-            title="Terminal settings"
-            className={`p-1.5 transition-colors cursor-pointer rounded ${
-              switcherOpen && switcherPage?.startsWith("settings")
-                ? "text-white bg-neutral-800"
-                : "text-neutral-500 hover:text-white hover:bg-neutral-800"
-            }`}
-          >
-            <Settings size={14} />
-          </button>
+          <div className="relative">
+            <button
+              ref={settingsBtnRef}
+              onClick={() => {
+                setSettingsPage("terminal");
+                setSettingsOpen((prev) => !prev);
+              }}
+              title="Terminal settings"
+              className={`p-1.5 transition-colors cursor-pointer rounded ${
+                settingsOpen
+                  ? "text-white bg-neutral-800"
+                  : "text-neutral-500 hover:text-white hover:bg-neutral-800"
+              }`}
+            >
+              <Settings size={14} />
+            </button>
+            {settingsOpen && (
+              <div
+                ref={settingsRef}
+                className="absolute top-full right-0 mt-1 w-72 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl z-[10000] overflow-y-auto"
+                style={{ maxHeight: "min(480px, calc(100vh - 60px))" }}
+              >
+                <SettingsPanel
+                  currentPage={settingsPage}
+                  onOpenTerminal={() => setSettingsPage("terminal")}
+                  onOpenApiManagement={() => setSettingsPage("api-management")}
+                />
+              </div>
+            )}
+          </div>
 
-          {/* Switch to Canvas mode */}
           <button
             onClick={handleExitFocusMode}
             title="Switch to canvas mode"
@@ -201,7 +227,6 @@ export default function FocusModeLayout({
         </div>
       </div>
 
-      {/* Tab bar row — always visible below header */}
       {activeWindow && (
         <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center gap-2">
           <button
@@ -214,7 +239,7 @@ export default function FocusModeLayout({
             }`}
           >
             <span className="max-w-[8rem] truncate">
-              {tabs.find(t => t.id === activeTabId)?.title ?? tabs.find(t => t.id === activeTabId)?.label ?? "Tab"}
+              {tabs.find((t) => t.id === activeTabId)?.title ?? tabs.find((t) => t.id === activeTabId)?.label ?? "Tab"}
             </span>
             <ChevronDown size={11} className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`} />
           </button>
@@ -227,7 +252,6 @@ export default function FocusModeLayout({
         </div>
       )}
 
-      {/* Tab list panel */}
       {tabPanelOpen && (
         <div ref={tabPanelRef} className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1.5 flex flex-col gap-0.5">
           {sshWindows.map((win) => {
@@ -258,7 +282,10 @@ export default function FocusModeLayout({
           {tabs.map((tab) => (
             <div
               key={tab.id}
-              onClick={() => { if (activeWindow) setActiveTerminalTab(activeWindow.id, tab.id); setTabPanelOpen(false); }}
+              onClick={() => {
+                if (activeWindow) setActiveTerminalTab(activeWindow.id, tab.id);
+                setTabPanelOpen(false);
+              }}
               className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
                 tab.id === activeTabId
                   ? "bg-neutral-800 text-white"
@@ -268,7 +295,10 @@ export default function FocusModeLayout({
               <span className="truncate">{tab.title ?? tab.label}</span>
               {tabs.length > 1 && (
                 <span
-                  onClick={(e) => { handleCloseTab(e, tab.id); setTabPanelOpen(false); }}
+                  onClick={(e) => {
+                    handleCloseTab(e, tab.id);
+                    setTabPanelOpen(false);
+                  }}
                   className="ml-2 shrink-0 text-neutral-600 hover:text-white transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                 >
                   ×
@@ -276,9 +306,11 @@ export default function FocusModeLayout({
               )}
             </div>
           ))}
-          {/* Add tab inside dropdown */}
           <div
-            onClick={() => { handleAddTab(); setTabPanelOpen(false); }}
+            onClick={() => {
+              handleAddTab();
+              setTabPanelOpen(false);
+            }}
             className="flex items-center gap-2 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors text-neutral-500 hover:bg-neutral-800 hover:text-white border-t border-neutral-800 mt-0.5 pt-2"
           >
             <Plus size={12} />
@@ -287,7 +319,6 @@ export default function FocusModeLayout({
         </div>
       )}
 
-      {/* Terminal area */}
       <div className="relative flex-1 min-h-0">
         {activeWindow ? (
           tabs.map((tab) => (
