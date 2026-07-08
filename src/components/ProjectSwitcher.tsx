@@ -50,20 +50,6 @@ function sortProjectsByRecentOpen(projects: Project[], activeProjectId: string |
 
 type ProjectSwitcherUsageStats = {
   totalPromptTokens?: number;
-  byModel?: Record<
-    string,
-    {
-      rawModel?: string;
-      promptTokens?: number;
-    }
-  >;
-  recentRequests?: Array<{
-    timestamp: string;
-    model: string;
-    provider?: string;
-    promptTokens: number;
-    completionTokens: number;
-  }>;
 };
 
 function formatCompact(value: number | undefined) {
@@ -71,18 +57,6 @@ function formatCompact(value: number | undefined) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value ?? 0);
-}
-
-function formatDate(value: string | undefined) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 export default function ProjectSwitcher({
@@ -195,14 +169,6 @@ export default function ProjectSwitcher({
   }, [isOpen, loadUsage]);
 
   const nonActiveProjects = sortProjectsByRecentOpen(projects, activeProjectId);
-  const topModels = Object.values(usageStats?.byModel ?? {})
-    .map((entry) => ({
-      model: entry.rawModel || "Unknown model",
-      promptTokens: entry.promptTokens ?? 0,
-    }))
-    .sort((a, b) => b.promptTokens - a.promptTokens)
-    .slice(0, 3);
-  const recentRequests = (usageStats?.recentRequests ?? []).slice(0, 3);
 
   const handleSwitch = useCallback(async (id: string) => {
     if (id === activeProjectId || switching) return;
@@ -435,70 +401,18 @@ export default function ProjectSwitcher({
               <div className="mt-2 text-[11px] text-red-300">
                 {usageError}
               </div>
-            ) : topModels.length === 0 ? (
+            ) : !usageStats?.totalPromptTokens ? (
               <div className="mt-2 text-[11px] text-neutral-500">
-                No model usage yet.
+                No usage yet.
               </div>
             ) : (
-              <div className="mt-2 space-y-1.5">
-                {topModels.map((item) => (
-                  <div
-                    key={item.model}
-                    className="flex items-center justify-between gap-2 text-[11px]"
-                  >
-                    <div className="min-w-0 truncate text-neutral-300">
-                      {item.model}
-                    </div>
-                    <div className="shrink-0 font-mono text-neutral-500">
-                      {formatCompact(item.promptTokens)}
-                    </div>
-                  </div>
-                ))}
+              <div className="mt-2 text-[11px] text-neutral-300">
+                Total input today:{" "}
+                <span className="font-mono text-neutral-100">
+                  {formatCompact(usageStats.totalPromptTokens)}
+                </span>
               </div>
             )}
-
-            <div className="mt-3 border-t border-neutral-800 pt-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[10px] uppercase tracking-wide text-neutral-500">
-                  Recent Requests
-                </div>
-                <div className="text-[10px] text-neutral-500">
-                  Live refresh 5s
-                </div>
-              </div>
-
-              {usageLoading ? null : usageError ? null : recentRequests.length === 0 ? (
-                <div className="mt-2 text-[11px] text-neutral-500">
-                  No recent requests yet.
-                </div>
-              ) : (
-                <div className="mt-2 space-y-1.5">
-                  {recentRequests.map((item, index) => (
-                    <div
-                      key={`${item.timestamp}-${item.model}-${index}`}
-                      className="rounded-md border border-neutral-800 bg-neutral-900/80 px-2 py-1.5"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-[11px] font-medium text-neutral-200">
-                            {item.model}
-                          </div>
-                          <div className="truncate text-[10px] text-neutral-500">
-                            {item.provider || "Unknown provider"}
-                          </div>
-                        </div>
-                        <div className="shrink-0 text-right text-[10px] text-neutral-500">
-                          <div>
-                            {formatCompact(item.promptTokens)} / {formatCompact(item.completionTokens)}
-                          </div>
-                          <div>{formatDate(item.timestamp)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       )}
