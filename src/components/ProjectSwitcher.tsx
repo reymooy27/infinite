@@ -50,6 +50,13 @@ function sortProjectsByRecentOpen(projects: Project[], activeProjectId: string |
 
 type ProjectSwitcherUsageStats = {
   totalPromptTokens?: number;
+  recentRequests?: Array<{
+    timestamp: string;
+    model: string;
+    provider?: string;
+    promptTokens: number;
+    completionTokens: number;
+  }>;
 };
 
 function formatCompact(value: number | undefined) {
@@ -57,6 +64,18 @@ function formatCompact(value: number | undefined) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value ?? 0);
+}
+
+function formatDate(value: string | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function ProjectSwitcher({
@@ -169,6 +188,7 @@ export default function ProjectSwitcher({
   }, [isOpen, loadUsage]);
 
   const nonActiveProjects = sortProjectsByRecentOpen(projects, activeProjectId);
+  const recentRequests = (usageStats?.recentRequests ?? []).slice(0, 3);
 
   const handleSwitch = useCallback(async (id: string) => {
     if (id === activeProjectId || switching) return;
@@ -260,7 +280,7 @@ export default function ProjectSwitcher({
           onKeyDown={handleDropdownKeyDown}
           className="absolute top-full left-0 mt-1.5 w-56 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden animate-[fadeSlideIn_0.12s_ease-out]"
         >
-          <div className="max-h-64 overflow-y-auto py-1">
+          <div className="max-h-40 overflow-y-auto py-1 sm:max-h-56">
             {projects.length === 0 && (
               <div className="px-3 py-3 text-[12px] text-neutral-500 text-center">
                 No projects yet
@@ -411,6 +431,29 @@ export default function ProjectSwitcher({
                 <span className="font-mono text-neutral-100">
                   {formatCompact(usageStats.totalPromptTokens)}
                 </span>
+              </div>
+            )}
+
+            {!usageLoading && !usageError && recentRequests.length > 0 && (
+              <div className="mt-2 border-t border-neutral-800 pt-2">
+                <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+                  Recent Usage
+                </div>
+                <div className="mt-1.5 space-y-1">
+                  {recentRequests.map((item, index) => (
+                    <div
+                      key={`${item.timestamp}-${item.model}-${index}`}
+                      className="flex items-center justify-between gap-2 text-[10px]"
+                    >
+                      <div className="min-w-0 truncate text-neutral-300">
+                        {item.model}
+                      </div>
+                      <div className="shrink-0 text-neutral-500">
+                        {formatDate(item.timestamp)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
