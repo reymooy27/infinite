@@ -57,6 +57,13 @@ type ProjectSwitcherUsageStats = {
       promptTokens?: number;
     }
   >;
+  recentRequests?: Array<{
+    timestamp: string;
+    model: string;
+    provider?: string;
+    promptTokens: number;
+    completionTokens: number;
+  }>;
 };
 
 function formatCompact(value: number | undefined) {
@@ -64,6 +71,18 @@ function formatCompact(value: number | undefined) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value ?? 0);
+}
+
+function formatDate(value: string | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function ProjectSwitcher({
@@ -119,13 +138,11 @@ export default function ProjectSwitcher({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    let cancelled = false;
-
-    async function loadUsage() {
-      setUsageLoading(true);
+  const loadUsage = useCallback(
+    async (signal?: AbortSignal, silent = false) => {
+      if (!silent) {
+        setUsageLoading(true);
+      }
       setUsageError("");
 
       try {
@@ -135,6 +152,7 @@ export default function ProjectSwitcher({
         });
         const res = await fetch(`/api/router-usage/stats?${query.toString()}`, {
           cache: "no-store",
+          signal,
         });
         const body = await res.json();
 
@@ -142,25 +160,39 @@ export default function ProjectSwitcher({
           throw new Error(body.error || "Failed to load usage");
         }
 
-        if (cancelled) return;
         setUsageStats(body);
       } catch (err) {
-        if (cancelled) return;
+        if (signal?.aborted) return;
         setUsageError(
           err instanceof Error ? err.message : "Failed to load usage",
         );
       } finally {
-        if (cancelled) return;
-        setUsageLoading(false);
+        if (!signal?.aborted && !silent) {
+          setUsageLoading(false);
+        }
       }
-    }
+    },
+    [routerUsageBaseUrl],
+  );
 
-    void loadUsage();
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const controller = new AbortController();
+    const initialLoadId = window.setTimeout(() => {
+      void loadUsage(controller.signal);
+    }, 0);
+
+    const intervalId = window.setInterval(() => {
+      void loadUsage(controller.signal, true);
+    }, 5000);
 
     return () => {
-      cancelled = true;
+      controller.abort();
+      window.clearTimeout(initialLoadId);
+      window.clearInterval(intervalId);
     };
-  }, [isOpen, routerUsageBaseUrl]);
+  }, [isOpen, loadUsage]);
 
   const nonActiveProjects = sortProjectsByRecentOpen(projects, activeProjectId);
   const topModels = Object.values(usageStats?.byModel ?? {})
@@ -170,6 +202,7 @@ export default function ProjectSwitcher({
     }))
     .sort((a, b) => b.promptTokens - a.promptTokens)
     .slice(0, 3);
+  const recentRequests = (usageStats?.recentRequests ?? []).slice(0, 3);
 
   const handleSwitch = useCallback(async (id: string) => {
     if (id === activeProjectId || switching) return;
@@ -423,6 +456,49 @@ export default function ProjectSwitcher({
                 ))}
               </div>
             )}
+
+            <div className="mt-3 border-t border-neutral-800 pt-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+                  Recent Requests
+                </div>
+                <div className="text-[10px] text-neutral-500">
+                  Live refresh 5s
+                </div>
+              </div>
+
+              {usageLoading ? null : usageError ? null : recentRequests.length === 0 ? (
+                <div className="mt-2 text-[11px] text-neutral-500">
+                  No recent requests yet.
+                </div>
+              ) : (
+                <div className="mt-2 space-y-1.5">
+                  {recentRequests.map((item, index) => (
+                    <div
+                      key={`${item.timestamp}-${item.model}-${index}`}
+                      className="rounded-md border border-neutral-800 bg-neutral-900/80 px-2 py-1.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-[11px] font-medium text-neutral-200">
+                            {item.model}
+                          </div>
+                          <div className="truncate text-[10px] text-neutral-500">
+                            {item.provider || "Unknown provider"}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right text-[10px] text-neutral-500">
+                          <div>
+                            {formatCompact(item.promptTokens)} / {formatCompact(item.completionTokens)}
+                          </div>
+                          <div>{formatDate(item.timestamp)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
