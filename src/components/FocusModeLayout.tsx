@@ -382,6 +382,7 @@ export default function FocusModeLayout({
         <FocusModeGitPanel
           open={gitPanelOpen && Boolean(activeProjectId)}
           projectId={activeProjectId}
+          connectionId={connectionId}
           directory={activeTerminalDirectory}
           onClose={() => setGitPanelOpen(false)}
         />

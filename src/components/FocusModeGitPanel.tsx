@@ -40,6 +40,7 @@ type GitStatusPayload = {
 interface FocusModeGitPanelProps {
   open: boolean;
   projectId: string | null;
+  connectionId?: number;
   directory?: string;
   onClose: () => void;
 }
@@ -65,6 +66,7 @@ function formatTimestamp(value: string) {
 export default function FocusModeGitPanel({
   open,
   projectId,
+  connectionId,
   directory,
   onClose,
 }: FocusModeGitPanelProps) {
@@ -87,6 +89,9 @@ export default function FocusModeGitPanel({
 
       try {
         const query = new URLSearchParams();
+        if (typeof connectionId === "number" && Number.isFinite(connectionId)) {
+          query.set("connectionId", String(connectionId));
+        }
         if (directory?.trim()) {
           query.set("directory", directory.trim());
         }
@@ -111,7 +116,7 @@ export default function FocusModeGitPanel({
         }
       }
     },
-    [directory, projectId],
+    [connectionId, directory, projectId],
   );
 
   useEffect(() => {

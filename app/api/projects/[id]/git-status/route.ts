@@ -2,9 +2,11 @@ import { access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { Client } from "ssh2";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { LOCAL_USER_ID } from "@/lib/auth";
+import { decrypt } from "@/lib/crypto";
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER = 1024 * 1024;
@@ -47,6 +49,18 @@ type GitStatusPayload = {
   scannedAt: string;
 };
 
+type SSHConnectionConfig = {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authType: "password" | "key";
+  password?: string;
+  privateKey?: string;
+  agentId?: string;
+};
+
 function createBasePayload(projectId: string, projectName: string, directory: string | null): GitStatusPayload {
   return {
     projectId,
@@ -87,6 +101,135 @@ async function runGit(directory: string, args: string[]) {
     maxBuffer: GIT_MAX_BUFFER,
   });
   return stdout.trimEnd();
+}
+
+function quoteShellArg(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function formatRemoteGitError(message: string) {
+  return message.trim() || "Git command failed";
+}
+
+function getSSHConfig(connection: SSHConnectionConfig) {
+  return {
+    host: connection.host,
+    port: connection.port || 22,
+    username: connection.username,
+    readyTimeout: 15000,
+    keepaliveInterval: 30000,
+    keepaliveCountMax: 10,
+    ...(connection.authType === "key" && connection.privateKey
+      ? { privateKey: connection.privateKey }
+      : { password: connection.password }),
+  };
+}
+
+async function loadConnection(connectionId: number) {
+  const row = await prisma.connection.findFirst({
+    where: { id: connectionId, userId: LOCAL_USER_ID },
+    select: {
+      id: true,
+      name: true,
+      host: true,
+      port: true,
+      username: true,
+      authType: true,
+      passwordEncrypted: true,
+      privateKeyEncrypted: true,
+      agentId: true,
+    },
+  });
+
+  if (!row) {
+    throw new Error("Connection not found");
+  }
+
+  const secret = process.env.ENCRYPTION_SECRET;
+  if (!secret) {
+    throw new Error("ENCRYPTION_SECRET not set");
+  }
+
+  const connection: SSHConnectionConfig = {
+    id: row.id,
+    name: row.name,
+    host: row.host,
+    port: row.port,
+    username: row.username,
+    authType: row.authType as "password" | "key",
+    agentId: row.agentId ?? undefined,
+  };
+
+  if (row.passwordEncrypted) {
+    connection.password = decrypt(row.passwordEncrypted, secret);
+  }
+  if (row.privateKeyEncrypted) {
+    connection.privateKey = decrypt(row.privateKeyEncrypted, secret);
+  }
+
+  return connection;
+}
+
+async function execRemoteCommand(connection: SSHConnectionConfig, command: string) {
+  const conn = new Client();
+
+  return await new Promise<string>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const finishError = (message: string) => {
+      if (settled) return;
+      settled = true;
+      conn.end();
+      reject(new Error(formatRemoteGitError(message)));
+    };
+
+    const finishSuccess = () => {
+      if (settled) return;
+      settled = true;
+      conn.end();
+      resolve(stdout.trimEnd());
+    };
+
+    conn.once("ready", () => {
+      conn.exec(command, (err, stream) => {
+        if (err) {
+          finishError(err.message);
+          return;
+        }
+
+        stream.on("data", (chunk: Buffer) => {
+          stdout += chunk.toString("utf8");
+        });
+        stream.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString("utf8");
+        });
+        stream.on("close", (code: number | null) => {
+          if (code && code !== 0) {
+            finishError(stderr || stdout || `Git command failed with exit ${code}`);
+            return;
+          }
+          finishSuccess();
+        });
+      });
+    });
+
+    conn.once("error", (error) => {
+      finishError(error.message);
+    });
+
+    try {
+      conn.connect(getSSHConfig(connection));
+    } catch (error) {
+      finishError(error instanceof Error ? error.message : "SSH connection failed");
+    }
+  });
+}
+
+async function runRemoteGit(connection: SSHConnectionConfig, directory: string, args: string[]) {
+  const command = `cd -- ${quoteShellArg(directory)} && git ${args.map(quoteShellArg).join(" ")}`;
+  return await execRemoteCommand(connection, command);
 }
 
 function parseBranchSummary(line: string, payload: GitStatusPayload) {
@@ -196,6 +339,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const requestedDirectory = _req.nextUrl.searchParams.get("directory")?.trim() || null;
+    const connectionIdParam = _req.nextUrl.searchParams.get("connectionId");
+    const connectionId = connectionIdParam ? Number.parseInt(connectionIdParam, 10) : null;
     const effectiveDirectory = requestedDirectory || project.directory || null;
     const payload = createBasePayload(project.id, project.name, effectiveDirectory);
 
@@ -205,13 +350,33 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     try {
-      await access(effectiveDirectory, fsConstants.R_OK);
-    } catch {
-      payload.reason = "Project directory unavailable";
-      return NextResponse.json(payload);
-    }
+      if (connectionId) {
+        const connection = await loadConnection(connectionId);
+        if (connection.agentId) {
+          payload.reason = "Git status unavailable for agent connections";
+          payload.scannedAt = new Date().toISOString();
+          return NextResponse.json(payload);
+        }
+        payload.repoRoot = await runRemoteGit(connection, effectiveDirectory, ["rev-parse", "--show-toplevel"]);
+        payload.isRepo = true;
+        const statusOutput = await runRemoteGit(connection, effectiveDirectory, [
+          "status",
+          "--short",
+          "--branch",
+          "--untracked-files=all",
+        ]);
+        parseChanges(statusOutput, payload);
+        payload.scannedAt = new Date().toISOString();
+        return NextResponse.json(payload);
+      }
 
-    try {
+      try {
+        await access(effectiveDirectory, fsConstants.R_OK);
+      } catch {
+        payload.reason = "Project directory unavailable";
+        return NextResponse.json(payload);
+      }
+
       payload.repoRoot = await runGit(effectiveDirectory, ["rev-parse", "--show-toplevel"]);
       payload.isRepo = true;
       const statusOutput = await runGit(effectiveDirectory, [
