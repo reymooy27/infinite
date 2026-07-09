@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown } from "lucide-react";
+import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, GitBranch } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
+import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import { getBrowserId } from "@/lib/browserId";
 import { getNextSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
+import { useProjectStore } from "@/stores/useProjectStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { getSSHMetadata } from "@/types";
@@ -31,6 +33,7 @@ export default function FocusModeLayout({
   const setFocusModeWindowId = useSettingsStore((s) => s.setFocusModeWindowId);
   const setFocusMode = useSettingsStore((s) => s.setFocusMode);
   const bgColor = useSettingsStore((s) => s.bgColor);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const focusWindow = useWindowStore((s) => s.focusWindow);
 
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
@@ -39,6 +42,7 @@ export default function FocusModeLayout({
     "root" | "terminal" | "api-management"
   >("terminal");
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
+  const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
@@ -249,6 +253,21 @@ export default function FocusModeLayout({
             iconOnly
             className="px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
           />
+          <button
+            onClick={() => {
+              setGitPanelOpen((prev) => !prev);
+              setTabPanelOpen(false);
+            }}
+            disabled={!activeProjectId}
+            title={gitPanelOpen ? "Hide git changes" : "Show git changes"}
+            className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
+              gitPanelOpen
+                ? "bg-neutral-800 text-white border-neutral-700"
+                : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
+            }`}
+          >
+            <GitBranch size={14} />
+          </button>
         </div>
       )}
 
@@ -349,6 +368,11 @@ export default function FocusModeLayout({
             </div>
           </div>
         )}
+        <FocusModeGitPanel
+          open={gitPanelOpen && Boolean(activeProjectId)}
+          projectId={activeProjectId}
+          onClose={() => setGitPanelOpen(false)}
+        />
       </div>
     </div>
   );
