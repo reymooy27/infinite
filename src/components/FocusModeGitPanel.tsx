@@ -1,7 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, GitBranch, RefreshCw, X } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  FileCode2,
+  Folder,
+  FolderOpen,
+  GitBranch,
+  RefreshCw,
+  X,
+} from "lucide-react";
 
 type GitChange = {
   path: string;
@@ -45,12 +55,96 @@ interface FocusModeGitPanelProps {
   onClose: () => void;
 }
 
-function getChipClassName(change: GitChange) {
-  if (change.conflicted) return "border-red-500/30 bg-red-500/10 text-red-200";
-  if (change.untracked) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
-  if (change.staged && change.unstaged) return "border-amber-500/30 bg-amber-500/10 text-amber-100";
-  if (change.staged) return "border-sky-500/30 bg-sky-500/10 text-sky-100";
-  return "border-neutral-700 bg-neutral-800 text-neutral-200";
+type GitTreeNode = {
+  name: string;
+  path: string;
+  folders: GitTreeNode[];
+  files: GitChange[];
+};
+
+function getStatusText(change: GitChange) {
+  if (change.conflicted) return "U";
+  if (change.untracked) return "A";
+  if (change.indexStatus === "R" || change.workTreeStatus === "R") return "R";
+  if (change.indexStatus === "D" || change.workTreeStatus === "D") return "D";
+  if (change.indexStatus === "A") return "A";
+  if (change.indexStatus === "M" || change.workTreeStatus === "M") return "M";
+  if (change.indexStatus === "C" || change.workTreeStatus === "C") return "C";
+  return "•";
+}
+
+function getStatusClassName(change: GitChange) {
+  if (change.conflicted) return "text-red-300";
+  if (change.untracked) return "text-emerald-300";
+  if (change.indexStatus === "R" || change.workTreeStatus === "R") return "text-sky-300";
+  if (change.indexStatus === "D" || change.workTreeStatus === "D") return "text-rose-300";
+  if (change.staged && change.unstaged) return "text-amber-200";
+  if (change.staged) return "text-sky-300";
+  if (change.workTreeStatus === "M") return "text-yellow-200";
+  return "text-neutral-400";
+}
+
+function buildGitTree(changes: GitChange[]) {
+  const root = new Map<string, GitTreeNode>();
+
+  for (const change of changes) {
+    const parts = change.path.split("/").filter(Boolean);
+
+    if (parts.length <= 1) {
+      let bucket = root.get("__root__");
+      if (!bucket) {
+        bucket = { name: "", path: "", folders: [], files: [] };
+        root.set("__root__", bucket);
+      }
+      bucket.files.push(change);
+      continue;
+    }
+
+    const fileName = parts[parts.length - 1];
+    const folders = parts.slice(0, -1);
+    let currentMap = root;
+    let currentNode: GitTreeNode | null = null;
+    let currentPath = "";
+
+    for (const segment of folders) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+      let next = currentMap.get(currentPath);
+      if (!next) {
+        next = { name: segment, path: currentPath, folders: [], files: [] };
+        currentMap.set(currentPath, next);
+        if (currentNode) {
+          currentNode.folders.push(next);
+        }
+      }
+      currentNode = next;
+      const childMap = new Map<string, GitTreeNode>();
+      for (const folder of next.folders) {
+        childMap.set(folder.path, folder);
+      }
+      currentMap = childMap;
+    }
+
+    if (currentNode) {
+      currentNode.files.push({ ...change, path: fileName });
+    }
+  }
+
+  const rootNode = root.get("__root__");
+  const topFolders = Array.from(root.values()).filter((node) => node.path !== "");
+
+  const sortTree = (nodes: GitTreeNode[]) => {
+    nodes.sort((a, b) => a.name.localeCompare(b.name));
+    for (const node of nodes) {
+      node.folders = sortTree(node.folders);
+      node.files.sort((a, b) => a.path.localeCompare(b.path));
+    }
+    return nodes;
+  };
+
+  return {
+    folders: sortTree(topFolders),
+    files: [...(rootNode?.files ?? [])].sort((a, b) => a.path.localeCompare(b.path)),
+  };
 }
 
 function formatTimestamp(value: string) {
@@ -73,6 +167,7 @@ export default function FocusModeGitPanel({
   const [data, setData] = useState<GitStatusPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
 
   const loadStatus = useCallback(
     async (signal?: AbortSignal, silent = false) => {
@@ -138,7 +233,70 @@ export default function FocusModeGitPanel({
     };
   }, [loadStatus, open]);
 
+  const toggleFolder = useCallback((path: string) => {
+    setCollapsedFolders((prev) => ({
+      ...prev,
+      [path]: !prev[path],
+    }));
+  }, []);
+
   if (!open) return null;
+
+  const tree = data ? buildGitTree(data.changes) : { folders: [], files: [] };
+
+  const renderFile = (change: GitChange, depth: number) => (
+    <div
+      key={`${depth}-${change.path}-${change.indexStatus}-${change.workTreeStatus}`}
+      className="group flex items-start gap-2 rounded-md px-2 py-1 text-[12px] text-neutral-300 hover:bg-neutral-800/70"
+      style={{ paddingLeft: `${depth * 14 + 8}px` }}
+      title={change.originalPath ? `${change.label}: ${change.originalPath} -> ${change.path}` : change.label}
+    >
+      <FileCode2 size={14} className="mt-0.5 shrink-0 text-neutral-500" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <span className="truncate text-neutral-200">{change.path}</span>
+          <span className={`shrink-0 text-[11px] font-semibold ${getStatusClassName(change)}`}>
+            {getStatusText(change)}
+          </span>
+        </div>
+        {change.originalPath && (
+          <p className="truncate text-[10px] text-neutral-500">from {change.originalPath}</p>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderFolder = (node: GitTreeNode, depth: number): React.ReactNode => {
+    const collapsed = collapsedFolders[node.path] ?? false;
+
+    return (
+      <div key={node.path}>
+        <button
+          onClick={() => toggleFolder(node.path)}
+          className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[12px] text-neutral-300 hover:bg-neutral-800/70"
+          style={{ paddingLeft: `${depth * 14 + 8}px` }}
+        >
+          {collapsed ? (
+            <ChevronRight size={13} className="shrink-0 text-neutral-500" />
+          ) : (
+            <ChevronDown size={13} className="shrink-0 text-neutral-500" />
+          )}
+          {collapsed ? (
+            <Folder size={14} className="shrink-0 text-sky-300" />
+          ) : (
+            <FolderOpen size={14} className="shrink-0 text-sky-300" />
+          )}
+          <span className="truncate">{node.name}</span>
+        </button>
+        {!collapsed && (
+          <div>
+            {node.folders.map((child) => renderFolder(child, depth + 1))}
+            {node.files.map((change) => renderFile(change, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <aside className="absolute inset-y-0 right-0 z-20 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
@@ -250,33 +408,15 @@ export default function FocusModeGitPanel({
               )}
 
               {data.isRepo && data.changes.length > 0 && (
-                <div className="space-y-2">
-                  {data.changes.map((change) => (
-                    <div
-                      key={`${change.path}-${change.indexStatus}-${change.workTreeStatus}`}
-                      className="rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-2.5"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate font-mono text-xs text-neutral-100">{change.path}</p>
-                          {change.originalPath && (
-                            <p className="truncate font-mono text-[11px] text-neutral-500">
-                              from {change.originalPath}
-                            </p>
-                          )}
-                        </div>
-                        <span
-                          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${getChipClassName(change)}`}
-                        >
-                          {change.label}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex items-center gap-2 text-[11px] text-neutral-500">
-                        <span>Index {change.indexStatus}</span>
-                        <span>Worktree {change.workTreeStatus}</span>
-                      </div>
-                    </div>
-                  ))}
+                <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
+                  <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
+                    <span>Files</span>
+                    <span>{data.changes.length}</span>
+                  </div>
+                  <div className="py-1">
+                    {tree.folders.map((node) => renderFolder(node, 0))}
+                    {tree.files.map((change) => renderFile(change, 0))}
+                  </div>
                 </div>
               )}
             </div>
