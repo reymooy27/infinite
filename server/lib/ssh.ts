@@ -45,6 +45,29 @@ function quoteShellArg(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function buildCwdTrackingBootstrap(initialDirectory?: string) {
+  const commands = [
+    initialDirectory ? `cd -- ${quoteShellArg(initialDirectory)}` : "",
+    "__infinite_emit_cwd() { printf '\\033]7;file://%s%s\\007' \"${HOSTNAME:-localhost}\" \"$PWD\"; }",
+    "if [ -n \"${ZSH_VERSION-}\" ]; then",
+    "  autoload -Uz add-zsh-hook >/dev/null 2>&1 || true",
+    "  if command -v add-zsh-hook >/dev/null 2>&1; then",
+    "    add-zsh-hook precmd __infinite_emit_cwd",
+    "  else",
+    "    precmd_functions+=(__infinite_emit_cwd)",
+    "  fi",
+    "elif [ -n \"${BASH_VERSION-}\" ]; then",
+    "  case \";${PROMPT_COMMAND-};\" in",
+    "    *\";__infinite_emit_cwd;\"*) ;;",
+    "    *) PROMPT_COMMAND=\"__infinite_emit_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;;",
+    "  esac",
+    "fi",
+    "__infinite_emit_cwd",
+  ].filter(Boolean);
+
+  return `${commands.join("\n")}\r`;
+}
+
 interface ActiveSession {
   conn: Client;
   stream: ClientChannel;
@@ -858,9 +881,7 @@ export function createSSHSocket(
 
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
 
-      if (initialDirectory) {
-        stream.write(`cd -- ${quoteShellArg(initialDirectory)}\r`);
-      }
+      stream.write(buildCwdTrackingBootstrap(initialDirectory));
 
       stream.on("data", (data: Buffer) => {
         appendRecentOutput(currentSession, data);

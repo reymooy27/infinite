@@ -15,6 +15,7 @@ import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
+import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useProjectStore } from "@/stores/useProjectStore";
@@ -945,10 +946,12 @@ export const SSHPane = ({
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
+  const setTerminalCwd = useTerminalSessionStore((s) => s.setTerminalCwd);
   const projectDirectory = useProjectStore((s) => {
     const project = s.projects.find((p) => p.id === s.activeProjectId);
     return project?.directory;
   });
+  const sessionId = tabId ? `${windowId || ""}-${tabId}` : (windowId || "");
   const bufferKeyRef = useRef(`${windowId}-${tabId}`);
   const statusRef = useRef(status);
   const isActiveRef = useRef(isActive);
@@ -967,6 +970,7 @@ export const SSHPane = ({
   const resizeSyncRafRef = useRef<number | null>(null);
   const pendingOsc52Ref = useRef("");
   const osc52CarryRef = useRef("");
+  const osc7CarryRef = useRef("");
 
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
@@ -985,6 +989,7 @@ export const SSHPane = ({
   const getViewportOffsetFromBottom = useCallback(() => {
     const term = termInstanceRef.current;
     if (!term) return 0;
+    if (term.buffer.active !== term.buffer.normal) return 0;
     const buffer = term.buffer.active;
     return Math.max(0, buffer.baseY - buffer.viewportY);
   }, []);
@@ -992,6 +997,7 @@ export const SSHPane = ({
   const restoreViewportOffset = useCallback((offsetFromBottom?: number) => {
     const term = termInstanceRef.current;
     if (!term) return;
+    if (term.buffer.active !== term.buffer.normal) return;
     const buffer = term.buffer.active;
     const offset =
       typeof offsetFromBottom === "number"
@@ -1602,6 +1608,40 @@ export const SSHPane = ({
     [decodeOsc52Payload, writeClipboardText],
   );
 
+  const captureOsc7Directory = useCallback(
+    (chunk: string) => {
+      if (!chunk || !sessionId) return;
+
+      const source = `${osc7CarryRef.current}${chunk}`;
+      const osc7Pattern = /\u001b]7;file:\/\/[^/\u0007\u001b]*([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g;
+      let match: RegExpExecArray | null = null;
+
+      while ((match = osc7Pattern.exec(source))) {
+        const rawDirectory = match[1] || "/";
+        try {
+          setTerminalCwd(sessionId, decodeURIComponent(rawDirectory));
+        } catch {
+          setTerminalCwd(sessionId, rawDirectory);
+        }
+      }
+
+      const lastStart = source.lastIndexOf("\u001b]7;file://");
+      if (lastStart === -1) {
+        osc7CarryRef.current = "";
+        return;
+      }
+
+      const tail = source.slice(lastStart);
+      if (tail.includes("\u0007") || tail.includes("\u001b\\")) {
+        osc7CarryRef.current = "";
+        return;
+      }
+
+      osc7CarryRef.current = tail.slice(-4096);
+    },
+    [sessionId, setTerminalCwd],
+  );
+
   useEffect(() => {
     if (!wsUrl) return;
 
@@ -1660,7 +1700,9 @@ export const SSHPane = ({
               }
             }
             const bytes = new Uint8Array(e.data);
-            captureOsc52Clipboard(new TextDecoder().decode(bytes));
+            const decoded = new TextDecoder().decode(bytes);
+            captureOsc52Clipboard(decoded);
+            captureOsc7Directory(decoded);
             term.write(bytes);
           }
           return;
@@ -1682,6 +1724,7 @@ export const SSHPane = ({
             bytes[i] = binaryStr.charCodeAt(i);
           }
           captureOsc52Clipboard(binaryStr);
+          captureOsc7Directory(binaryStr);
           term.write(bytes);
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
@@ -1696,7 +1739,7 @@ export const SSHPane = ({
       snapshotTerminalBuffer();
       ws.close();
     };
-  }, [captureOsc52Clipboard, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
+  }, [captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
 
   const handleCopy = useCallback(async () => {
     const term = termInstanceRef.current;

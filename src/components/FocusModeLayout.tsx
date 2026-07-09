@@ -10,6 +10,7 @@ import TerminalNextButton from "@/components/TerminalNextButton";
 import { getBrowserId } from "@/lib/browserId";
 import { getNextSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
 import { useProjectStore } from "@/stores/useProjectStore";
+import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { getSSHMetadata } from "@/types";
@@ -44,6 +45,7 @@ export default function FocusModeLayout({
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
@@ -69,7 +71,12 @@ export default function FocusModeLayout({
   const tabs = sshMeta?.tabs ?? [];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "";
   const nextTerminal = getNextSSHTerminalTarget(windows, activeWindowId, activeTabId);
-  const connectionId = activeWindow?.metadata?.connectionId as number | undefined;
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
+  const connectionId = (activeTab?.connectionId ?? activeWindow?.metadata?.connectionId) as number | undefined;
+  const activeSessionId = activeWindowId && activeTabId ? `${activeWindowId}-${activeTabId}` : "";
+  const activeTerminalDirectory = useTerminalSessionStore(
+    (s) => (activeSessionId ? s.terminalCwds[activeSessionId] : undefined),
+  );
   const getWindowLabel = (windowId: string) => {
     const win = sshWindows.find((item) => item.id === windowId);
     if (!win) return "Terminal";
@@ -155,12 +162,16 @@ export default function FocusModeLayout({
 
     const update = () => {
       const h = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      setKeyboardHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+      clearTimeout(keyboardTimerRef.current);
+      keyboardTimerRef.current = setTimeout(() => {
+        setKeyboardHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+      }, 100);
     };
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
     return () => {
+      clearTimeout(keyboardTimerRef.current);
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
     };
@@ -371,6 +382,7 @@ export default function FocusModeLayout({
         <FocusModeGitPanel
           open={gitPanelOpen && Boolean(activeProjectId)}
           projectId={activeProjectId}
+          directory={activeTerminalDirectory}
           onClose={() => setGitPanelOpen(false)}
         />
       </div>

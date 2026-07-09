@@ -40,6 +40,7 @@ type GitStatusPayload = {
 interface FocusModeGitPanelProps {
   open: boolean;
   projectId: string | null;
+  directory?: string;
   onClose: () => void;
 }
 
@@ -64,6 +65,7 @@ function formatTimestamp(value: string) {
 export default function FocusModeGitPanel({
   open,
   projectId,
+  directory,
   onClose,
 }: FocusModeGitPanelProps) {
   const [data, setData] = useState<GitStatusPayload | null>(null);
@@ -84,7 +86,12 @@ export default function FocusModeGitPanel({
       setError("");
 
       try {
-        const res = await fetch(`/api/projects/${projectId}/git-status`, {
+        const query = new URLSearchParams();
+        if (directory?.trim()) {
+          query.set("directory", directory.trim());
+        }
+        const suffix = query.size > 0 ? `?${query.toString()}` : "";
+        const res = await fetch(`/api/projects/${projectId}/git-status${suffix}`, {
           cache: "no-store",
           signal,
         });
@@ -104,7 +111,7 @@ export default function FocusModeGitPanel({
         }
       }
     },
-    [projectId],
+    [directory, projectId],
   );
 
   useEffect(() => {

@@ -195,24 +195,26 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const payload = createBasePayload(project.id, project.name, project.directory ?? null);
+    const requestedDirectory = _req.nextUrl.searchParams.get("directory")?.trim() || null;
+    const effectiveDirectory = requestedDirectory || project.directory || null;
+    const payload = createBasePayload(project.id, project.name, effectiveDirectory);
 
-    if (!project.directory) {
+    if (!effectiveDirectory) {
       payload.reason = "Project directory not configured";
       return NextResponse.json(payload);
     }
 
     try {
-      await access(project.directory, fsConstants.R_OK);
+      await access(effectiveDirectory, fsConstants.R_OK);
     } catch {
       payload.reason = "Project directory unavailable";
       return NextResponse.json(payload);
     }
 
     try {
-      payload.repoRoot = await runGit(project.directory, ["rev-parse", "--show-toplevel"]);
+      payload.repoRoot = await runGit(effectiveDirectory, ["rev-parse", "--show-toplevel"]);
       payload.isRepo = true;
-      const statusOutput = await runGit(project.directory, [
+      const statusOutput = await runGit(effectiveDirectory, [
         "status",
         "--short",
         "--branch",
