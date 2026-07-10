@@ -205,7 +205,7 @@ export default function ProjectSwitcher({
   const handleDropdownKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       const items = nonActiveProjects;
-      const totalItems = items.length + SIDEBAR_SECTIONS.length + 1;
+      const totalItems = items.length + SIDEBAR_SECTIONS.length + 2;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setFocusedIdx((prev) => Math.min(prev + 1, totalItems - 1));
@@ -215,11 +215,14 @@ export default function ProjectSwitcher({
       } else if (e.key === "Enter") {
         e.preventDefault();
         const sectionIdx = items.length;
-        const manageIdx = items.length + SIDEBAR_SECTIONS.length;
+        const usageIdx = items.length + SIDEBAR_SECTIONS.length;
+        const manageIdx = usageIdx + 1;
         if (focusedIdx < items.length) {
           handleSwitch(items[focusedIdx].id);
-        } else if (focusedIdx < manageIdx) {
+        } else if (focusedIdx < usageIdx) {
           handleOpenSection(SIDEBAR_SECTIONS[focusedIdx - sectionIdx].id);
+        } else if (focusedIdx === usageIdx) {
+          handleOpenSection("usage");
         } else {
           handleOpenSection("projects");
         }
@@ -380,7 +383,16 @@ export default function ProjectSwitcher({
             })}
           </div>
 
-          <div className="border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5">
+          <button
+            type="button"
+            role="option"
+            aria-selected={focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length}
+            onClick={() => handleOpenSection("usage")}
+            className={itemClassName(
+              nonActiveProjects.length + SIDEBAR_SECTIONS.length,
+              "w-full border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-neutral-900",
+            )}
+          >
             <div className="flex items-center justify-between gap-2">
               <div className="text-[10px] uppercase tracking-wide text-neutral-500">
                 Usage Today
@@ -433,15 +445,15 @@ export default function ProjectSwitcher({
                 </div>
               </div>
             )}
-          </div>
+          </button>
 
           <div className="border-t border-neutral-700">
             <button
               role="option"
-              aria-selected={focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length}
+              aria-selected={focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length + 1}
               onClick={() => handleOpenSection("projects")}
               className={itemClassName(
-                nonActiveProjects.length + SIDEBAR_SECTIONS.length,
+                nonActiveProjects.length + SIDEBAR_SECTIONS.length + 1,
                 "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
               )}
             >
