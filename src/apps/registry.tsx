@@ -968,6 +968,9 @@ export const SSHPane = ({
   const pendingViewportRestoreRef = useRef<number | null>(null);
   const restoreViewportRafRef = useRef<number | null>(null);
   const resizeSyncRafRef = useRef<number | null>(null);
+  const lastKnownViewportYRef = useRef(0);
+  const suppressViewportTrackingUntilRef = useRef(0);
+  const lastKeyboardHeightRef = useRef(keyboardHeight ?? 0);
   const pendingOsc52Ref = useRef("");
   const osc52CarryRef = useRef("");
   const osc7CarryRef = useRef("");
@@ -989,26 +992,30 @@ export const SSHPane = ({
   const getViewportOffsetFromBottom = useCallback(() => {
     const term = termInstanceRef.current;
     if (!term) return 0;
-    if (term.buffer.active !== term.buffer.normal) return 0;
     const buffer = term.buffer.active;
-    return Math.max(0, buffer.baseY - buffer.viewportY);
+    const viewportY =
+      buffer === term.buffer.normal
+        ? buffer.viewportY
+        : Math.max(0, lastKnownViewportYRef.current);
+    return Math.max(0, buffer.baseY - viewportY);
   }, []);
 
   const restoreViewportOffset = useCallback((offsetFromBottom?: number) => {
     const term = termInstanceRef.current;
     if (!term) return;
-    if (term.buffer.active !== term.buffer.normal) return;
     const buffer = term.buffer.active;
     const offset =
       typeof offsetFromBottom === "number"
         ? offsetFromBottom
         : viewportOffsetRef.current;
     const targetLine = Math.max(0, buffer.baseY - Math.max(0, offset));
+    suppressViewportTrackingUntilRef.current = performance.now() + 260;
     (
       term as XTerminal & {
         scrollToLine: (line: number, disableSmoothScroll?: boolean) => void;
       }
     ).scrollToLine(targetLine, true);
+    lastKnownViewportYRef.current = targetLine;
     viewportOffsetRef.current = Math.max(0, offset);
   }, []);
 
@@ -1073,6 +1080,7 @@ export const SSHPane = ({
     const viewportOffset = getViewportOffsetFromBottom();
     viewportOffsetRef.current = viewportOffset;
     pendingViewportRestoreRef.current = viewportOffset;
+    suppressViewportTrackingUntilRef.current = performance.now() + 320;
 
     fit.fit();
     if (term.rows > 0) {
@@ -1290,6 +1298,11 @@ export const SSHPane = ({
     });
 
     term.onScroll(() => {
+      const term = termInstanceRef.current;
+      if (!term) return;
+      if (performance.now() < suppressViewportTrackingUntilRef.current) return;
+
+      lastKnownViewportYRef.current = term.buffer.active.viewportY;
       viewportOffsetRef.current = getViewportOffsetFromBottom();
     });
 
@@ -1351,6 +1364,37 @@ export const SSHPane = ({
       forceTerminalRepaint();
     }
   }, [forceTerminalRepaint, terminalFontSize]);
+
+  useEffect(() => {
+    if (!isMobile || !termInstanceRef.current) return;
+
+    const previousHeight = lastKeyboardHeightRef.current;
+    const nextHeight = keyboardHeight ?? 0;
+    if (Math.abs(nextHeight - previousHeight) < 24) return;
+    lastKeyboardHeightRef.current = nextHeight;
+
+    const term = termInstanceRef.current;
+    const viewportOffset = getViewportOffsetFromBottom();
+    viewportOffsetRef.current = viewportOffset;
+    pendingViewportRestoreRef.current = viewportOffset;
+    lastKnownViewportYRef.current = term.buffer.active.viewportY;
+    suppressViewportTrackingUntilRef.current = performance.now() + 400;
+
+    requestAnimationFrame(() => {
+      handleTerminalResize();
+      if (pendingViewportRestoreRef.current !== null) {
+        scheduleViewportRestore(pendingViewportRestoreRef.current);
+      }
+      requestAnimationFrame(() => focusTerminal());
+    });
+  }, [
+    focusTerminal,
+    getViewportOffsetFromBottom,
+    handleTerminalResize,
+    isMobile,
+    keyboardHeight,
+    scheduleViewportRestore,
+  ]);
 
   useEffect(() => {
     if (!refreshNonce) return;

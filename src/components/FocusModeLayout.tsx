@@ -46,6 +46,7 @@ export default function FocusModeLayout({
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const keyboardRafRef = useRef<number | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
@@ -161,17 +162,29 @@ export default function FocusModeLayout({
     if (!vv) return;
 
     const update = () => {
-      const h = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      clearTimeout(keyboardTimerRef.current);
-      keyboardTimerRef.current = setTimeout(() => {
-        setKeyboardHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev));
-      }, 100);
+      if (keyboardRafRef.current !== null) {
+        cancelAnimationFrame(keyboardRafRef.current);
+      }
+      keyboardRafRef.current = requestAnimationFrame(() => {
+        const viewportBottom = Math.max(0, vv.height + vv.offsetTop);
+        const rawHeight = Math.max(0, window.innerHeight - viewportBottom);
+        const h = rawHeight < 80 ? 0 : rawHeight;
+
+        clearTimeout(keyboardTimerRef.current);
+        keyboardTimerRef.current = setTimeout(() => {
+          setKeyboardHeight((prev) => (Math.abs(prev - h) > 2 ? h : prev));
+        }, h === 0 ? 140 : 180);
+        keyboardRafRef.current = null;
+      });
     };
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
     return () => {
       clearTimeout(keyboardTimerRef.current);
+      if (keyboardRafRef.current !== null) {
+        cancelAnimationFrame(keyboardRafRef.current);
+      }
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
     };
