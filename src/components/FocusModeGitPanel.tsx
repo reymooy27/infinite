@@ -373,6 +373,7 @@ export default function FocusModeGitPanel({
   const [branchSearch, setBranchSearch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
+  const [commitComposerOpen, setCommitComposerOpen] = useState(false);
   const [stageAllBeforeCommit, setStageAllBeforeCommit] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationState>(null);
@@ -459,6 +460,11 @@ export default function FocusModeGitPanel({
     window.setTimeout(() => branchSearchRef.current?.focus(), 0);
   }, [branchMenuOpen]);
 
+  useEffect(() => {
+    if (!commitComposerOpen) return;
+    window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
+  }, [commitComposerOpen]);
+
   const tree = useMemo(
     () => (data ? buildGitTree(data.changes) : { folders: [], files: [] }),
     [data],
@@ -511,6 +517,7 @@ export default function FocusModeGitPanel({
         setData(body.nextStatus);
         if (payload.action === "commit") {
           setCommitMessage("");
+          setCommitComposerOpen(false);
         }
         if (payload.action === "checkout_branch" || payload.action === "create_branch") {
           setBranchMenuOpen(false);
@@ -743,7 +750,7 @@ export default function FocusModeGitPanel({
           break;
         case "c":
           event.preventDefault();
-          commitTextareaRef.current?.focus();
+          setCommitComposerOpen(true);
           break;
         case "g":
           event.preventDefault();
@@ -843,13 +850,13 @@ export default function FocusModeGitPanel({
       <button
         key={row.id}
         onClick={() => setSelectedRowId(row.id)}
-        className={`group flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-[12px] transition-colors ${
+        className={`group flex w-full items-start gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
           selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
         }`}
         style={{ paddingLeft: `${row.depth * 14 + 8}px` }}
         title={row.change.originalPath ? `${row.change.originalPath} -> ${row.change.path}` : row.change.label}
       >
-        <FileCode2 size={14} className="mt-0.5 shrink-0 text-neutral-500" />
+        <FileCode2 size={13} className="mt-0.5 shrink-0 text-neutral-500" />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <span className="truncate">{row.name}</span>
@@ -874,7 +881,7 @@ export default function FocusModeGitPanel({
       <button
         key={row.id}
         onClick={() => setSelectedRowId(row.id)}
-        className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[12px] transition-colors ${
+        className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
           selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
         }`}
         style={{ paddingLeft: `${row.depth * 14 + 8}px` }}
@@ -906,14 +913,14 @@ export default function FocusModeGitPanel({
   if (!open) return null;
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-20 w-full max-w-[27rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
+    <aside className="absolute inset-y-0 right-0 z-20 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
       <div className="flex h-full flex-col">
-        <div className="flex items-center gap-2 border-b border-neutral-800 px-4 py-3">
+        <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <GitBranch size={15} className="shrink-0 text-neutral-300" />
+            <GitBranch size={14} className="shrink-0 text-neutral-300" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-neutral-100">Git</p>
-              <p className="truncate text-[11px] text-neutral-500">{data?.projectName ?? "Active project"}</p>
+              <p className="truncate text-[13px] font-medium text-neutral-100">Git</p>
+              <p className="truncate text-[10px] text-neutral-500">{data?.projectName ?? "Active project"}</p>
             </div>
           </div>
           <button
@@ -932,34 +939,34 @@ export default function FocusModeGitPanel({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="flex-1 overflow-y-auto px-3 py-2.5">
           {loading && !data && (
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-6 text-center text-sm text-neutral-400">
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-5 text-center text-xs text-neutral-400">
               Loading git status...
             </div>
           )}
 
           {!loading && error && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-xs text-red-200">
               {error}
             </div>
           )}
 
           {feedback && (
-            <div className={`mb-3 rounded-xl border px-3 py-2 text-sm ${getFeedbackToneClass(feedback.kind)}`}>
+            <div className={`mb-2 rounded-xl border px-3 py-2 text-xs ${getFeedbackToneClass(feedback.kind)}`}>
               {feedback.text}
             </div>
           )}
 
           {!error && data && (
             <div className="space-y-3">
-              <div className="rounded-xl border border-neutral-800 bg-neutral-900/80 p-3">
+              <div className="rounded-xl border border-neutral-800 bg-neutral-900/80 p-2.5">
                 <div className="flex items-center gap-2">
                   <div className="relative min-w-0 flex-1">
                     <button
                       onClick={() => setBranchMenuOpen((prev) => !prev)}
                       disabled={actionBusy || !data.isRepo}
-                      className="flex w-full items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-left text-sm text-neutral-100 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex w-full items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-left text-xs text-neutral-100 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <span className="truncate">
                         {data.detached ? "Detached HEAD" : data.branch ?? "No branch"}
@@ -970,14 +977,14 @@ export default function FocusModeGitPanel({
                     {branchMenuOpen && data.isRepo && (
                       <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl">
                         <div className="border-b border-neutral-800 p-2">
-                          <div className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
-                            <Search size={13} className="shrink-0 text-neutral-500" />
+                          <div className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-2">
+                            <Search size={12} className="shrink-0 text-neutral-500" />
                             <input
                               ref={branchSearchRef}
                               value={branchSearch}
                               onChange={(event) => setBranchSearch(event.target.value)}
                               placeholder="Search branches"
-                              className="min-w-0 flex-1 bg-transparent text-sm text-neutral-100 outline-none placeholder:text-neutral-600"
+                              className="min-w-0 flex-1 bg-transparent text-xs text-neutral-100 outline-none placeholder:text-neutral-600"
                             />
                           </div>
                         </div>
@@ -986,7 +993,7 @@ export default function FocusModeGitPanel({
                             <button
                               key={branch}
                               onClick={() => requestAction({ action: "checkout_branch", branch })}
-                              className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${
+                              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs ${
                                 branch === data.branch
                                   ? "bg-neutral-800 text-white"
                                   : "text-neutral-300 hover:bg-neutral-800 hover:text-white"
@@ -997,7 +1004,7 @@ export default function FocusModeGitPanel({
                             </button>
                           ))}
                           {filteredBranches.length === 0 && (
-                            <div className="px-3 py-3 text-sm text-neutral-500">No matching branch</div>
+                            <div className="px-3 py-2.5 text-xs text-neutral-500">No matching branch</div>
                           )}
                         </div>
                         <div className="border-t border-neutral-800 p-2">
@@ -1006,12 +1013,12 @@ export default function FocusModeGitPanel({
                               value={newBranchName}
                               onChange={(event) => setNewBranchName(event.target.value)}
                               placeholder="new-branch-name"
-                              className="min-w-0 flex-1 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700"
+                              className="min-w-0 flex-1 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-xs text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700"
                             />
                             <button
                               onClick={handleBranchCreate}
                               disabled={!newBranchName.trim() || actionBusy}
-                              className="rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="rounded-lg border border-neutral-700 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               Create
                             </button>
@@ -1022,7 +1029,7 @@ export default function FocusModeGitPanel({
                   </div>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-neutral-500">
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-neutral-500">
                   {data.upstream && <span>{data.upstream}</span>}
                   {data.ahead > 0 && <span className="text-sky-200">ahead {data.ahead}</span>}
                   {data.behind > 0 && <span className="text-amber-200">behind {data.behind}</span>}
@@ -1030,7 +1037,7 @@ export default function FocusModeGitPanel({
                 </div>
 
                 {data.lastCommit && (
-                  <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-[11px] text-neutral-400">
+                  <div className="mt-2 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-2 text-[10px] text-neutral-400">
                     <div className="flex items-center gap-2 text-neutral-300">
                       <GitCommitHorizontal size={12} className="shrink-0" />
                       <span className="font-mono text-neutral-500">{data.lastCommit.hash}</span>
@@ -1042,11 +1049,11 @@ export default function FocusModeGitPanel({
                   </div>
                 )}
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
                   <button
                     onClick={() => requestAction({ action: "pull" })}
                     disabled={actionBusy || !data.isRepo}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-xs text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Download size={12} />
                     Pull
@@ -1054,7 +1061,7 @@ export default function FocusModeGitPanel({
                   <button
                     onClick={() => requestAction({ action: "push" })}
                     disabled={actionBusy || !data.isRepo}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-xs text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Upload size={12} />
                     Push
@@ -1062,20 +1069,20 @@ export default function FocusModeGitPanel({
                   <button
                     onClick={() => requestAction({ action: "stage_all" })}
                     disabled={actionBusy || !data.isRepo || data.changes.length === 0}
-                    className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-xs text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Stage all
                   </button>
                   <button
                     onClick={() => requestAction({ action: "unstage_all" })}
                     disabled={actionBusy || !data.isRepo || data.stagedCount === 0}
-                    className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-xs text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Unstage all
                   </button>
                 </div>
 
-                <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-[11px] text-neutral-500">
+                <div className="mt-2 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-2 text-[10px] text-neutral-500">
                   <div className="truncate">{data.directory ?? "No directory"}</div>
                   <div className="mt-1 truncate">
                     `j/k` move · `space` stage · `u` unstage · `x` discard · `b` branch · `c` commit · `g` refresh · `p/P` pull/push
@@ -1085,28 +1092,28 @@ export default function FocusModeGitPanel({
               </div>
 
               {!data.available && (
-                <div className="flex gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-3 text-sm text-neutral-300">
+                <div className="flex gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-2.5 text-xs text-neutral-300">
                   <AlertCircle size={16} className="mt-0.5 shrink-0 text-neutral-500" />
                   <p>{data.reason ?? "Project directory not configured"}</p>
                 </div>
               )}
 
               {data.available && !data.isRepo && (
-                <div className="flex gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-3 text-sm text-neutral-300">
+                <div className="flex gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-2.5 text-xs text-neutral-300">
                   <AlertCircle size={16} className="mt-0.5 shrink-0 text-neutral-500" />
                   <p>{data.reason ?? "Directory is not a git repository"}</p>
                 </div>
               )}
 
               {data.isRepo && data.clean && (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-200">
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-xs text-emerald-200">
                   Working tree clean
                 </div>
               )}
 
               {data.isRepo && data.changes.length > 0 && (
                 <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
-                  <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
+                  <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
                     <span>Changes</span>
                     <span>{data.changes.length}</span>
                   </div>
@@ -1121,7 +1128,7 @@ export default function FocusModeGitPanel({
               <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                 <button
                   onClick={() => setHistoryOpen((prev) => !prev)}
-                  className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500"
+                  className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500"
                 >
                   <span>Commit history</span>
                   {historyOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1129,15 +1136,15 @@ export default function FocusModeGitPanel({
                 {historyOpen && (
                   <div className="max-h-48 overflow-y-auto py-1">
                     {data.recentCommits.length === 0 && (
-                      <div className="px-3 py-3 text-sm text-neutral-500">No commit history</div>
+                      <div className="px-3 py-2.5 text-xs text-neutral-500">No commit history</div>
                     )}
                     {data.recentCommits.map((commit) => (
-                      <div key={`${commit.hash}-${commit.subject}`} className="px-3 py-2 text-sm text-neutral-300">
+                      <div key={`${commit.hash}-${commit.subject}`} className="px-3 py-1.5 text-xs text-neutral-300">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-[11px] text-neutral-500">{commit.hash}</span>
                           <span className="truncate text-neutral-100">{commit.subject}</span>
                         </div>
-                        <div className="mt-1 text-[11px] text-neutral-500">
+                        <div className="mt-1 text-[10px] text-neutral-500">
                           {commit.authorName} · {commit.relativeDate}
                         </div>
                       </div>
@@ -1149,7 +1156,7 @@ export default function FocusModeGitPanel({
               <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                 <button
                   onClick={() => setStashOpen((prev) => !prev)}
-                  className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500"
+                  className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500"
                 >
                   <span>Stash list</span>
                   {stashOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1157,11 +1164,11 @@ export default function FocusModeGitPanel({
                 {stashOpen && (
                   <div className="max-h-40 overflow-y-auto py-1">
                     {data.stashes.length === 0 && (
-                      <div className="px-3 py-3 text-sm text-neutral-500">No stashes</div>
+                      <div className="px-3 py-2.5 text-xs text-neutral-500">No stashes</div>
                     )}
                     {data.stashes.map((stash) => (
-                      <div key={`${stash.selector}-${stash.subject}`} className="px-3 py-2 text-sm text-neutral-300">
-                        <div className="font-mono text-[11px] text-neutral-500">{stash.selector}</div>
+                      <div key={`${stash.selector}-${stash.subject}`} className="px-3 py-1.5 text-xs text-neutral-300">
+                        <div className="font-mono text-[10px] text-neutral-500">{stash.selector}</div>
                         <div className="mt-1 text-neutral-100">{stash.subject}</div>
                       </div>
                     ))}
@@ -1172,51 +1179,80 @@ export default function FocusModeGitPanel({
           )}
         </div>
 
-        <div className="border-t border-neutral-800 bg-neutral-950/95 p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-medium text-neutral-200">Commit</p>
-            <label className="flex items-center gap-2 text-[11px] text-neutral-500">
-              <input
-                type="checkbox"
-                checked={stageAllBeforeCommit}
-                onChange={(event) => setStageAllBeforeCommit(event.target.checked)}
-                className="h-3.5 w-3.5 rounded border-neutral-700 bg-neutral-900"
-              />
-              Stage all first
-            </label>
-          </div>
-          <textarea
-            ref={commitTextareaRef}
-            value={commitMessage}
-            onChange={(event) => setCommitMessage(event.target.value)}
-            placeholder="Write commit message..."
-            rows={3}
-            className="w-full resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700"
-          />
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <div className="text-[11px] text-neutral-500">
-              {data?.branch ? `On ${data.branch}` : "No branch selected"}
+        <div className="border-t border-neutral-800 bg-neutral-950/95 p-3">
+          {!commitComposerOpen ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] text-neutral-500">
+                {data?.branch ? `On ${data.branch}` : "No branch selected"}
+              </div>
+              <button
+                onClick={() => setCommitComposerOpen(true)}
+                disabled={!data?.isRepo}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[11px] font-medium text-neutral-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus size={11} />
+                Commit
+              </button>
             </div>
-            <button
-              onClick={() => void handleCommit()}
-              disabled={actionBusy || !commitMessage.trim() || !data?.isRepo}
-              className="inline-flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-xs font-medium text-neutral-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {actionBusy ? <LoaderCircle size={12} className="animate-spin" /> : <Plus size={12} />}
-              Commit
-            </button>
-          </div>
+          ) : (
+            <>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[11px] font-medium text-neutral-200">Commit</p>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[10px] text-neutral-500">
+                    <input
+                      type="checkbox"
+                      checked={stageAllBeforeCommit}
+                      onChange={(event) => setStageAllBeforeCommit(event.target.checked)}
+                      className="h-3 w-3 rounded border-neutral-700 bg-neutral-900"
+                    />
+                    Stage all first
+                  </label>
+                  <button
+                    onClick={() => {
+                      setCommitComposerOpen(false);
+                      setCommitMessage("");
+                    }}
+                    className="rounded px-1.5 py-1 text-[10px] text-neutral-500 hover:bg-neutral-800 hover:text-white"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              <textarea
+                ref={commitTextareaRef}
+                value={commitMessage}
+                onChange={(event) => setCommitMessage(event.target.value)}
+                placeholder="Write commit message..."
+                rows={3}
+                className="w-full resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-xs text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700"
+              />
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="text-[10px] text-neutral-500">
+                  {data?.branch ? `On ${data.branch}` : "No branch selected"}
+                </div>
+                <button
+                  onClick={() => void handleCommit()}
+                  disabled={actionBusy || !commitMessage.trim() || !data?.isRepo}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[11px] font-medium text-neutral-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {actionBusy ? <LoaderCircle size={11} className="animate-spin" /> : <Plus size={11} />}
+                  Commit
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {confirmation && (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-            <div className="w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-5 shadow-2xl">
+            <div className="w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl">
               <h3 className="text-sm font-semibold text-white">{confirmation.title}</h3>
-              <p className="mt-2 text-sm text-neutral-400">{confirmation.message}</p>
+              <p className="mt-2 text-xs text-neutral-400">{confirmation.message}</p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   onClick={() => setConfirmation(null)}
-                  className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                  className="rounded-lg px-3 py-1.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-white"
                 >
                   Cancel
                 </button>
@@ -1231,7 +1267,7 @@ export default function FocusModeGitPanel({
                       message: next.messageText,
                     });
                   }}
-                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-500"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-500"
                 >
                   <Trash2 size={14} />
                   {confirmation.confirmLabel ?? "Continue"}
