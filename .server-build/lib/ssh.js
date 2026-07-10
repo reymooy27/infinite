@@ -25,7 +25,12 @@ function quoteShellArg(value) {
 function buildInitialDirectoryCommand(initialDirectory) {
     if (!initialDirectory)
         return "";
-    return `if cd -- ${quoteShellArg(initialDirectory)}; then printf '\\033[2K\\r\\033[1A\\033[2K\\r'; fi`;
+    return `if cd -- ${quoteShellArg(initialDirectory)}; then __infinite_bootstrap_clear=1; else __infinite_bootstrap_clear=0; fi`;
+}
+function buildBootstrapClearCommand(initialDirectory) {
+    if (!initialDirectory)
+        return "";
+    return "if [ \"${__infinite_bootstrap_clear:-0}\" = \"1\" ]; then printf '\\033[H\\033[2J\\033[3J'; unset __infinite_bootstrap_clear; fi";
 }
 function buildCwdTrackingBootstrap(initialDirectory) {
     const commands = [
@@ -45,6 +50,7 @@ function buildCwdTrackingBootstrap(initialDirectory) {
         "  esac",
         "fi",
         "__infinite_emit_cwd",
+        buildBootstrapClearCommand(initialDirectory),
     ].filter(Boolean);
     return `${commands.join("\n")}\r`;
 }
