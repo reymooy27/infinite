@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { normalizeRouterUsageBaseUrl } from "@/lib/routerUsage";
 import { useProjectStore } from "@/stores/useProjectStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import type { Project } from "@/types";
 
 interface ProjectSwitcherProps {
@@ -14,7 +16,6 @@ interface ProjectSwitcherProps {
 const SIDEBAR_SECTIONS = [
   { id: "ssh", label: "SSH Manager", icon: "ssh" },
   { id: "agents", label: "Agents", icon: "agents" },
-  { id: "usage", label: "Usage", icon: "usage" },
   { id: "settings", label: "Settings", icon: "settings" },
 ] as const;
 
@@ -46,6 +47,36 @@ function sortProjectsByRecentOpen(projects: Project[], activeProjectId: string |
     });
 }
 
+type ProjectSwitcherUsageStats = {
+  totalPromptTokens?: number;
+  recentRequests?: Array<{
+    timestamp: string;
+    model: string;
+    provider?: string;
+    promptTokens: number;
+    completionTokens: number;
+  }>;
+};
+
+function formatCompact(value: number | undefined) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value ?? 0);
+}
+
+function formatDate(value: string | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function ProjectSwitcher({
   isOpen,
   onOpenChange,
@@ -55,9 +86,13 @@ export default function ProjectSwitcher({
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const switchProject = useProjectStore((s) => s.switchProject);
+  const routerUsageBaseUrl = useSettingsStore((s) => s.routerUsageBaseUrl);
   const activeProjectName = projects.find((p) => p.id === activeProjectId)?.name ?? null;
   const [switching, setSwitching] = useState<string | null>(null);
   const [focusedIdx, setFocusedIdx] = useState(0);
+  const [usageStats, setUsageStats] = useState<ProjectSwitcherUsageStats | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -95,7 +130,64 @@ export default function ProjectSwitcher({
     }
   }, [isOpen]);
 
+  const loadUsage = useCallback(
+    async (signal?: AbortSignal, silent = false) => {
+      if (!silent) {
+        setUsageLoading(true);
+      }
+      setUsageError("");
+
+      try {
+        const query = new URLSearchParams({
+          period: "today",
+          baseUrl: normalizeRouterUsageBaseUrl(routerUsageBaseUrl),
+        });
+        const res = await fetch(`/api/router-usage/stats?${query.toString()}`, {
+          cache: "no-store",
+          signal,
+        });
+        const body = await res.json();
+
+        if (!res.ok) {
+          throw new Error(body.error || "Failed to load usage");
+        }
+
+        setUsageStats(body);
+      } catch (err) {
+        if (signal?.aborted) return;
+        setUsageError(
+          err instanceof Error ? err.message : "Failed to load usage",
+        );
+      } finally {
+        if (!signal?.aborted && !silent) {
+          setUsageLoading(false);
+        }
+      }
+    },
+    [routerUsageBaseUrl],
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const controller = new AbortController();
+    const initialLoadId = window.setTimeout(() => {
+      void loadUsage(controller.signal);
+    }, 0);
+
+    const intervalId = window.setInterval(() => {
+      void loadUsage(controller.signal, true);
+    }, 5000);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(initialLoadId);
+      window.clearInterval(intervalId);
+    };
+  }, [isOpen, loadUsage]);
+
   const nonActiveProjects = sortProjectsByRecentOpen(projects, activeProjectId);
+  const recentRequests = (usageStats?.recentRequests ?? []).slice(0, 3);
 
   const handleSwitch = useCallback(async (id: string) => {
     if (id === activeProjectId || switching) return;
@@ -273,11 +365,6 @@ export default function ProjectSwitcher({
                       <path d="M8 21h8M12 17v4" />
                       <circle cx="12" cy="10" r="2" />
                     </svg>
-                  ) : section.icon === "usage" ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                      <path d="M3 3v18h18" />
-                      <path d="M7 15l4-4 3 3 5-7" />
-                    </svg>
                   ) : (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                       <circle cx="12" cy="12" r="3" />
@@ -291,6 +378,61 @@ export default function ProjectSwitcher({
                 </button>
               );
             })}
+          </div>
+
+          <div className="border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+                Usage Today
+              </div>
+              <div className="text-[10px] text-neutral-400">
+                Input {formatCompact(usageStats?.totalPromptTokens)}
+              </div>
+            </div>
+
+            {usageLoading ? (
+              <div className="mt-2 text-[11px] text-neutral-500">
+                Loading usage...
+              </div>
+            ) : usageError ? (
+              <div className="mt-2 text-[11px] text-red-300">
+                {usageError}
+              </div>
+            ) : !usageStats?.totalPromptTokens ? (
+              <div className="mt-2 text-[11px] text-neutral-500">
+                No usage yet.
+              </div>
+            ) : (
+              <div className="mt-2 text-[11px] text-neutral-300">
+                Total input today:{" "}
+                <span className="font-mono text-neutral-100">
+                  {formatCompact(usageStats.totalPromptTokens)}
+                </span>
+              </div>
+            )}
+
+            {!usageLoading && !usageError && recentRequests.length > 0 && (
+              <div className="mt-2 border-t border-neutral-800 pt-2">
+                <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+                  Recent Usage
+                </div>
+                <div className="mt-1.5 space-y-1">
+                  {recentRequests.map((item, index) => (
+                    <div
+                      key={`${item.timestamp}-${item.model}-${index}`}
+                      className="flex items-center justify-between gap-2 text-[10px]"
+                    >
+                      <div className="min-w-0 truncate text-neutral-300">
+                        {item.model}
+                      </div>
+                      <div className="shrink-0 text-neutral-500">
+                        {formatDate(item.timestamp)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="border-t border-neutral-700">
