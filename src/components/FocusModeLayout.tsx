@@ -380,6 +380,7 @@ export default function FocusModeLayout({
           </div>
         )}
         <FocusModeGitPanel
+          key={`${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}
           open={gitPanelOpen && Boolean(activeProjectId)}
           projectId={activeProjectId}
           connectionId={connectionId}

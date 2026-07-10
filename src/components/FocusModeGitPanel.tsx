@@ -387,11 +387,15 @@ export default function FocusModeGitPanel({
       if (!projectId) {
         setData(null);
         setError("");
+        setFeedback(null);
         return;
       }
 
       if (!silent) setLoading(true);
       setError("");
+      if (!silent) {
+        setFeedback(null);
+      }
 
       try {
         const query = new URLSearchParams();
@@ -441,6 +445,14 @@ export default function FocusModeGitPanel({
       window.clearInterval(intervalId);
     };
   }, [loadStatus, open]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timeoutId = window.setTimeout(() => {
+      setFeedback(null);
+    }, 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [feedback]);
 
   useEffect(() => {
     if (!branchMenuOpen) return;
