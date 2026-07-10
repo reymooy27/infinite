@@ -30,6 +30,11 @@ export type GitLastCommit = {
   authorName: string;
 };
 
+export type GitStashEntry = {
+  selector: string;
+  subject: string;
+};
+
 export type GitStatusPayload = {
   projectId: string;
   projectName: string;
@@ -51,6 +56,8 @@ export type GitStatusPayload = {
   stashCount: number;
   branches: string[];
   lastCommit: GitLastCommit | null;
+  recentCommits: GitLastCommit[];
+  stashes: GitStashEntry[];
   clean: boolean;
   changes: GitChange[];
   scannedAt: string;
@@ -142,6 +149,8 @@ function createBasePayload(projectId: string, projectName: string, directory: st
     stashCount: 0,
     branches: [],
     lastCommit: null,
+    recentCommits: [],
+    stashes: [],
     clean: true,
     changes: [],
     scannedAt: new Date().toISOString(),
@@ -485,10 +494,35 @@ function parseLastCommit(output: string) {
   } satisfies GitLastCommit;
 }
 
+function parseRecentCommits(output: string) {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => parseLastCommit(line))
+    .filter((entry): entry is GitLastCommit => Boolean(entry));
+}
+
 function parseStashCount(output: string) {
   const trimmed = output.trim();
   if (!trimmed) return 0;
   return trimmed.split("\n").filter(Boolean).length;
+}
+
+function parseStashes(output: string) {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [selector, subject] = line.split("\t");
+      if (!selector || !subject) return null;
+      return {
+        selector,
+        subject,
+      } satisfies GitStashEntry;
+    })
+    .filter((entry): entry is GitStashEntry => Boolean(entry));
 }
 
 async function execGitOrThrow(ctx: GitExecutionContext, args: string[]) {
@@ -511,17 +545,20 @@ export async function getGitStatus(options: {
     payload.repoRoot = await execGitOrThrow(ctx, ["rev-parse", "--show-toplevel"]);
     payload.isRepo = true;
 
-    const [statusOutput, branchesOutput, lastCommitOutput, stashOutput] = await Promise.all([
+    const [statusOutput, branchesOutput, lastCommitOutput, recentCommitsOutput, stashOutput] = await Promise.all([
       execGitOrThrow(ctx, ["status", "--short", "--branch", "--untracked-files=all"]),
       execGitOrThrow(ctx, ["branch", "--format=%(refname:short)"]).catch(() => ""),
       execGitOrThrow(ctx, ["log", "-1", "--pretty=format:%h%x09%s%x09%cr%x09%an"])
         .catch(() => ""),
-      execGitOrThrow(ctx, ["stash", "list"]).catch(() => ""),
+      execGitOrThrow(ctx, ["log", "-12", "--pretty=format:%h%x09%s%x09%cr%x09%an"]).catch(() => ""),
+      execGitOrThrow(ctx, ["stash", "list", "--format=%gd%x09%gs"]).catch(() => ""),
     ]);
 
     parseChanges(statusOutput, payload);
     payload.branches = parseBranchList(branchesOutput);
     payload.lastCommit = parseLastCommit(lastCommitOutput);
+    payload.recentCommits = parseRecentCommits(recentCommitsOutput);
+    payload.stashes = parseStashes(stashOutput);
     payload.stashCount = parseStashCount(stashOutput);
     payload.scannedAt = new Date().toISOString();
     return payload;

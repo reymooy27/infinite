@@ -1,21 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  Download,
   FileCode2,
   Folder,
   FolderOpen,
   GitBranch,
   GitCommitHorizontal,
   LoaderCircle,
+  Minus,
   Plus,
   RefreshCw,
-  Upload,
-  Download,
+  RotateCcw,
+  Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 
@@ -36,6 +39,11 @@ type GitLastCommit = {
   subject: string;
   relativeDate: string;
   authorName: string;
+};
+
+type GitStashEntry = {
+  selector: string;
+  subject: string;
 };
 
 type GitStatusPayload = {
@@ -59,6 +67,8 @@ type GitStatusPayload = {
   stashCount: number;
   branches: string[];
   lastCommit: GitLastCommit | null;
+  recentCommits: GitLastCommit[];
+  stashes: GitStashEntry[];
   clean: boolean;
   changes: GitChange[];
   scannedAt: string;
@@ -84,16 +94,44 @@ type GitActionResponse = {
 };
 
 type GitTreeFileNode = {
+  kind: "file";
+  id: string;
   name: string;
+  path: string;
+  depth: number;
   change: GitChange;
 };
 
-type GitTreeNode = {
+type GitTreeFolderNode = {
+  kind: "folder";
+  id: string;
   name: string;
   path: string;
-  folders: GitTreeNode[];
+  depth: number;
+  folders: GitTreeFolderNode[];
   files: GitTreeFileNode[];
 };
+
+type FlatRow =
+  | {
+      id: string;
+      kind: "folder";
+      name: string;
+      depth: number;
+      path: string;
+      folderPaths: string[];
+      collapsed: boolean;
+      files: GitChange[];
+    }
+  | {
+      id: string;
+      kind: "file";
+      name: string;
+      depth: number;
+      path: string;
+      folderPaths: string[];
+      change: GitChange;
+    };
 
 type ConfirmationState =
   | null
@@ -104,6 +142,7 @@ type ConfirmationState =
       branch?: string;
       paths?: string[];
       messageText?: string;
+      confirmLabel?: string;
     };
 
 interface FocusModeGitPanelProps {
@@ -137,25 +176,38 @@ function getStatusClassName(change: GitChange) {
 }
 
 function buildGitTree(changes: GitChange[]) {
-  const root = new Map<string, GitTreeNode>();
+  type MutableFolder = {
+    name: string;
+    path: string;
+    folders: MutableFolder[];
+    files: GitTreeFileNode[];
+  };
+
+  const root = new Map<string, MutableFolder>();
 
   for (const change of changes) {
     const parts = change.path.split("/").filter(Boolean);
-
     if (parts.length <= 1) {
       let bucket = root.get("__root__");
       if (!bucket) {
         bucket = { name: "", path: "", folders: [], files: [] };
         root.set("__root__", bucket);
       }
-      bucket.files.push({ name: change.path, change });
+      bucket.files.push({
+        kind: "file",
+        id: `file:${change.path}`,
+        name: change.path,
+        path: change.path,
+        depth: 0,
+        change,
+      });
       continue;
     }
 
     const fileName = parts[parts.length - 1];
     const folders = parts.slice(0, -1);
     let currentMap = root;
-    let currentNode: GitTreeNode | null = null;
+    let currentNode: MutableFolder | null = null;
     let currentPath = "";
 
     for (const segment of folders) {
@@ -167,7 +219,7 @@ function buildGitTree(changes: GitChange[]) {
         if (currentNode) currentNode.folders.push(next);
       }
       currentNode = next;
-      const childMap = new Map<string, GitTreeNode>();
+      const childMap = new Map<string, MutableFolder>();
       for (const folder of next.folders) {
         childMap.set(folder.path, folder);
       }
@@ -175,31 +227,106 @@ function buildGitTree(changes: GitChange[]) {
     }
 
     if (currentNode) {
-      currentNode.files.push({ name: fileName, change });
+      currentNode.files.push({
+        kind: "file",
+        id: `file:${change.path}`,
+        name: fileName,
+        path: change.path,
+        depth: folders.length,
+        change,
+      });
     }
   }
 
-  const sortTree = (nodes: GitTreeNode[]) => {
-    nodes.sort((a, b) => a.name.localeCompare(b.name));
-    for (const node of nodes) {
-      node.folders = sortTree(node.folders);
-      node.files.sort((a, b) => a.name.localeCompare(b.name));
-    }
-    return nodes;
+  const convertFolder = (folder: MutableFolder, depth: number): GitTreeFolderNode => {
+    const sortedFolders = [...folder.folders]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((child) => convertFolder(child, depth + 1));
+    const sortedFiles = [...folder.files].sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      kind: "folder",
+      id: `folder:${folder.path}`,
+      name: folder.name,
+      path: folder.path,
+      depth,
+      folders: sortedFolders,
+      files: sortedFiles.map((file) => ({ ...file, depth: depth + 1 })),
+    };
   };
 
-  const rootNode = root.get("__root__");
+  const rootFolder = root.get("__root__");
   return {
-    folders: sortTree(Array.from(root.values()).filter((node) => node.path !== "")),
-    files: [...(rootNode?.files ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    folders: Array.from(root.values())
+      .filter((folder) => folder.path !== "")
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((folder) => convertFolder(folder, 0)),
+    files: [...(rootFolder?.files ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
 
-function collectFolderPaths(node: GitTreeNode): string[] {
+function collectFolderPaths(folder: GitTreeFolderNode): string[] {
   return [
-    ...node.files.map((file) => file.change.path),
-    ...node.folders.flatMap((child) => collectFolderPaths(child)),
+    ...folder.files.map((file) => file.path),
+    ...folder.folders.flatMap((child) => collectFolderPaths(child)),
   ];
+}
+
+function collectFolderChanges(folder: GitTreeFolderNode): GitChange[] {
+  return [
+    ...folder.files.map((file) => file.change),
+    ...folder.folders.flatMap((child) => collectFolderChanges(child)),
+  ];
+}
+
+function flattenVisibleRows(
+  folders: GitTreeFolderNode[],
+  files: GitTreeFileNode[],
+  collapsedFolders: Record<string, boolean>,
+): FlatRow[] {
+  const rows: FlatRow[] = [];
+
+  const pushFolder = (folder: GitTreeFolderNode) => {
+    const folderPaths = collectFolderPaths(folder);
+    const collapsed = collapsedFolders[folder.path] ?? false;
+    rows.push({
+      id: folder.id,
+      kind: "folder",
+      name: folder.name,
+      depth: folder.depth,
+      path: folder.path,
+      folderPaths,
+      collapsed,
+      files: collectFolderChanges(folder),
+    });
+    if (collapsed) return;
+    for (const child of folder.folders) pushFolder(child);
+    for (const file of folder.files) {
+      rows.push({
+        id: file.id,
+        kind: "file",
+        name: file.name,
+        depth: file.depth,
+        path: file.path,
+        folderPaths: [file.path],
+        change: file.change,
+      });
+    }
+  };
+
+  for (const folder of folders) pushFolder(folder);
+  for (const file of files) {
+    rows.push({
+      id: file.id,
+      kind: "file",
+      name: file.name,
+      depth: 0,
+      path: file.path,
+      folderPaths: [file.path],
+      change: file.change,
+    });
+  }
+
+  return rows;
 }
 
 function formatTimestamp(value: string) {
@@ -218,6 +345,18 @@ function getFeedbackToneClass(kind: "success" | "error") {
     : "border-red-500/20 bg-red-500/10 text-red-200";
 }
 
+function hasPendingStage(changes: GitChange[]) {
+  return changes.some((change) => change.unstaged || change.untracked);
+}
+
+function hasStagedOnly(changes: GitChange[]) {
+  return changes.some((change) => change.staged);
+}
+
+function hasDiscardable(changes: GitChange[]) {
+  return changes.some((change) => change.unstaged || change.untracked);
+}
+
 export default function FocusModeGitPanel({
   open,
   projectId,
@@ -231,11 +370,17 @@ export default function FocusModeGitPanel({
   const [actionBusy, setActionBusy] = useState(false);
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branchSearch, setBranchSearch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
   const [stageAllBeforeCommit, setStageAllBeforeCommit] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationState>(null);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [stashOpen, setStashOpen] = useState(true);
+  const branchSearchRef = useRef<HTMLInputElement>(null);
+  const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const loadStatus = useCallback(
     async (signal?: AbortSignal, silent = false) => {
@@ -297,10 +442,32 @@ export default function FocusModeGitPanel({
     };
   }, [loadStatus, open]);
 
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    window.setTimeout(() => branchSearchRef.current?.focus(), 0);
+  }, [branchMenuOpen]);
+
   const tree = useMemo(
     () => (data ? buildGitTree(data.changes) : { folders: [], files: [] }),
     [data],
   );
+
+  const visibleRows = useMemo(
+    () => flattenVisibleRows(tree.folders, tree.files, collapsedFolders),
+    [collapsedFolders, tree.files, tree.folders],
+  );
+
+  const activeRowId =
+    selectedRowId && visibleRows.some((row) => row.id === selectedRowId)
+      ? selectedRowId
+      : visibleRows[0]?.id ?? null;
+  const selectedRow = visibleRows.find((row) => row.id === activeRowId) ?? null;
+  const filteredBranches = useMemo(() => {
+    if (!data) return [];
+    const query = branchSearch.trim().toLowerCase();
+    if (!query) return data.branches;
+    return data.branches.filter((branch) => branch.toLowerCase().includes(query));
+  }, [branchSearch, data]);
 
   const executeAction = useCallback(
     async (payload: { action: GitAction; paths?: string[]; branch?: string; message?: string }) => {
@@ -335,6 +502,7 @@ export default function FocusModeGitPanel({
         }
         if (payload.action === "checkout_branch" || payload.action === "create_branch") {
           setBranchMenuOpen(false);
+          setBranchSearch("");
           setNewBranchName("");
         }
 
@@ -370,6 +538,7 @@ export default function FocusModeGitPanel({
         setConfirmation({
           title: "Discard changes?",
           message: "This will restore tracked files and remove untracked files for selected paths.",
+          confirmLabel: "Discard",
           ...payload,
         });
         return;
@@ -382,7 +551,8 @@ export default function FocusModeGitPanel({
       ) {
         setConfirmation({
           title: "Switch branch with local changes?",
-          message: "Current working tree is dirty. Branch switch may fail or leave changes carried over.",
+          message: "Current working tree is dirty. Branch switch may fail or carry changes over.",
+          confirmLabel: "Switch",
           ...payload,
         });
         return;
@@ -416,128 +586,315 @@ export default function FocusModeGitPanel({
     requestAction({ action: "create_branch", branch });
   }, [newBranchName, requestAction]);
 
-  const renderRowActions = (change: GitChange) => (
-    <div className="ml-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-      {!change.staged && (
-        <button
-          onClick={() => requestAction({ action: "stage", paths: [change.path] })}
-          className="rounded px-1.5 py-0.5 text-[10px] text-sky-200 hover:bg-sky-500/10"
-          title="Stage file"
-        >
-          Stage
-        </button>
-      )}
-      {change.staged && (
-        <button
-          onClick={() => requestAction({ action: "unstage", paths: [change.path] })}
-          className="rounded px-1.5 py-0.5 text-[10px] text-amber-100 hover:bg-amber-500/10"
-          title="Unstage file"
-        >
-          Unstage
-        </button>
-      )}
-      {(change.unstaged || change.untracked) && (
-        <button
-          onClick={() => requestAction({ action: "discard", paths: [change.path] })}
-          className="rounded px-1.5 py-0.5 text-[10px] text-red-200 hover:bg-red-500/10"
-          title="Discard file changes"
-        >
-          Discard
-        </button>
-      )}
-    </div>
-  );
-
-  const renderFile = (file: GitTreeFileNode, depth: number) => (
-    <div
-      key={`${depth}-${file.change.path}-${file.change.indexStatus}-${file.change.workTreeStatus}`}
-      className="group flex items-start gap-2 rounded-md px-2 py-1 text-[12px] text-neutral-300 hover:bg-neutral-800/70"
-      style={{ paddingLeft: `${depth * 14 + 8}px` }}
-      title={
-        file.change.originalPath
-          ? `${file.change.label}: ${file.change.originalPath} -> ${file.change.path}`
-          : file.change.label
+  const toggleStageForRow = useCallback(
+    (row: FlatRow) => {
+      if (row.kind === "file") {
+        if (row.change.unstaged || row.change.untracked) {
+          requestAction({ action: "stage", paths: [row.path] });
+          return;
+        }
+        if (row.change.staged) {
+          requestAction({ action: "unstage", paths: [row.path] });
+        }
+        return;
       }
-    >
-      <FileCode2 size={14} className="mt-0.5 shrink-0 text-neutral-500" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-3">
-          <span className="truncate text-neutral-200">{file.name}</span>
-          <div className="flex items-center gap-2">
-            <span className={`shrink-0 text-[11px] font-semibold ${getStatusClassName(file.change)}`}>
-              {getStatusText(file.change)}
-            </span>
-            {renderRowActions(file.change)}
-          </div>
-        </div>
-        {file.change.originalPath && (
-          <p className="truncate text-[10px] text-neutral-500">from {file.change.originalPath}</p>
-        )}
-      </div>
-    </div>
+
+      if (hasPendingStage(row.files)) {
+        requestAction({ action: "stage", paths: row.folderPaths });
+        return;
+      }
+      if (hasStagedOnly(row.files)) {
+        requestAction({ action: "unstage", paths: row.folderPaths });
+      }
+    },
+    [requestAction],
   );
 
-  const renderFolder = (node: GitTreeNode, depth: number): React.ReactNode => {
-    const collapsed = collapsedFolders[node.path] ?? false;
-    const folderPaths = collectFolderPaths(node);
+  const unstageRow = useCallback(
+    (row: FlatRow) => {
+      if (row.kind === "file") {
+        requestAction({ action: "unstage", paths: [row.path] });
+        return;
+      }
+      requestAction({ action: "unstage", paths: row.folderPaths });
+    },
+    [requestAction],
+  );
+
+  const discardRow = useCallback(
+    (row: FlatRow) => {
+      requestAction({ action: "discard", paths: row.folderPaths });
+    },
+    [requestAction],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName ?? "";
+      const isTextTarget =
+        target?.isContentEditable ||
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT";
+
+      if (confirmation) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setConfirmation(null);
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          const next = confirmation;
+          setConfirmation(null);
+          void executeAction({
+            action: next.action,
+            branch: next.branch,
+            paths: next.paths,
+            message: next.messageText,
+          });
+        }
+        return;
+      }
+
+      if (isTextTarget) {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          void handleCommit();
+        } else if (event.key === "Escape" && branchMenuOpen) {
+          event.preventDefault();
+          setBranchMenuOpen(false);
+        }
+        return;
+      }
+
+      const activeIndex = visibleRows.findIndex((row) => row.id === activeRowId);
+      const moveSelection = (nextIndex: number) => {
+        const next = visibleRows[nextIndex];
+        if (!next) return;
+        setSelectedRowId(next.id);
+      };
+
+      switch (event.key) {
+        case "j":
+        case "ArrowDown":
+          event.preventDefault();
+          if (visibleRows.length > 0) {
+            moveSelection(Math.min(activeIndex + 1, visibleRows.length - 1));
+          }
+          break;
+        case "k":
+        case "ArrowUp":
+          event.preventDefault();
+          if (visibleRows.length > 0) {
+            moveSelection(Math.max(activeIndex - 1, 0));
+          }
+          break;
+        case "h":
+        case "ArrowLeft":
+          if (selectedRow?.kind === "folder" && !selectedRow.collapsed) {
+            event.preventDefault();
+            toggleFolder(selectedRow.path);
+          }
+          break;
+        case "l":
+        case "ArrowRight":
+        case "Enter":
+          if (selectedRow?.kind === "folder") {
+            event.preventDefault();
+            toggleFolder(selectedRow.path);
+          }
+          break;
+        case " ":
+        case "s":
+          if (selectedRow) {
+            event.preventDefault();
+            toggleStageForRow(selectedRow);
+          }
+          break;
+        case "u":
+          if (selectedRow) {
+            event.preventDefault();
+            unstageRow(selectedRow);
+          }
+          break;
+        case "x":
+          if (selectedRow && hasDiscardable(selectedRow.kind === "file" ? [selectedRow.change] : selectedRow.files)) {
+            event.preventDefault();
+            discardRow(selectedRow);
+          }
+          break;
+        case "b":
+          event.preventDefault();
+          setBranchMenuOpen((prev) => !prev);
+          break;
+        case "c":
+          event.preventDefault();
+          commitTextareaRef.current?.focus();
+          break;
+        case "g":
+          event.preventDefault();
+          void loadStatus();
+          break;
+        case "a":
+          event.preventDefault();
+          requestAction({ action: "stage_all" });
+          break;
+        case "p":
+          event.preventDefault();
+          if (event.shiftKey) {
+            requestAction({ action: "push" });
+          } else {
+            requestAction({ action: "pull" });
+          }
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [
+    activeRowId,
+    branchMenuOpen,
+    confirmation,
+    discardRow,
+    executeAction,
+    handleCommit,
+    loadStatus,
+    open,
+    requestAction,
+    selectedRow,
+    toggleFolder,
+    toggleStageForRow,
+    unstageRow,
+    visibleRows,
+  ]);
+
+  const renderActionIcons = (row: FlatRow, showSelected = false) => {
+    const fileChanges = row.kind === "file" ? [row.change] : row.files;
+    const canStage = hasPendingStage(fileChanges);
+    const canUnstage = hasStagedOnly(fileChanges);
+    const canDiscard = hasDiscardable(fileChanges);
 
     return (
-      <div key={node.path}>
-        <div
-          className="group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[12px] text-neutral-300 hover:bg-neutral-800/70"
-          style={{ paddingLeft: `${depth * 14 + 8}px` }}
-        >
-          <button onClick={() => toggleFolder(node.path)} className="flex min-w-0 flex-1 items-center gap-1">
-            {collapsed ? (
-              <ChevronRight size={13} className="shrink-0 text-neutral-500" />
-            ) : (
-              <ChevronDown size={13} className="shrink-0 text-neutral-500" />
-            )}
-            {collapsed ? (
-              <Folder size={14} className="shrink-0 text-sky-300" />
-            ) : (
-              <FolderOpen size={14} className="shrink-0 text-sky-300" />
-            )}
-            <span className="truncate">{node.name}</span>
+      <div
+        className={`ml-2 flex shrink-0 items-center gap-1 transition-opacity ${
+          showSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        }`}
+      >
+        {canStage && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleStageForRow(row);
+            }}
+            className="rounded p-1 text-sky-200 hover:bg-sky-500/10"
+            title="Stage"
+          >
+            <Plus size={12} />
           </button>
-          <div className="ml-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <button
-              onClick={() => requestAction({ action: "stage", paths: folderPaths })}
-              className="rounded px-1.5 py-0.5 text-[10px] text-sky-200 hover:bg-sky-500/10"
-              title="Stage folder changes"
-            >
-              Stage
-            </button>
-            <button
-              onClick={() => requestAction({ action: "unstage", paths: folderPaths })}
-              className="rounded px-1.5 py-0.5 text-[10px] text-amber-100 hover:bg-amber-500/10"
-              title="Unstage folder changes"
-            >
-              Unstage
-            </button>
-            <button
-              onClick={() => requestAction({ action: "discard", paths: folderPaths })}
-              className="rounded px-1.5 py-0.5 text-[10px] text-red-200 hover:bg-red-500/10"
-              title="Discard folder changes"
-            >
-              Discard
-            </button>
-          </div>
-        </div>
-        {!collapsed && (
-          <div>
-            {node.folders.map((child) => renderFolder(child, depth + 1))}
-            {node.files.map((file) => renderFile(file, depth + 1))}
-          </div>
+        )}
+        {canUnstage && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              unstageRow(row);
+            }}
+            className="rounded p-1 text-amber-100 hover:bg-amber-500/10"
+            title="Unstage"
+          >
+            <Minus size={12} />
+          </button>
+        )}
+        {canDiscard && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              discardRow(row);
+            }}
+            className="rounded p-1 text-red-200 hover:bg-red-500/10"
+            title="Discard"
+          >
+            <RotateCcw size={12} />
+          </button>
         )}
       </div>
+    );
+  };
+
+  const renderFileRow = (row: Extract<FlatRow, { kind: "file" }>) => {
+    const selected = row.id === activeRowId;
+    return (
+      <button
+        key={row.id}
+        onClick={() => setSelectedRowId(row.id)}
+        className={`group flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-[12px] transition-colors ${
+          selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
+        }`}
+        style={{ paddingLeft: `${row.depth * 14 + 8}px` }}
+        title={row.change.originalPath ? `${row.change.originalPath} -> ${row.change.path}` : row.change.label}
+      >
+        <FileCode2 size={14} className="mt-0.5 shrink-0 text-neutral-500" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <span className="truncate">{row.name}</span>
+            <div className="flex items-center gap-2">
+              <span className={`shrink-0 text-[11px] font-semibold ${getStatusClassName(row.change)}`}>
+                {getStatusText(row.change)}
+              </span>
+              {renderActionIcons(row, selected)}
+            </div>
+          </div>
+          {row.change.originalPath && (
+            <p className="truncate text-[10px] text-neutral-500">from {row.change.originalPath}</p>
+          )}
+        </div>
+      </button>
+    );
+  };
+
+  const renderFolderRow = (row: Extract<FlatRow, { kind: "folder" }>) => {
+    const selected = row.id === activeRowId;
+    return (
+      <button
+        key={row.id}
+        onClick={() => setSelectedRowId(row.id)}
+        className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[12px] transition-colors ${
+          selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
+        }`}
+        style={{ paddingLeft: `${row.depth * 14 + 8}px` }}
+      >
+        <span
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleFolder(row.path);
+          }}
+          className="inline-flex shrink-0 items-center"
+        >
+          {row.collapsed ? (
+            <ChevronRight size={13} className="text-neutral-500" />
+          ) : (
+            <ChevronDown size={13} className="text-neutral-500" />
+          )}
+        </span>
+        {row.collapsed ? (
+          <Folder size={14} className="shrink-0 text-sky-300" />
+        ) : (
+          <FolderOpen size={14} className="shrink-0 text-sky-300" />
+        )}
+        <span className="min-w-0 flex-1 truncate">{row.name}</span>
+        {renderActionIcons(row, selected)}
+      </button>
     );
   };
 
   if (!open) return null;
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-20 w-full max-w-[26rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
+    <aside className="absolute inset-y-0 right-0 z-20 w-full max-w-[27rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-2 border-b border-neutral-800 px-4 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -600,8 +957,20 @@ export default function FocusModeGitPanel({
 
                     {branchMenuOpen && data.isRepo && (
                       <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl">
+                        <div className="border-b border-neutral-800 p-2">
+                          <div className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2">
+                            <Search size={13} className="shrink-0 text-neutral-500" />
+                            <input
+                              ref={branchSearchRef}
+                              value={branchSearch}
+                              onChange={(event) => setBranchSearch(event.target.value)}
+                              placeholder="Search branches"
+                              className="min-w-0 flex-1 bg-transparent text-sm text-neutral-100 outline-none placeholder:text-neutral-600"
+                            />
+                          </div>
+                        </div>
                         <div className="max-h-48 overflow-y-auto p-1">
-                          {data.branches.map((branch) => (
+                          {filteredBranches.map((branch) => (
                             <button
                               key={branch}
                               onClick={() => requestAction({ action: "checkout_branch", branch })}
@@ -615,12 +984,15 @@ export default function FocusModeGitPanel({
                               {branch === data.branch && <span className="text-[10px] uppercase text-sky-300">current</span>}
                             </button>
                           ))}
+                          {filteredBranches.length === 0 && (
+                            <div className="px-3 py-3 text-sm text-neutral-500">No matching branch</div>
+                          )}
                         </div>
                         <div className="border-t border-neutral-800 p-2">
                           <div className="flex items-center gap-2">
                             <input
                               value={newBranchName}
-                              onChange={(e) => setNewBranchName(e.target.value)}
+                              onChange={(event) => setNewBranchName(event.target.value)}
                               placeholder="new-branch-name"
                               className="min-w-0 flex-1 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700"
                             />
@@ -691,9 +1063,12 @@ export default function FocusModeGitPanel({
                   </button>
                 </div>
 
-                <div className="mt-3 text-[11px] text-neutral-500">
-                  <p className="truncate">{data.directory ?? "No directory"}</p>
-                  <p className="truncate">Updated {formatTimestamp(data.scannedAt)}</p>
+                <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-[11px] text-neutral-500">
+                  <div className="truncate">{data.directory ?? "No directory"}</div>
+                  <div className="mt-1 truncate">
+                    `j/k` move · `space` stage · `u` unstage · `x` discard · `b` branch · `c` commit · `g` refresh · `p/P` pull/push
+                  </div>
+                  <div className="mt-1 truncate">Updated {formatTimestamp(data.scannedAt)}</div>
                 </div>
               </div>
 
@@ -724,11 +1099,63 @@ export default function FocusModeGitPanel({
                     <span>{data.changes.length}</span>
                   </div>
                   <div className="py-1">
-                    {tree.folders.map((node) => renderFolder(node, 0))}
-                    {tree.files.map((file) => renderFile(file, 0))}
+                    {visibleRows.map((row) =>
+                      row.kind === "folder" ? renderFolderRow(row) : renderFileRow(row),
+                    )}
                   </div>
                 </div>
               )}
+
+              <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
+                <button
+                  onClick={() => setHistoryOpen((prev) => !prev)}
+                  className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500"
+                >
+                  <span>Commit history</span>
+                  {historyOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                </button>
+                {historyOpen && (
+                  <div className="max-h-48 overflow-y-auto py-1">
+                    {data.recentCommits.length === 0 && (
+                      <div className="px-3 py-3 text-sm text-neutral-500">No commit history</div>
+                    )}
+                    {data.recentCommits.map((commit) => (
+                      <div key={`${commit.hash}-${commit.subject}`} className="px-3 py-2 text-sm text-neutral-300">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] text-neutral-500">{commit.hash}</span>
+                          <span className="truncate text-neutral-100">{commit.subject}</span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-neutral-500">
+                          {commit.authorName} · {commit.relativeDate}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
+                <button
+                  onClick={() => setStashOpen((prev) => !prev)}
+                  className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500"
+                >
+                  <span>Stash list</span>
+                  {stashOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                </button>
+                {stashOpen && (
+                  <div className="max-h-40 overflow-y-auto py-1">
+                    {data.stashes.length === 0 && (
+                      <div className="px-3 py-3 text-sm text-neutral-500">No stashes</div>
+                    )}
+                    {data.stashes.map((stash) => (
+                      <div key={`${stash.selector}-${stash.subject}`} className="px-3 py-2 text-sm text-neutral-300">
+                        <div className="font-mono text-[11px] text-neutral-500">{stash.selector}</div>
+                        <div className="mt-1 text-neutral-100">{stash.subject}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -740,15 +1167,16 @@ export default function FocusModeGitPanel({
               <input
                 type="checkbox"
                 checked={stageAllBeforeCommit}
-                onChange={(e) => setStageAllBeforeCommit(e.target.checked)}
+                onChange={(event) => setStageAllBeforeCommit(event.target.checked)}
                 className="h-3.5 w-3.5 rounded border-neutral-700 bg-neutral-900"
               />
               Stage all first
             </label>
           </div>
           <textarea
+            ref={commitTextareaRef}
             value={commitMessage}
-            onChange={(e) => setCommitMessage(e.target.value)}
+            onChange={(event) => setCommitMessage(event.target.value)}
             placeholder="Write commit message..."
             rows={3}
             className="w-full resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700"
@@ -794,7 +1222,7 @@ export default function FocusModeGitPanel({
                   className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-500"
                 >
                   <Trash2 size={14} />
-                  Continue
+                  {confirmation.confirmLabel ?? "Continue"}
                 </button>
               </div>
             </div>
