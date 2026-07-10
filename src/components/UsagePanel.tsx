@@ -304,8 +304,8 @@ export default function UsagePanel() {
   return (
     <div className="flex flex-col gap-2.5 p-2.5">
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-[13px] font-medium text-neutral-100">
                 9router usage
@@ -326,7 +326,7 @@ export default function UsagePanel() {
               <div className="mt-2 text-[11px] text-red-300">{error}</div>
             )}
             {!error && (
-              <div className="mt-3 rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
+              <div className="mt-3 w-full rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[10px] uppercase tracking-wide text-neutral-500">
                     {PERIOD_LABELS[period]} usage
@@ -388,7 +388,7 @@ export default function UsagePanel() {
           <button
             onClick={() => void handleRefresh()}
             disabled={loading || refreshing}
-            className="shrink-0 rounded-md border border-neutral-700 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-neutral-600 hover:text-neutral-100 disabled:opacity-50"
+            className="w-full shrink-0 rounded-md border border-neutral-700 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-neutral-600 hover:text-neutral-100 disabled:opacity-50 sm:w-auto"
           >
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
