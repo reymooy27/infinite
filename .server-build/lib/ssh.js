@@ -22,9 +22,14 @@ function safeSocketClose(ws) {
 function quoteShellArg(value) {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+function buildInitialDirectoryCommand(initialDirectory) {
+    if (!initialDirectory)
+        return "";
+    return `if cd -- ${quoteShellArg(initialDirectory)}; then printf '\\033[2K\\r\\033[1A\\033[2K\\r'; fi`;
+}
 function buildCwdTrackingBootstrap(initialDirectory) {
     const commands = [
-        initialDirectory ? `cd -- ${quoteShellArg(initialDirectory)}` : "",
+        buildInitialDirectoryCommand(initialDirectory),
         "__infinite_emit_cwd() { printf '\\033]7;file://%s%s\\007' \"${HOSTNAME:-localhost}\" \"$PWD\"; }",
         "if [ -n \"${ZSH_VERSION-}\" ]; then",
         "  autoload -Uz add-zsh-hook >/dev/null 2>&1 || true",
