@@ -92,6 +92,16 @@ function fmtDate(value: string | undefined) {
   });
 }
 
+function pickText(...values: Array<string | undefined | null>) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+
+  return "";
+}
+
 function buildRows(
   tableView: TableView,
   stats: UsageStatsResponse | null,
@@ -109,23 +119,35 @@ function buildRows(
 
   return Object.entries(source ?? {})
     .map(([key, entry]) => {
+      const normalizedKey = pickText(key);
+      const normalizedRawModel = pickText(entry.rawModel);
+      const normalizedProvider = pickText(entry.provider);
+      const normalizedEndpoint = pickText(entry.endpoint);
+      const modelLabel = pickText(
+        normalizedRawModel,
+        normalizedKey,
+        normalizedEndpoint,
+        "Unknown model",
+      );
       const label =
         tableView === "provider"
-          ? key
+          ? pickText(normalizedKey, "Unknown provider")
           : tableView === "apiKey"
-            ? entry.keyName || entry.apiKeyMasked || "Unknown key"
+            ? pickText(entry.keyName, entry.apiKeyMasked, "Unknown key")
             : tableView === "endpoint"
-              ? entry.endpoint || key
-              : entry.rawModel || key;
+              ? pickText(normalizedEndpoint, normalizedKey, "Unknown endpoint")
+              : modelLabel;
 
       const sublabel =
         tableView === "provider"
           ? `${fmtCompact(entry.promptTokens)} in / ${fmtCompact(entry.completionTokens)} out`
           : tableView === "apiKey"
-            ? entry.provider || "Unknown provider"
+            ? pickText(normalizedProvider, "Unknown provider")
             : tableView === "endpoint"
-              ? [entry.provider, entry.rawModel].filter(Boolean).join(" · ")
-              : entry.provider || "Unknown provider";
+              ? [normalizedProvider, normalizedRawModel].filter(Boolean).join(" · ")
+              : [normalizedProvider, normalizedKey !== modelLabel ? normalizedKey : ""]
+                  .filter(Boolean)
+                  .join(" · ") || "Unknown provider";
 
       return {
         label,
@@ -467,11 +489,11 @@ export default function UsagePanel() {
                   key={`${resolvedTableView}-${row.label}-${row.sublabel}`}
                   className="grid grid-cols-[minmax(0,1.8fr)_80px_110px_90px_140px] gap-3 px-3 py-2.5 text-[12px]"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0" title={row.label}>
                     <div className="truncate font-medium text-neutral-100">
                       {row.label}
                     </div>
-                    <div className="truncate text-[11px] text-neutral-500">
+                    <div className="truncate text-[11px] text-neutral-500" title={row.sublabel}>
                       {row.sublabel || "—"}
                     </div>
                   </div>
