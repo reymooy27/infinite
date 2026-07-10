@@ -184,20 +184,26 @@ function proxyThroughAgent(browserWs, agentWs, connection, windowId, initialDire
         browserWs.send(JSON.stringify({ type: "connected", resumed: true }));
     }
     // Browser → Agent
-    browserWs.on("message", (data) => {
+    browserWs.on("message", (data, isBinary) => {
         if (agentWs.readyState === WebSocket.OPEN) {
-            // Wrap with sessionId prefix for agent multiplexing
-            if (typeof data === "string") {
-                agentWs.send(JSON.stringify({ type: "data", sessionId, data }));
-            }
-            else {
+            if (isBinary) {
                 agentWs.send(JSON.stringify({
                     type: "data",
                     sessionId,
                     data: Buffer.from(data).toString("base64"),
                     encoding: "base64",
                 }));
+                return;
             }
+            try {
+                const parsed = JSON.parse(data.toString());
+                if (parsed && typeof parsed.type === "string") {
+                    agentWs.send(JSON.stringify({ ...parsed, sessionId }));
+                    return;
+                }
+            }
+            catch { }
+            agentWs.send(JSON.stringify({ type: "data", sessionId, data: data.toString() }));
         }
     });
     let onAgentMessage;
