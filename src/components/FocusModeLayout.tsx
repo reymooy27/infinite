@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, GitBranch } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
+import type {
+  TmuxManagerState,
+  TmuxPaneController,
+} from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
@@ -19,6 +23,18 @@ interface FocusModeLayoutProps {
   switcherOpen: boolean;
   setSwitcherOpen: (open: boolean) => void;
   onOpenSection: (section: string) => void;
+}
+
+function createInitialTmuxState(): TmuxManagerState {
+  return {
+    connected: false,
+    status: "idle",
+    sessionName: null,
+    activeWindowId: null,
+    windows: [],
+    message: null,
+    selectingWindowId: null,
+  };
 }
 
 export default function FocusModeLayout({
@@ -44,6 +60,9 @@ export default function FocusModeLayout({
   >("terminal");
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
+  const [tmuxManagerOpen, setTmuxManagerOpen] = useState(false);
+  const [tmuxControllers, setTmuxControllers] = useState<Record<string, TmuxPaneController>>({});
+  const [tmuxStateByTab, setTmuxStateByTab] = useState<Record<string, TmuxManagerState>>({});
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyboardRafRef = useRef<number | null>(null);
@@ -51,6 +70,7 @@ export default function FocusModeLayout({
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
+  const tmuxPopoverRef = useRef<HTMLDivElement>(null);
 
   const sshWindows = getVisibleSSHWindows(windows);
   const activeWindow =
@@ -74,6 +94,9 @@ export default function FocusModeLayout({
   const nextTerminal = getNextSSHTerminalTarget(windows, activeWindowId, activeTabId);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
   const connectionId = (activeTab?.connectionId ?? activeWindow?.metadata?.connectionId) as number | undefined;
+  const activeTmuxState =
+    tmuxStateByTab[activeTabId] ?? createInitialTmuxState();
+  const activeTmuxController = tmuxControllers[activeTabId] ?? null;
   const activeSessionId = activeWindowId && activeTabId ? `${activeWindowId}-${activeTabId}` : "";
   const activeTerminalDirectory = useTerminalSessionStore(
     (s) => (activeSessionId ? s.terminalCwds[activeSessionId] : undefined),
@@ -102,6 +125,7 @@ export default function FocusModeLayout({
   const handleAddTab = () => {
     if (!activeWindow) return;
     const newTabId = getBrowserId("tab-");
+    setTmuxManagerOpen(false);
     addTerminalTab(activeWindow.id, {
       id: newTabId,
       label: `Tab ${tabs.length + 1}`,
@@ -112,14 +136,68 @@ export default function FocusModeLayout({
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
     if (!activeWindow || tabs.length <= 1) return;
+    setTmuxManagerOpen(false);
     closeTerminalTab(activeWindow.id, tabId);
   };
 
   const handleNextWindow = () => {
     if (!nextTerminal) return;
+    setTmuxManagerOpen(false);
     setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
     setFocusModeWindowId(nextTerminal.windowId);
     focusWindow(nextTerminal.windowId);
+  };
+
+  const handleTmuxStateChange = (targetTabId: string, state: TmuxManagerState) => {
+    setTmuxStateByTab((prev) => ({
+      ...prev,
+      [targetTabId]: state,
+    }));
+  };
+
+  const handleTmuxControllerChange = (
+    targetTabId: string,
+    controller: TmuxPaneController | null,
+  ) => {
+    if (controller) {
+      setTmuxControllers((prev) => ({
+        ...prev,
+        [targetTabId]: controller,
+      }));
+      return;
+    }
+
+    setTmuxControllers((prev) => {
+      if (!(targetTabId in prev)) return prev;
+      const next = { ...prev };
+      delete next[targetTabId];
+      return next;
+    });
+    setTmuxStateByTab((prev) => {
+      if (!(targetTabId in prev)) return prev;
+      const next = { ...prev };
+      delete next[targetTabId];
+      return next;
+    });
+  };
+
+  const handleToggleTmuxManager = () => {
+    if (tmuxManagerOpen) {
+      setTmuxManagerOpen(false);
+      return;
+    }
+
+    setTabPanelOpen(false);
+    setTmuxManagerOpen(true);
+    activeTmuxController?.refreshWindows();
+  };
+
+  const handleSelectTmuxWindow = async (targetWindowId: string) => {
+    if (!activeTmuxController) return;
+    const ok = await activeTmuxController.selectWindow(targetWindowId);
+    if (ok) {
+      setTmuxManagerOpen(false);
+    }
   };
 
   useEffect(() => {
@@ -154,6 +232,21 @@ export default function FocusModeLayout({
     document.addEventListener("mousedown", handler, true);
     return () => document.removeEventListener("mousedown", handler, true);
   }, [tabPanelOpen]);
+
+  useEffect(() => {
+    if (!tmuxManagerOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        tmuxPopoverRef.current &&
+        !tmuxPopoverRef.current.contains(target)
+      ) {
+        setTmuxManagerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler, true);
+    return () => document.removeEventListener("mousedown", handler, true);
+  }, [tmuxManagerOpen]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -271,6 +364,100 @@ export default function FocusModeLayout({
             </span>
             <ChevronDown size={11} className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`} />
           </button>
+          <div className="relative" ref={tmuxPopoverRef}>
+            <button
+              onClick={handleToggleTmuxManager}
+              title="Tmux windows"
+              className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase transition-colors cursor-pointer border ${
+                tmuxManagerOpen
+                  ? "bg-neutral-800 text-white border-neutral-700"
+                  : activeTmuxState.connected
+                    ? "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
+                    : "text-neutral-600 border-neutral-900 hover:text-neutral-400"
+              }`}
+            >
+              tmux
+            </button>
+            {tmuxManagerOpen && (
+              <div className="absolute right-0 top-full z-[10000] mt-2 w-80 rounded-xl border border-neutral-700 bg-neutral-950/95 p-2 shadow-2xl backdrop-blur">
+                <div className="flex items-center justify-between gap-2 px-2 py-1">
+                  <div>
+                    <div className="text-[11px] font-medium text-neutral-100">
+                      {activeTmuxState.sessionName
+                        ? `tmux:${activeTmuxState.sessionName}`
+                        : "tmux windows"}
+                    </div>
+                    <div className="text-[10px] text-neutral-500">
+                      {activeTmuxState.connected ? "Current session" : "Terminal disconnected"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => activeTmuxController?.refreshWindows()}
+                    className="rounded-md border border-neutral-700 px-2 py-1 text-[10px] font-mono text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-white"
+                  >
+                    refresh
+                  </button>
+                </div>
+
+                {activeTmuxState.status === "loading" && (
+                  <div className="px-2 py-4 text-[11px] text-neutral-500">
+                    Loading tmux windows...
+                  </div>
+                )}
+
+                {activeTmuxState.status !== "loading" &&
+                  activeTmuxState.windows.length > 0 && (
+                    <div className="mt-1 flex max-h-72 flex-col gap-1 overflow-y-auto px-1 pb-1">
+                      {activeTmuxState.windows.map((item) => {
+                        const isBusy =
+                          activeTmuxState.selectingWindowId === item.id;
+                        const isActiveWindow =
+                          activeTmuxState.activeWindowId === item.id || item.isActive;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => void handleSelectTmuxWindow(item.id)}
+                            disabled={isBusy}
+                            className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                              isActiveWindow
+                                ? "border-blue-500/60 bg-blue-500/10 text-white"
+                                : "border-neutral-800 bg-neutral-900 text-neutral-200 hover:border-neutral-700 hover:bg-neutral-800"
+                            } ${isBusy ? "opacity-70" : ""}`}
+                          >
+                            <span className="min-w-6 text-[10px] font-mono text-neutral-500">
+                              {item.index}
+                            </span>
+                            <span className="flex-1 truncate text-[11px]">
+                              {item.name || `window-${item.index}`}
+                            </span>
+                            <span className="text-[10px] font-mono text-neutral-500">
+                              {item.paneCount ?? 0}p
+                            </span>
+                            {isActiveWindow && (
+                              <span className="rounded-full border border-blue-400/40 px-1.5 py-0.5 text-[9px] font-mono text-blue-300">
+                                active
+                              </span>
+                            )}
+                            {isBusy && (
+                              <span className="text-[9px] font-mono text-neutral-400">
+                                switching
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                {activeTmuxState.status !== "loading" &&
+                  activeTmuxState.windows.length === 0 && (
+                    <div className="px-2 py-4 text-[11px] text-neutral-500">
+                      {activeTmuxState.message ?? "Not in tmux session"}
+                    </div>
+                  )}
+              </div>
+            )}
+          </div>
           <TerminalNextButton
             onClick={handleNextWindow}
             disabled={!nextTerminal}
@@ -302,10 +489,11 @@ export default function FocusModeLayout({
             return (
               <div
                 key={win.id}
-                onClick={() => {
-                  setFocusModeWindowId(win.id);
-                  setTabPanelOpen(false);
-                }}
+              onClick={() => {
+                setTmuxManagerOpen(false);
+                setFocusModeWindowId(win.id);
+                setTabPanelOpen(false);
+              }}
                 className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors ${
                   isSelected
                     ? "bg-neutral-800 text-white"
@@ -326,6 +514,7 @@ export default function FocusModeLayout({
             <div
               key={tab.id}
               onClick={() => {
+                setTmuxManagerOpen(false);
                 if (activeWindow) setActiveTerminalTab(activeWindow.id, tab.id);
                 setTabPanelOpen(false);
               }}
@@ -375,6 +564,8 @@ export default function FocusModeLayout({
               keyboardHeight={keyboardHeight}
               refreshNonce={paneRefreshKey}
               enableTouchScroll
+              onTmuxStateChange={handleTmuxStateChange}
+              onTmuxControllerChange={handleTmuxControllerChange}
             />
           ))
         ) : (

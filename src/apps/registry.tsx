@@ -25,7 +25,7 @@ import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 
 const BROWSER_LAST_URL_STORAGE_KEY = "browser-canvas-last-url";
 
-interface TmuxWindowItem {
+export interface TmuxWindowItem {
   id: string;
   index: number;
   name: string;
@@ -33,7 +33,7 @@ interface TmuxWindowItem {
   paneCount?: number;
 }
 
-interface TmuxManagerState {
+export interface TmuxManagerState {
   connected: boolean;
   status: "idle" | "loading" | "ready" | "empty" | "error";
   sessionName: string | null;
@@ -43,7 +43,7 @@ interface TmuxManagerState {
   selectingWindowId: string | null;
 }
 
-interface TmuxPaneController {
+export interface TmuxPaneController {
   refreshWindows: () => void;
   selectWindow: (targetWindowId: string) => Promise<boolean>;
 }

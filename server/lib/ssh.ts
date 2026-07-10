@@ -233,8 +233,12 @@ function buildTmuxCommand(
   tmuxPaneId: string | undefined,
   command: string,
 ) {
-  if (!tmuxEnv || !tmuxPaneId) return null;
-  return `env TMUX=${quoteShellArg(tmuxEnv)} TMUX_PANE=${quoteShellArg(tmuxPaneId)} ${command}`;
+  if (!tmuxPaneId) return null;
+  const socketPath = tmuxEnv?.split(",")[0]?.trim();
+  const prefix = socketPath
+    ? `tmux -S ${quoteShellArg(socketPath)}`
+    : "tmux";
+  return `${prefix} ${command}`;
 }
 
 async function listTmuxWindows(
@@ -260,7 +264,7 @@ async function listTmuxWindows(
   const sessionResult = await execSSHCommand(
     conn,
     tmuxCommand(
-      `tmux display-message -p -t ${quoteShellArg(tmuxPaneId!)} ${quoteShellArg(sessionFormat)}`,
+      `display-message -p -t ${quoteShellArg(tmuxPaneId!)} ${quoteShellArg(sessionFormat)}`,
     )!,
   );
 
@@ -279,7 +283,7 @@ async function listTmuxWindows(
   const windowsResult = await execSSHCommand(
     conn,
     tmuxCommand(
-      `tmux list-windows -t ${quoteShellArg(sessionName)} -F ${quoteShellArg(listFormat)}`,
+      `list-windows -t ${quoteShellArg(sessionName)} -F ${quoteShellArg(listFormat)}`,
     )!,
   );
 
@@ -375,7 +379,7 @@ async function handleTmuxMessage(
     const command = buildTmuxCommand(
       msg.tmuxEnv,
       msg.tmuxPaneId,
-      `tmux select-window -t ${quoteShellArg(target)}`,
+      `select-window -t ${quoteShellArg(target)}`,
     );
     if (!command) {
       safeSocketSend(
