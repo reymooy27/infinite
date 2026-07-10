@@ -8,12 +8,6 @@ import {
 } from "@/lib/routerUsage";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 
-type UsageBucket = {
-  label: string;
-  tokens: number;
-  cost: number;
-};
-
 type UsageGroupEntry = {
   requests?: number;
   promptTokens?: number;
@@ -52,7 +46,6 @@ type UsageStatsResponse = {
 };
 
 type TableView = "model" | "provider" | "apiKey" | "endpoint";
-type ChartView = "tokens" | "cost";
 
 type TableRow = {
   label: string;
@@ -173,62 +166,6 @@ function MetricCard({
   );
 }
 
-function UsageBars({
-  data,
-  view,
-}: {
-  data: UsageBucket[];
-  view: ChartView;
-}) {
-  const maxValue = Math.max(
-    ...data.map((item) => (view === "tokens" ? item.tokens : item.cost)),
-    0,
-  );
-
-  if (maxValue <= 0) {
-    return (
-      <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-neutral-700 text-[12px] text-neutral-500">
-        No data for this period.
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
-      <div className="flex h-48 items-end gap-1.5">
-        {data.map((item) => {
-          const value = view === "tokens" ? item.tokens : item.cost;
-          const height = Math.max(8, (value / maxValue) * 100);
-          return (
-            <div
-              key={`${view}-${item.label}`}
-              className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2"
-              title={`${item.label}: ${
-                view === "tokens" ? fmtNumber(item.tokens) : fmtCost(item.cost)
-              }`}
-            >
-              <div className="text-[10px] text-neutral-500">
-                {view === "tokens" ? fmtCompact(item.tokens) : fmtCost(item.cost)}
-              </div>
-              <div className="flex h-32 w-full items-end rounded-md bg-neutral-950/70 px-1">
-                <div
-                  className={`w-full rounded-sm ${
-                    view === "tokens" ? "bg-blue-500/85" : "bg-amber-500/85"
-                  }`}
-                  style={{ height: `${height}%` }}
-                />
-              </div>
-              <div className="w-full truncate text-center text-[10px] text-neutral-500">
-                {item.label}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export default function UsagePanel() {
   const storedBaseUrl = useSettingsStore((s) => s.routerUsageBaseUrl);
   const baseUrl = useMemo(
@@ -238,9 +175,7 @@ export default function UsagePanel() {
 
   const [period, setPeriod] = useState<RouterUsagePeriod>("today");
   const [tableView, setTableView] = useState<TableView>("model");
-  const [chartView, setChartView] = useState<ChartView>("tokens");
   const [stats, setStats] = useState<UsageStatsResponse | null>(null);
-  const [chart, setChart] = useState<UsageBucket[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -257,30 +192,17 @@ export default function UsagePanel() {
           period,
           baseUrl,
         });
-
-        const [statsRes, chartRes] = await Promise.all([
-          fetch(`/api/router-usage/stats?${query.toString()}`, {
-            cache: "no-store",
-          }),
-          fetch(`/api/router-usage/chart?${query.toString()}`, {
-            cache: "no-store",
-          }),
-        ]);
-
+        const statsRes = await fetch(`/api/router-usage/stats?${query.toString()}`, {
+          cache: "no-store",
+        });
         const statsBody = await statsRes.json();
-        const chartBody = await chartRes.json();
 
         if (!statsRes.ok) {
           throw new Error(statsBody.error || "Failed to load usage stats");
         }
 
-        if (!chartRes.ok) {
-          throw new Error(chartBody.error || "Failed to load usage chart");
-        }
-
         if (cancelled) return;
         setStats(statsBody);
-        setChart(Array.isArray(chartBody) ? chartBody : []);
       } catch (err) {
         if (cancelled) return;
         setError(
@@ -308,29 +230,16 @@ export default function UsagePanel() {
         period,
         baseUrl,
       });
-
-      const [statsRes, chartRes] = await Promise.all([
-        fetch(`/api/router-usage/stats?${query.toString()}`, {
-          cache: "no-store",
-        }),
-        fetch(`/api/router-usage/chart?${query.toString()}`, {
-          cache: "no-store",
-        }),
-      ]);
-
+      const statsRes = await fetch(`/api/router-usage/stats?${query.toString()}`, {
+        cache: "no-store",
+      });
       const statsBody = await statsRes.json();
-      const chartBody = await chartRes.json();
 
       if (!statsRes.ok) {
         throw new Error(statsBody.error || "Failed to load usage stats");
       }
 
-      if (!chartRes.ok) {
-        throw new Error(chartBody.error || "Failed to load usage chart");
-      }
-
       setStats(statsBody);
-      setChart(Array.isArray(chartBody) ? chartBody : []);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to reach 9router",
@@ -362,6 +271,10 @@ export default function UsagePanel() {
     () => buildRows(resolvedTableView, stats),
     [resolvedTableView, stats],
   );
+  const recentRequests = useMemo(
+    () => (stats?.recentRequests ?? []).slice(0, 6),
+    [stats],
+  );
   const statusTone = error
     ? "text-red-300 bg-red-950/60 border-red-900/70"
     : "text-emerald-300 bg-emerald-950/60 border-emerald-900/70";
@@ -389,6 +302,65 @@ export default function UsagePanel() {
             </div>
             {error && (
               <div className="mt-2 text-[11px] text-red-300">{error}</div>
+            )}
+            {!error && (
+              <div className="mt-3 rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+                    {PERIOD_LABELS[period]} usage
+                  </div>
+                  <div className="text-[10px] text-neutral-400">
+                    Input {fmtCompact(stats?.totalPromptTokens)}
+                  </div>
+                </div>
+                {loading ? (
+                  <div className="mt-2 text-[11px] text-neutral-500">
+                    Loading usage...
+                  </div>
+                ) : !stats?.totalPromptTokens ? (
+                  <div className="mt-2 text-[11px] text-neutral-500">
+                    No usage yet.
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] text-neutral-300">
+                    Total input:{" "}
+                    <span className="font-mono text-neutral-100">
+                      {fmtCompact(stats.totalPromptTokens)}
+                    </span>
+                  </div>
+                )}
+
+                {!loading && recentRequests.length > 0 && (
+                  <div className="mt-3 border-t border-neutral-800 pt-3">
+                    <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+                      Recent usage
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      {recentRequests.map((item, index) => (
+                        <div
+                          key={`${item.timestamp}-${item.model}-${index}`}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-[12px] font-medium text-neutral-100">
+                              {item.model}
+                            </div>
+                            <div className="truncate text-[11px] text-neutral-500">
+                              {item.provider || "Unknown provider"}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right text-[11px] text-neutral-400">
+                            <div>
+                              {fmtCompact(item.promptTokens)} / {fmtCompact(item.completionTokens)}
+                            </div>
+                            <div>{fmtDate(item.timestamp)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           <button
@@ -443,48 +415,6 @@ export default function UsagePanel() {
           value={fmtCost(stats?.totalCost)}
           hint="From 9router"
         />
-      </div>
-
-      <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-[13px] font-medium text-neutral-100">Chart</h3>
-            <p className="mt-1 text-[11px] text-neutral-400">
-              {PERIOD_LABELS[period]} usage from 9router.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-1 rounded-lg border border-neutral-700 bg-neutral-900 p-1">
-            <button
-              onClick={() => setChartView("tokens")}
-              className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
-                chartView === "tokens"
-                  ? "bg-blue-600 text-white"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-            >
-              Tokens
-            </button>
-            <button
-              onClick={() => setChartView("cost")}
-              className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
-                chartView === "cost"
-                  ? "bg-amber-500 text-neutral-950"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-            >
-              Cost
-            </button>
-          </div>
-        </div>
-        <div className="mt-3">
-          {loading ? (
-            <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-neutral-700 text-[12px] text-neutral-500">
-              Loading chart...
-            </div>
-          ) : (
-            <UsageBars data={chart} view={chartView} />
-          )}
-        </div>
       </div>
 
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
@@ -563,37 +493,6 @@ export default function UsagePanel() {
           )}
         </div>
       </div>
-
-      {!!stats?.recentRequests?.length && (
-        <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
-          <h3 className="text-[13px] font-medium text-neutral-100">
-            Recent requests
-          </h3>
-          <div className="mt-3 space-y-2">
-            {stats.recentRequests.slice(0, 6).map((item, index) => (
-              <div
-                key={`${item.timestamp}-${item.model}-${index}`}
-                className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-900/70 px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] font-medium text-neutral-100">
-                    {item.model}
-                  </div>
-                  <div className="truncate text-[11px] text-neutral-500">
-                    {item.provider || "Unknown provider"}
-                  </div>
-                </div>
-                <div className="shrink-0 text-right text-[11px] text-neutral-400">
-                  <div>
-                    {fmtCompact(item.promptTokens)} / {fmtCompact(item.completionTokens)}
-                  </div>
-                  <div>{fmtDate(item.timestamp)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
