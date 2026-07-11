@@ -25,41 +25,6 @@ import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 
 const BROWSER_LAST_URL_STORAGE_KEY = "browser-canvas-last-url";
 
-interface TmuxWindowItem {
-  id: string;
-  index: number;
-  name: string;
-  isActive: boolean;
-  paneCount?: number;
-}
-
-interface TmuxManagerState {
-  connected: boolean;
-  status: "idle" | "loading" | "ready" | "empty" | "error";
-  sessionName: string | null;
-  activeWindowId: string | null;
-  windows: TmuxWindowItem[];
-  message: string | null;
-  selectingWindowId: string | null;
-}
-
-interface TmuxPaneController {
-  refreshWindows: () => void;
-  selectWindow: (targetWindowId: string) => Promise<boolean>;
-}
-
-function createInitialTmuxState(): TmuxManagerState {
-  return {
-    connected: false,
-    status: "idle",
-    sessionName: null,
-    activeWindowId: null,
-    windows: [],
-    message: null,
-    selectingWindowId: null,
-  };
-}
-
 /* eslint-disable @next/next/no-img-element -- Browser screencast */
 const BrowserCanvas = ({
   windowId,
@@ -952,8 +917,6 @@ export const SSHPane = ({
   keyboardHeight,
   refreshNonce,
   enableTouchScroll = false,
-  onTmuxStateChange,
-  onTmuxControllerChange,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -963,11 +926,6 @@ export const SSHPane = ({
   keyboardHeight?: number;
   refreshNonce?: number;
   enableTouchScroll?: boolean;
-  onTmuxStateChange?: (tabId: string, state: TmuxManagerState) => void;
-  onTmuxControllerChange?: (
-    tabId: string,
-    controller: TmuxPaneController | null,
-  ) => void;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -982,9 +940,6 @@ export const SSHPane = ({
     return window.matchMedia("(max-width: 767px)").matches;
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [tmuxState, setTmuxState] = useState<TmuxManagerState>(() =>
-    createInitialTmuxState(),
-  );
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -1019,107 +974,6 @@ export const SSHPane = ({
   const pendingOsc52Ref = useRef("");
   const osc52CarryRef = useRef("");
   const osc7CarryRef = useRef("");
-  const osc1338CarryRef = useRef("");
-  const tmuxContextRef = useRef<{ tmuxEnv: string; tmuxPaneId: string }>({
-    tmuxEnv: "",
-    tmuxPaneId: "",
-  });
-  const pendingTmuxSelectRef = useRef<{
-    targetWindowId: string;
-    resolve: (value: boolean) => void;
-  } | null>(null);
-
-  useEffect(() => {
-    onTmuxStateChange?.(tabId, tmuxState);
-  }, [onTmuxStateChange, tabId, tmuxState]);
-
-  const updateTmuxState = useCallback(
-    (updater: (prev: TmuxManagerState) => TmuxManagerState) => {
-      setTmuxState(updater);
-    },
-    [],
-  );
-
-  const requestTmuxWindows = useCallback(() => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) {
-      updateTmuxState((prev) => ({
-        ...prev,
-        connected: false,
-        status: "error",
-        message: "Terminal disconnected",
-        selectingWindowId: null,
-      }));
-      return;
-    }
-
-    updateTmuxState((prev) => ({
-      ...prev,
-      connected: true,
-      status: "loading",
-      message: null,
-      selectingWindowId: null,
-    }));
-    wsRef.current.send(
-      JSON.stringify({
-        type: "tmux_list_windows",
-        tabId,
-        ...tmuxContextRef.current,
-      }),
-    );
-  }, [tabId, updateTmuxState]);
-
-  const selectTmuxWindow = useCallback(
-    (targetWindowId: string) =>
-      new Promise<boolean>((resolve) => {
-        if (wsRef.current?.readyState !== WebSocket.OPEN) {
-          updateTmuxState((prev) => ({
-            ...prev,
-            connected: false,
-            status: "error",
-            message: "Terminal disconnected",
-            selectingWindowId: null,
-          }));
-          resolve(false);
-          return;
-        }
-
-        if (pendingTmuxSelectRef.current) {
-          pendingTmuxSelectRef.current.resolve(false);
-        }
-
-        pendingTmuxSelectRef.current = { targetWindowId, resolve };
-        updateTmuxState((prev) => ({
-          ...prev,
-          connected: true,
-          message: null,
-          selectingWindowId: targetWindowId,
-        }));
-        wsRef.current.send(
-          JSON.stringify({
-            type: "tmux_select_window",
-            tabId,
-            targetWindowId,
-            ...tmuxContextRef.current,
-          }),
-        );
-      }),
-    [tabId, updateTmuxState],
-  );
-
-  useEffect(() => {
-    onTmuxControllerChange?.(tabId, {
-      refreshWindows: requestTmuxWindows,
-      selectWindow: selectTmuxWindow,
-    });
-
-    return () => {
-      if (pendingTmuxSelectRef.current) {
-        pendingTmuxSelectRef.current.resolve(false);
-        pendingTmuxSelectRef.current = null;
-      }
-      onTmuxControllerChange?.(tabId, null);
-    };
-  }, [onTmuxControllerChange, requestTmuxWindows, selectTmuxWindow, tabId]);
 
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
@@ -1832,44 +1686,6 @@ export const SSHPane = ({
     [sessionId, setTerminalCwd],
   );
 
-  const captureTmuxContext = useCallback((chunk: string) => {
-    if (!chunk) return;
-
-    const source = `${osc1338CarryRef.current}${chunk}`;
-    const osc1338Pattern =
-      /\u001b]1338;tmux=([^;\u0007\u001b]*);([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g;
-    let match: RegExpExecArray | null = null;
-
-    while ((match = osc1338Pattern.exec(source))) {
-      const tmuxEnv = match[1] || "";
-      const tmuxPaneId = match[2] || "";
-      tmuxContextRef.current = { tmuxEnv, tmuxPaneId };
-      if (!tmuxEnv || !tmuxPaneId) {
-        updateTmuxState((prev) => ({
-          ...prev,
-          sessionName: null,
-          activeWindowId: null,
-          windows: [],
-          selectingWindowId: null,
-        }));
-      }
-    }
-
-    const lastStart = source.lastIndexOf("\u001b]1338;tmux=");
-    if (lastStart === -1) {
-      osc1338CarryRef.current = "";
-      return;
-    }
-
-    const tail = source.slice(lastStart);
-    if (tail.includes("\u0007") || tail.includes("\u001b\\")) {
-      osc1338CarryRef.current = "";
-      return;
-    }
-
-    osc1338CarryRef.current = tail.slice(-4096);
-  }, [updateTmuxState]);
-
   useEffect(() => {
     if (!wsUrl) return;
 
@@ -1897,7 +1713,6 @@ export const SSHPane = ({
         });
       }
       setStatus("connected");
-      updateTmuxState((prev) => ({ ...prev, connected: true }));
     };
 
     // Send ping every 20s to keep connection alive through proxies/firewalls
@@ -1911,29 +1726,11 @@ export const SSHPane = ({
       clearInterval(pingInterval);
       snapshotTerminalBuffer();
       setStatus("disconnected");
-      if (pendingTmuxSelectRef.current) {
-        pendingTmuxSelectRef.current.resolve(false);
-        pendingTmuxSelectRef.current = null;
-      }
-      updateTmuxState((prev) => ({
-        ...prev,
-        connected: false,
-        selectingWindowId: null,
-      }));
     };
     ws.onerror = () => {
       clearInterval(pingInterval);
       snapshotTerminalBuffer();
       setStatus("error");
-      if (pendingTmuxSelectRef.current) {
-        pendingTmuxSelectRef.current.resolve(false);
-        pendingTmuxSelectRef.current = null;
-      }
-      updateTmuxState((prev) => ({
-        ...prev,
-        connected: false,
-        selectingWindowId: null,
-      }));
     };
 
     ws.onmessage = (e) => {
@@ -1950,7 +1747,6 @@ export const SSHPane = ({
             const decoded = new TextDecoder().decode(bytes);
             captureOsc52Clipboard(decoded);
             captureOsc7Directory(decoded);
-            captureTmuxContext(decoded);
             term.write(bytes);
           }
           return;
@@ -1973,66 +1769,7 @@ export const SSHPane = ({
           }
           captureOsc52Clipboard(binaryStr);
           captureOsc7Directory(binaryStr);
-          captureTmuxContext(binaryStr);
           term.write(bytes);
-        } else if (msg.type === "tmux_windows") {
-          if (msg.ok === false) {
-            updateTmuxState((prev) => ({
-              ...prev,
-              connected: true,
-              status: msg.reason === "not_in_tmux" ? "empty" : "error",
-              sessionName: null,
-              activeWindowId: null,
-              windows: [],
-              message: msg.message ?? "Failed to load tmux windows",
-              selectingWindowId: null,
-            }));
-            return;
-          }
-
-          const windows = Array.isArray(msg.windows)
-            ? (msg.windows as TmuxWindowItem[])
-            : [];
-          updateTmuxState((prev) => ({
-            ...prev,
-            connected: true,
-            status: windows.length > 0 ? "ready" : "empty",
-            sessionName:
-              typeof msg.sessionName === "string" ? msg.sessionName : null,
-            activeWindowId:
-              typeof msg.activeWindowId === "string" ? msg.activeWindowId : null,
-            windows,
-            message: windows.length > 0 ? null : "No tmux windows found",
-            selectingWindowId: null,
-          }));
-        } else if (msg.type === "tmux_select_result") {
-          const selectedTarget =
-            typeof msg.targetWindowId === "string" ? msg.targetWindowId : null;
-          const pending = pendingTmuxSelectRef.current;
-          pendingTmuxSelectRef.current = null;
-          pending?.resolve(Boolean(msg.ok));
-          updateTmuxState((prev) => {
-            const nextActiveWindowId =
-              msg.ok && selectedTarget
-                ? selectedTarget
-                : prev.activeWindowId;
-            return {
-              ...prev,
-              connected: true,
-              activeWindowId: nextActiveWindowId,
-              windows: prev.windows.map((item) => ({
-                ...item,
-                isActive: nextActiveWindowId
-                  ? item.id === nextActiveWindowId
-                  : item.isActive,
-              })),
-              selectingWindowId: null,
-              message:
-                msg.ok === false
-                  ? msg.message ?? "Failed to switch tmux window"
-                  : null,
-            };
-          });
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
         }
@@ -2046,7 +1783,7 @@ export const SSHPane = ({
       snapshotTerminalBuffer();
       ws.close();
     };
-  }, [captureOsc52Clipboard, captureOsc7Directory, captureTmuxContext, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, updateTmuxState, windowId, wsUrl]);
+  }, [captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
 
   const handleCopy = useCallback(async () => {
     const term = termInstanceRef.current;
@@ -2331,19 +2068,11 @@ const SSHTerminal = ({
   const tabs = sshMeta?.tabs ?? [{ id: "default", label: "Tab 1", connectionId }];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "default";
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
-  const [tmuxManagerOpen, setTmuxManagerOpen] = useState(false);
-  const [tmuxControllers, setTmuxControllers] = useState<Record<string, TmuxPaneController>>({});
-  const [tmuxStateByTab, setTmuxStateByTab] = useState<Record<string, TmuxManagerState>>({});
-  const tmuxPopoverRef = useRef<HTMLDivElement>(null);
   const nextTerminal = getNextSSHTerminalTarget(windows, windowId, activeTabId);
-  const activeTmuxState =
-    tmuxStateByTab[activeTabId] ?? createInitialTmuxState();
-  const activeTmuxController = tmuxControllers[activeTabId] ?? null;
 
   const handleAddTab = () => {
     if (!windowId) return;
     const newTabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    setTmuxManagerOpen(false);
     addTerminalTab(windowId, {
       id: newTabId,
       label: `Tab ${tabs.length + 1}`,
@@ -2353,7 +2082,6 @@ const SSHTerminal = ({
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
-    setTmuxManagerOpen(false);
     if (windowId && tabs.length > 1) closeTerminalTab(windowId, tabId);
   };
 
@@ -2363,223 +2091,54 @@ const SSHTerminal = ({
 
   const handleNextWindow = () => {
     if (!nextTerminal) return;
-    setTmuxManagerOpen(false);
     setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
     focusWindow(nextTerminal.windowId);
   };
 
-  const handleTmuxStateChange = useCallback(
-    (targetTabId: string, state: TmuxManagerState) => {
-      setTmuxStateByTab((prev) => ({
-        ...prev,
-        [targetTabId]: state,
-      }));
-    },
-    [],
-  );
-
-  const handleTmuxControllerChange = useCallback(
-    (targetTabId: string, controller: TmuxPaneController | null) => {
-      if (controller) {
-        setTmuxControllers((prev) => ({
-          ...prev,
-          [targetTabId]: controller,
-        }));
-        return;
-      }
-
-      setTmuxControllers((prev) => {
-        if (!(targetTabId in prev)) return prev;
-        const next = { ...prev };
-        delete next[targetTabId];
-        return next;
-      });
-      setTmuxStateByTab((prev) => {
-        if (!(targetTabId in prev)) return prev;
-        const next = { ...prev };
-        delete next[targetTabId];
-        return next;
-      });
-    },
-    [],
-  );
-
-  const handleToggleTmuxManager = useCallback(() => {
-    if (tmuxManagerOpen) {
-      setTmuxManagerOpen(false);
-      return;
-    }
-
-    setTmuxManagerOpen(true);
-    activeTmuxController?.refreshWindows();
-  }, [activeTmuxController, tmuxManagerOpen]);
-
-  const handleSelectTmuxWindow = useCallback(
-    async (targetWindowId: string) => {
-      if (!activeTmuxController) return;
-      const ok = await activeTmuxController.selectWindow(targetWindowId);
-      if (ok) {
-        setTmuxManagerOpen(false);
-      }
-    },
-    [activeTmuxController],
-  );
-
-  useEffect(() => {
-    if (!tmuxManagerOpen) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!tmuxPopoverRef.current?.contains(event.target as Node)) {
-        setTmuxManagerOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [tmuxManagerOpen]);
-
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
-      <div className="relative shrink-0" ref={tmuxPopoverRef}>
-        <div className="flex items-center h-9 bg-neutral-950 border-b border-neutral-800 overflow-x-auto scrollbar-none">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setTmuxManagerOpen(false);
-                if (windowId) setActiveTerminalTab(windowId, tab.id);
-              }}
-              className={`flex items-center gap-1 px-3 h-full text-xs shrink-0 border-r border-neutral-800 transition-colors cursor-pointer ${
-                tab.id === activeTabId
-                  ? "text-white bg-[#0a0a0a]"
-                  : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
-              }`}
-            >
-              <span className="max-w-[6rem] truncate">{tab.title ?? tab.label}</span>
-              {tabs.length > 1 && (
-                <span
-                  onClick={(e) => handleCloseTab(e, tab.id)}
-                  className="ml-0.5 leading-none text-neutral-600 hover:text-white transition-colors"
-                >
-                  ×
-                </span>
-              )}
-            </button>
-          ))}
+      <div className="flex items-center h-9 bg-neutral-950 border-b border-neutral-800 shrink-0 overflow-x-auto scrollbar-none">
+        {tabs.map((tab) => (
           <button
-            onClick={handleRefresh}
-            title="Refresh terminal"
-            className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer shrink-0"
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
-            onClick={handleToggleTmuxManager}
-            title="Tmux windows"
-            className={`px-2.5 h-full text-[10px] font-mono transition-colors cursor-pointer shrink-0 uppercase ${
-              tmuxManagerOpen
-                ? "text-white"
-                : activeTmuxState.connected
-                  ? "text-neutral-500 hover:text-white"
-                  : "text-neutral-700 hover:text-neutral-500"
+            key={tab.id}
+            onClick={() => windowId && setActiveTerminalTab(windowId, tab.id)}
+            className={`flex items-center gap-1 px-3 h-full text-xs shrink-0 border-r border-neutral-800 transition-colors cursor-pointer ${
+              tab.id === activeTabId
+                ? "text-white bg-[#0a0a0a]"
+                : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
             }`}
           >
-            tmux
-          </button>
-          <TerminalNextButton
-            onClick={handleNextWindow}
-            disabled={!nextTerminal}
-            iconOnly
-            className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer shrink-0 disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
-          />
-          <button
-            onClick={handleAddTab}
-            title="New tab"
-            className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer text-base leading-none shrink-0"
-          >
-            +
-          </button>
-        </div>
-
-        {tmuxManagerOpen && (
-          <div className="absolute right-2 top-full z-50 mt-2 w-80 rounded-xl border border-neutral-700 bg-neutral-950/95 p-2 shadow-2xl backdrop-blur">
-            <div className="flex items-center justify-between gap-2 px-2 py-1">
-              <div>
-                <div className="text-[11px] font-medium text-neutral-100">
-                  {activeTmuxState.sessionName
-                    ? `tmux:${activeTmuxState.sessionName}`
-                    : "tmux windows"}
-                </div>
-                <div className="text-[10px] text-neutral-500">
-                  {activeTmuxState.connected ? "Current session" : "Terminal disconnected"}
-                </div>
-              </div>
-              <button
-                onClick={() => activeTmuxController?.refreshWindows()}
-                className="rounded-md border border-neutral-700 px-2 py-1 text-[10px] font-mono text-neutral-300 transition-colors cursor-pointer hover:border-neutral-600 hover:text-white"
+            <span className="max-w-[6rem] truncate">{tab.title ?? tab.label}</span>
+            {tabs.length > 1 && (
+              <span
+                onClick={(e) => handleCloseTab(e, tab.id)}
+                className="ml-0.5 leading-none text-neutral-600 hover:text-white transition-colors"
               >
-                refresh
-              </button>
-            </div>
-
-            {activeTmuxState.status === "loading" && (
-              <div className="px-2 py-4 text-[11px] text-neutral-500">
-                Loading tmux windows...
-              </div>
+                ×
+              </span>
             )}
-
-            {activeTmuxState.status !== "loading" &&
-              activeTmuxState.windows.length > 0 && (
-                <div className="mt-1 flex max-h-72 flex-col gap-1 overflow-y-auto px-1 pb-1">
-                  {activeTmuxState.windows.map((item) => {
-                    const isBusy =
-                      activeTmuxState.selectingWindowId === item.id;
-                    const isActiveWindow =
-                      activeTmuxState.activeWindowId === item.id || item.isActive;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => void handleSelectTmuxWindow(item.id)}
-                        disabled={isBusy}
-                        className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors cursor-pointer ${
-                          isActiveWindow
-                            ? "border-blue-500/60 bg-blue-500/10 text-white"
-                            : "border-neutral-800 bg-neutral-900 text-neutral-200 hover:border-neutral-700 hover:bg-neutral-800"
-                        } ${isBusy ? "opacity-70" : ""}`}
-                      >
-                        <span className="min-w-6 text-[10px] font-mono text-neutral-500">
-                          {item.index}
-                        </span>
-                        <span className="flex-1 truncate text-[11px]">
-                          {item.name || `window-${item.index}`}
-                        </span>
-                        <span className="text-[10px] font-mono text-neutral-500">
-                          {item.paneCount ?? 0}p
-                        </span>
-                        {isActiveWindow && (
-                          <span className="rounded-full border border-blue-400/40 px-1.5 py-0.5 text-[9px] font-mono text-blue-300">
-                            active
-                          </span>
-                        )}
-                        {isBusy && (
-                          <span className="text-[9px] font-mono text-neutral-400">
-                            switching
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-            {activeTmuxState.status !== "loading" &&
-              activeTmuxState.windows.length === 0 && (
-                <div className="px-2 py-4 text-[11px] text-neutral-500">
-                  {activeTmuxState.message ?? "Not in tmux session"}
-                </div>
-              )}
-          </div>
-        )}
+          </button>
+        ))}
+        <button
+          onClick={handleRefresh}
+          title="Refresh terminal"
+          className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer shrink-0"
+        >
+          <RefreshCw size={14} />
+        </button>
+        <TerminalNextButton
+          onClick={handleNextWindow}
+          disabled={!nextTerminal}
+          iconOnly
+          className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer shrink-0 disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
+        />
+        <button
+          onClick={handleAddTab}
+          title="New tab"
+          className="px-2.5 h-full text-neutral-600 hover:text-white transition-colors cursor-pointer text-base leading-none shrink-0"
+        >
+          +
+        </button>
       </div>
 
       <div className="relative flex-1 min-h-0">
@@ -2592,8 +2151,6 @@ const SSHTerminal = ({
             isActive={tab.id === activeTabId}
             hasNavigated={tab.hasNavigated}
             refreshNonce={paneRefreshKey}
-            onTmuxStateChange={handleTmuxStateChange}
-            onTmuxControllerChange={handleTmuxControllerChange}
           />
         ))}
       </div>

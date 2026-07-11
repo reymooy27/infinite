@@ -22,18 +22,6 @@ interface WebSocketMessage {
   data?: string;
   cols?: number;
   rows?: number;
-  targetWindowId?: string;
-  targetWindowIndex?: number;
-  tmuxEnv?: string;
-  tmuxPaneId?: string;
-}
-
-interface TmuxWindowInfo {
-  id: string;
-  index: number;
-  name: string;
-  isActive: boolean;
-  paneCount?: number;
 }
 
 function safeSocketSend(
@@ -57,21 +45,6 @@ function quoteShellArg(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-function normalizeTmuxError(stderr: string, code: number | null) {
-  const message = stderr.trim();
-  if (code === 127 || message.includes("command not found")) {
-    return {
-      reason: "tmux_missing" as const,
-      message: "tmux is not installed on remote host",
-    };
-  }
-
-  return {
-    reason: "not_in_tmux" as const,
-    message: "Not in tmux session",
-  };
-}
-
 function buildInitialDirectoryCommand(initialDirectory?: string) {
   if (!initialDirectory) return "";
   return `if cd -- ${quoteShellArg(initialDirectory)}; then __infinite_bootstrap_clear=1; else __infinite_bootstrap_clear=0; fi`;
@@ -86,22 +59,20 @@ function buildCwdTrackingBootstrap(initialDirectory?: string) {
   const commands = [
     buildInitialDirectoryCommand(initialDirectory),
     "__infinite_emit_cwd() { printf '\\033]7;file://%s%s\\007' \"${HOSTNAME:-localhost}\" \"$PWD\"; }",
-    "__infinite_emit_tmux() { printf '\\033]1338;tmux=%s;%s\\007' \"${TMUX-}\" \"${TMUX_PANE-}\"; }",
-    "__infinite_emit_state() { __infinite_emit_cwd; __infinite_emit_tmux; }",
     "if [ -n \"${ZSH_VERSION-}\" ]; then",
     "  autoload -Uz add-zsh-hook >/dev/null 2>&1 || true",
     "  if command -v add-zsh-hook >/dev/null 2>&1; then",
-    "    add-zsh-hook precmd __infinite_emit_state",
+    "    add-zsh-hook precmd __infinite_emit_cwd",
     "  else",
-    "    precmd_functions+=(__infinite_emit_state)",
+    "    precmd_functions+=(__infinite_emit_cwd)",
     "  fi",
     "elif [ -n \"${BASH_VERSION-}\" ]; then",
     "  case \";${PROMPT_COMMAND-};\" in",
-    "    *\";__infinite_emit_state;\"*) ;;",
-    "    *) PROMPT_COMMAND=\"__infinite_emit_state${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;;",
+    "    *\";__infinite_emit_cwd;\"*) ;;",
+    "    *) PROMPT_COMMAND=\"__infinite_emit_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;;",
     "  esac",
     "fi",
-    "__infinite_emit_state",
+    "__infinite_emit_cwd",
     buildBootstrapClearCommand(initialDirectory),
   ].filter(Boolean);
 
@@ -178,254 +149,6 @@ function cleanupDownload(downloadId: string) {
   if (!download) return;
   activeDownloads.delete(downloadId);
   download.cleanup();
-}
-
-function execSSHCommand(conn: Client, command: string) {
-  return new Promise<{
-    stdout: string;
-    stderr: string;
-    code: number | null;
-  }>((resolve, reject) => {
-    conn.exec(command, (err, stream) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-
-      let stdout = "";
-      let stderr = "";
-      let settled = false;
-      let exitCode: number | null = null;
-
-      stream.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString("utf8");
-      });
-
-      stream.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString("utf8");
-      });
-
-      stream.on("exit", (code?: number) => {
-        exitCode = code ?? null;
-      });
-
-      stream.on("close", (code?: number) => {
-        if (settled) return;
-        settled = true;
-        resolve({
-          stdout,
-          stderr,
-          code: exitCode ?? code ?? null,
-        });
-      });
-
-      stream.on("error", (streamErr: Error) => {
-        if (settled) return;
-        settled = true;
-        reject(streamErr);
-      });
-    });
-  });
-}
-
-function buildTmuxCommand(
-  tmuxEnv: string | undefined,
-  tmuxPaneId: string | undefined,
-  command: string,
-) {
-  if (!tmuxEnv || !tmuxPaneId) return null;
-  return `env TMUX=${quoteShellArg(tmuxEnv)} TMUX_PANE=${quoteShellArg(tmuxPaneId)} ${command}`;
-}
-
-async function listTmuxWindows(
-  conn: Client,
-  tmuxEnv: string | undefined,
-  tmuxPaneId: string | undefined,
-) {
-  const tmuxCommand = (command: string) =>
-    buildTmuxCommand(tmuxEnv, tmuxPaneId, command);
-  if (!tmuxCommand("true")) {
-    return {
-      ok: false as const,
-      reason: "not_in_tmux" as const,
-      message: "Not in tmux session",
-      windows: [] as TmuxWindowInfo[],
-    };
-  }
-
-  const delimiter = "\u001f";
-  const sessionFormat = `#{session_name}${delimiter}#{window_id}`;
-  const listFormat = `#{window_id}${delimiter}#{window_index}${delimiter}#{window_name}${delimiter}#{?window_active,1,0}${delimiter}#{window_panes}`;
-
-  const sessionResult = await execSSHCommand(
-    conn,
-    tmuxCommand(
-      `tmux display-message -p -t ${quoteShellArg(tmuxPaneId!)} ${quoteShellArg(sessionFormat)}`,
-    )!,
-  );
-
-  if (sessionResult.code !== 0) {
-    return {
-      ok: false as const,
-      ...normalizeTmuxError(sessionResult.stderr, sessionResult.code),
-      windows: [] as TmuxWindowInfo[],
-    };
-  }
-
-  const [sessionName = "", activeWindowId = ""] = sessionResult.stdout
-    .trim()
-    .split(delimiter);
-
-  const windowsResult = await execSSHCommand(
-    conn,
-    tmuxCommand(
-      `tmux list-windows -t ${quoteShellArg(sessionName)} -F ${quoteShellArg(listFormat)}`,
-    )!,
-  );
-
-  if (windowsResult.code !== 0) {
-    return {
-      ok: false as const,
-      reason: "tmux_error" as const,
-      message: windowsResult.stderr.trim() || "Failed to list tmux windows",
-      windows: [] as TmuxWindowInfo[],
-    };
-  }
-
-  const windows = windowsResult.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [id = "", index = "0", name = "", isActive = "0", paneCount = "0"] =
-        line.split(delimiter);
-      return {
-        id,
-        index: Number.parseInt(index, 10) || 0,
-        name,
-        isActive: isActive === "1",
-        paneCount: Number.parseInt(paneCount, 10) || 0,
-      };
-    });
-
-  return {
-    ok: true as const,
-    sessionName,
-    activeWindowId,
-    windows,
-  };
-}
-
-function resolveTmuxTarget(msg: WebSocketMessage) {
-  if (typeof msg.targetWindowId === "string" && /^[A-Za-z0-9@._:-]+$/.test(msg.targetWindowId)) {
-    return msg.targetWindowId;
-  }
-
-  if (typeof msg.targetWindowIndex === "number" && Number.isInteger(msg.targetWindowIndex)) {
-    return String(msg.targetWindowIndex);
-  }
-
-  return null;
-}
-
-async function handleTmuxMessage(
-  conn: Client,
-  ws: { send: (data: string | Buffer) => void },
-  msg: WebSocketMessage,
-) {
-  if (msg.type === "tmux_list_windows") {
-    try {
-      const result = await listTmuxWindows(conn, msg.tmuxEnv, msg.tmuxPaneId);
-      safeSocketSend(
-        ws,
-        JSON.stringify({
-          type: "tmux_windows",
-          ...result,
-        }),
-      );
-    } catch (err) {
-      safeSocketSend(
-        ws,
-        JSON.stringify({
-          type: "tmux_windows",
-          ok: false,
-          reason: "tmux_error",
-          message: err instanceof Error ? err.message : "Failed to list tmux windows",
-          windows: [],
-        }),
-      );
-    }
-    return true;
-  }
-
-  if (msg.type === "tmux_select_window") {
-    const target = resolveTmuxTarget(msg);
-    if (!target) {
-      safeSocketSend(
-        ws,
-        JSON.stringify({
-          type: "tmux_select_result",
-          ok: false,
-          message: "Invalid tmux window target",
-        }),
-      );
-      return true;
-    }
-
-    const command = buildTmuxCommand(
-      msg.tmuxEnv,
-      msg.tmuxPaneId,
-      `tmux select-window -t ${quoteShellArg(target)}`,
-    );
-    if (!command) {
-      safeSocketSend(
-        ws,
-        JSON.stringify({
-          type: "tmux_select_result",
-          ok: false,
-          message: "Not in tmux session",
-        }),
-      );
-      return true;
-    }
-
-    try {
-      const selectResult = await execSSHCommand(conn, command);
-
-      if (selectResult.code !== 0) {
-        safeSocketSend(
-          ws,
-          JSON.stringify({
-            type: "tmux_select_result",
-            ok: false,
-            message: selectResult.stderr.trim() || "Failed to switch tmux window",
-          }),
-        );
-        return true;
-      }
-
-      safeSocketSend(
-        ws,
-        JSON.stringify({
-          type: "tmux_select_result",
-          ok: true,
-          targetWindowId: target,
-        }),
-      );
-    } catch (err) {
-      safeSocketSend(
-        ws,
-        JSON.stringify({
-          type: "tmux_select_result",
-          ok: false,
-          message: err instanceof Error ? err.message : "Failed to switch tmux window",
-        }),
-      );
-    }
-    return true;
-  }
-
-  return false;
 }
 
 function appendRecentOutput(session: ActiveSession, data: Buffer) {
@@ -1084,18 +807,8 @@ export function createSSHSocket(
           session.stream.write(parsed.data);
         } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
           session.stream.setWindow(parsed.rows, parsed.cols, 0, 0);
-        } else if (parsed.type === "ping") {
-          return;
         } else {
-          void handleTmuxMessage(session.conn, ws, parsed).then((handled) => {
-            if (!handled) {
-              handleFileTransferMessage(
-                session.conn,
-                ws,
-                parsed as unknown as Record<string, unknown>,
-              );
-            }
-          });
+          handleFileTransferMessage(session.conn, ws, parsed as unknown as Record<string, unknown>);
         }
       } catch {
         logger.debug(`[SSH] Malformed message from session ${windowId}`);
@@ -1197,18 +910,8 @@ export function createSSHSocket(
             stream.write(parsed.data);
           } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
             stream.setWindow(parsed.rows, parsed.cols, 0, 0);
-          } else if (parsed.type === "ping") {
-            return;
           } else {
-            void handleTmuxMessage(conn, ws, parsed).then((handled) => {
-              if (!handled) {
-                handleFileTransferMessage(
-                  conn,
-                  ws,
-                  parsed as unknown as Record<string, unknown>,
-                );
-              }
-            });
+            handleFileTransferMessage(conn, ws, parsed as unknown as Record<string, unknown>);
           }
         } catch {
           logger.debug(`[SSH] Malformed message from connection ${connection.id}`);
