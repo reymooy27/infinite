@@ -124,13 +124,9 @@ function execSSHCommand(conn, command) {
     });
 }
 function buildTmuxCommand(tmuxEnv, tmuxPaneId, command) {
-    if (!tmuxPaneId)
+    if (!tmuxEnv || !tmuxPaneId)
         return null;
-    const socketPath = tmuxEnv?.split(",")[0]?.trim();
-    const prefix = socketPath
-        ? `tmux -S ${quoteShellArg(socketPath)}`
-        : "tmux";
-    return `${prefix} ${command}`;
+    return `env TMUX=${quoteShellArg(tmuxEnv)} TMUX_PANE=${quoteShellArg(tmuxPaneId)} ${command}`;
 }
 async function listTmuxWindows(conn, tmuxEnv, tmuxPaneId) {
     const tmuxCommand = (command) => buildTmuxCommand(tmuxEnv, tmuxPaneId, command);
@@ -145,7 +141,7 @@ async function listTmuxWindows(conn, tmuxEnv, tmuxPaneId) {
     const delimiter = "\u001f";
     const sessionFormat = `#{session_name}${delimiter}#{window_id}`;
     const listFormat = `#{window_id}${delimiter}#{window_index}${delimiter}#{window_name}${delimiter}#{?window_active,1,0}${delimiter}#{window_panes}`;
-    const sessionResult = await execSSHCommand(conn, tmuxCommand(`display-message -p -t ${quoteShellArg(tmuxPaneId)} ${quoteShellArg(sessionFormat)}`));
+    const sessionResult = await execSSHCommand(conn, tmuxCommand(`tmux display-message -p -t ${quoteShellArg(tmuxPaneId)} ${quoteShellArg(sessionFormat)}`));
     if (sessionResult.code !== 0) {
         return {
             ok: false,
@@ -156,7 +152,7 @@ async function listTmuxWindows(conn, tmuxEnv, tmuxPaneId) {
     const [sessionName = "", activeWindowId = ""] = sessionResult.stdout
         .trim()
         .split(delimiter);
-    const windowsResult = await execSSHCommand(conn, tmuxCommand(`list-windows -t ${quoteShellArg(sessionName)} -F ${quoteShellArg(listFormat)}`));
+    const windowsResult = await execSSHCommand(conn, tmuxCommand(`tmux list-windows -t ${quoteShellArg(sessionName)} -F ${quoteShellArg(listFormat)}`));
     if (windowsResult.code !== 0) {
         return {
             ok: false,
@@ -225,7 +221,7 @@ async function handleTmuxMessage(conn, ws, msg) {
             }));
             return true;
         }
-        const command = buildTmuxCommand(msg.tmuxEnv, msg.tmuxPaneId, `select-window -t ${quoteShellArg(target)}`);
+        const command = buildTmuxCommand(msg.tmuxEnv, msg.tmuxPaneId, `tmux select-window -t ${quoteShellArg(target)}`);
         if (!command) {
             safeSocketSend(ws, JSON.stringify({
                 type: "tmux_select_result",
