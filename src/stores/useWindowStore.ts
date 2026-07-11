@@ -9,12 +9,16 @@ interface WindowState {
   draggingId: string | null;
   focusTargetId: string | null;
   placingAppId: AppId | null;
+  placingMetadata: Record<string, unknown> | null;
   minimizedWindows: string[];
   fitViewportKey: number;
   fitViewportWindows: WindowData[];
   setDragging: (id: string | null) => void;
   clearDragging: () => void;
-  setPlacingApp: (appId: AppId | null) => void;
+  setPlacingApp: (
+    appId: AppId | null,
+    metadata?: Record<string, unknown> | null,
+  ) => void;
   clearPlacing: () => void;
   updateWindowPosition: (id: string, updates: Partial<WindowData>) => void;
   openApp: (
@@ -59,6 +63,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   draggingId: null,
   focusTargetId: null,
   placingAppId: null,
+  placingMetadata: null,
   minimizedWindows: [],
   fitViewportKey: 0,
   fitViewportWindows: [],
@@ -69,8 +74,9 @@ export const useWindowStore = create<WindowState>((set, get) => ({
     get().saveLayout();
   },
 
-  setPlacingApp: (appId) => set({ placingAppId: appId }),
-  clearPlacing: () => set({ placingAppId: null }),
+  setPlacingApp: (appId, metadata = null) =>
+    set({ placingAppId: appId, placingMetadata: metadata }),
+  clearPlacing: () => set({ placingAppId: null, placingMetadata: null }),
 
   updateWindowPosition: (id, updates) => {
     set((state) => ({
@@ -102,6 +108,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       ],
       topZ,
       placingAppId: null,
+      placingMetadata: null,
     }));
     get().saveLayout();
     get().focusWindow(id);

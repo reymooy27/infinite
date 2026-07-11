@@ -847,10 +847,10 @@ export default function FocusModeGitPanel({
   const renderFileRow = (row: Extract<FlatRow, { kind: "file" }>) => {
     const selected = row.id === activeRowId;
     return (
-      <button
+      <div
         key={row.id}
         onClick={() => setSelectedRowId(row.id)}
-        className={`group flex w-full items-start gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
+        className={`group flex w-full items-start gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors cursor-pointer ${
           selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
         }`}
         style={{ paddingLeft: `${row.depth * 14 + 8}px` }}
@@ -871,17 +871,17 @@ export default function FocusModeGitPanel({
             <p className="truncate text-[10px] text-neutral-500">from {row.change.originalPath}</p>
           )}
         </div>
-      </button>
+      </div>
     );
   };
 
   const renderFolderRow = (row: Extract<FlatRow, { kind: "folder" }>) => {
     const selected = row.id === activeRowId;
     return (
-      <button
+      <div
         key={row.id}
         onClick={() => setSelectedRowId(row.id)}
-        className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
+        className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] transition-colors cursor-pointer ${
           selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
         }`}
         style={{ paddingLeft: `${row.depth * 14 + 8}px` }}
@@ -906,7 +906,7 @@ export default function FocusModeGitPanel({
         )}
         <span className="min-w-0 flex-1 truncate">{row.name}</span>
         {renderActionIcons(row, selected)}
-      </button>
+      </div>
     );
   };
 

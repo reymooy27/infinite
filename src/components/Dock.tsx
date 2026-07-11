@@ -8,7 +8,7 @@ import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { centerWindowById } from "@/lib/focusWindow";
-import type { AppId } from "@/types";
+import type { AppId, SSHConnection } from "@/types";
 
 const DOCK_APPS: AppId[] = ["notes", "ssh"];
 const BROWSER_DOCK_APPS: AppId[] = ["devBrowser", "browserCanvas"];
@@ -28,6 +28,50 @@ const BROWSER_CHOICES: Array<{
     description: "Open streamed browser window backed by Puppeteer.",
   },
 ];
+
+function SSHConnectionChoices({
+  connections,
+  onSelect,
+}: {
+  connections: SSHConnection[];
+  onSelect: (conn: SSHConnection) => void;
+}) {
+  return (
+    <div className="mt-4 space-y-2">
+      {connections.map((conn) => (
+        <button
+          key={conn.id}
+          onClick={() => onSelect(conn)}
+          className="flex w-full items-start gap-3 rounded-xl border border-neutral-700 bg-neutral-800/70 px-3 py-3 text-left transition-colors cursor-pointer hover:border-blue-500 hover:bg-neutral-800"
+        >
+          <span className="mt-0.5 text-blue-400">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 17l6-6-6-6" />
+              <path d="M10 17l6-6-6-6" />
+            </svg>
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-neutral-100">
+              {conn.name}
+            </span>
+            <span className="mt-1 block text-xs text-neutral-400">
+              {conn.username}@{conn.host}:{conn.port}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function WindowList({
   windows,
@@ -227,6 +271,7 @@ export default function Dock() {
   const [showWinMenu, setShowWinMenu] = useState(false);
   const [showFileTransfer, setShowFileTransfer] = useState(false);
   const [showBrowserPicker, setShowBrowserPicker] = useState(false);
+  const [showSshPicker, setShowSshPicker] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileTransferRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -344,6 +389,7 @@ export default function Dock() {
   const setFocusMode = useSettingsStore((s) => s.setFocusMode);
 
   const hasWindows = windows.length > 0;
+  const isSshPlacing = placingAppId === "ssh";
   const isBrowserPlacing =
     placingAppId !== null && BROWSER_DOCK_APPS.includes(placingAppId);
   const isBrowserOpen = windows.some((w) =>
@@ -390,6 +436,7 @@ export default function Dock() {
   const handleBrowserLauncher = () => {
     setShowWinMenu(false);
     setShowFileTransfer(false);
+    setShowSshPicker(false);
     if (isBrowserPlacing) {
       clearPlacing();
       setShowBrowserPicker(false);
@@ -403,6 +450,40 @@ export default function Dock() {
     setPlacingApp(appId);
   };
 
+  const handleSshLauncher = () => {
+    setShowWinMenu(false);
+    setShowFileTransfer(false);
+    setShowBrowserPicker(false);
+    if (isSshPlacing) {
+      clearPlacing();
+      setShowSshPicker(false);
+      return;
+    }
+    if (sshConnections.length > 1) {
+      setShowSshPicker((v) => !v);
+      return;
+    }
+    if (sshConnections.length === 1) {
+      const conn = sshConnections[0];
+      setShowSshPicker(false);
+      setPlacingApp("ssh", {
+        connectionId: conn.id,
+        title: conn.name,
+      });
+      return;
+    }
+    setShowSshPicker(false);
+    setPlacingApp("ssh");
+  };
+
+  const handleSshChoice = (conn: SSHConnection) => {
+    setShowSshPicker(false);
+    setPlacingApp("ssh", {
+      connectionId: conn.id,
+      title: conn.name,
+    });
+  };
+
   useEffect(() => {
     if (!showBrowserPicker) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -413,6 +494,17 @@ export default function Dock() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [showBrowserPicker]);
+
+  useEffect(() => {
+    if (!showSshPicker) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowSshPicker(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [showSshPicker]);
 
   // Close menus on outside click
   useEffect(() => {
@@ -483,6 +575,42 @@ export default function Dock() {
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showSshPicker && (
+        <div className="fixed inset-0 z-[10020] flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close SSH picker"
+            className="absolute inset-0 bg-black/55"
+            onClick={() => setShowSshPicker(false)}
+          />
+          <div className="relative z-[10021] w-full max-w-sm rounded-2xl border border-neutral-700 bg-neutral-900/95 p-4 shadow-2xl backdrop-blur-md">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-100">
+                  Open SSH
+                </h2>
+                <p className="mt-1 text-xs text-neutral-400">
+                  Pick connection, then place terminal on canvas.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSshPicker(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
+                title="Close"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <SSHConnectionChoices
+              connections={sshConnections}
+              onSelect={handleSshChoice}
+            />
           </div>
         </div>
       )}
@@ -628,6 +756,11 @@ export default function Dock() {
               <button
                 onClick={() => {
                   setShowBrowserPicker(false);
+                  if (appId === "ssh") {
+                    handleSshLauncher();
+                    return;
+                  }
+                  setShowSshPicker(false);
                   if (isPlacing) {
                     clearPlacing();
                   } else {

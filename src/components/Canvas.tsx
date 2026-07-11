@@ -34,6 +34,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   const focusTargetId = useWindowStore((s) => s.focusTargetId);
   const windows = useWindowStore((s) => s.windows);
   const placingAppId = useWindowStore((s) => s.placingAppId);
+  const placingMetadata = useWindowStore((s) => s.placingMetadata);
   const openApp = useWindowStore((s) => s.openApp);
   const clearPlacing = useWindowStore((s) => s.clearPlacing);
   const clearFocus = useWindowStore((s) => s.clearFocus);
@@ -199,7 +200,34 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
       if (placingAppId === "ssh" || placingAppId === "devBrowser") {
         const conns = useSSHStore.getState().connections;
+        const selectedConnectionId =
+          typeof placingMetadata?.connectionId === "number"
+            ? placingMetadata.connectionId
+            : undefined;
+
+        if (placingAppId === "ssh" && selectedConnectionId) {
+          const conn = conns.find((item) => item.id === selectedConnectionId);
+          const title =
+            typeof placingMetadata?.title === "string"
+              ? placingMetadata.title
+              : conn?.name;
+          const tabId = getBrowserId("tab-");
+          openApp("ssh", x, y, {
+            connectionId: selectedConnectionId,
+            title,
+            tabs: [{ id: tabId, label: "Tab 1", connectionId: selectedConnectionId }],
+            activeTabId: tabId,
+          });
+          return;
+        }
+
         if (placingAppId === "ssh" && conns.length > 0) {
+          if (conns.length > 1) {
+            setPendingConnectionApp({ appId: placingAppId, x, y });
+            fetchConnections();
+            return;
+          }
+
           const conn = conns[0];
           const tabId = getBrowserId("tab-");
           openApp("ssh", x, y, {
@@ -217,7 +245,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
       openApp(placingAppId, x, y);
     },
-    [placingAppId, openApp, fetchConnections],
+    [placingAppId, placingMetadata, openApp, fetchConnections],
   );
 
   useEffect(() => {

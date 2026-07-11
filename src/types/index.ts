@@ -9,6 +9,7 @@ export interface SSHConnection {
   port: number;
   username: string;
   authType: "password" | "key";
+  agentId?: string | null;
   password?: string;
   privateKey?: string;
   createdAt: string;

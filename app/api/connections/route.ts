@@ -23,6 +23,7 @@ export async function GET(_req: NextRequest) {
         port: true,
         username: true,
         authType: true,
+        agentId: true,
         createdAt: true,
       },
     });
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
         port: true,
         username: true,
         authType: true,
+        agentId: true,
         createdAt: true,
       },
     });
