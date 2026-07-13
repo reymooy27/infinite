@@ -22,6 +22,7 @@ import { useProjectStore } from "@/stores/useProjectStore";
 import { buildHttpBaseUrl, buildWsUrl } from "@/lib/ws";
 import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
+import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 
 const BROWSER_LAST_URL_STORAGE_KEY = "browser-canvas-last-url";
 
@@ -1247,11 +1248,29 @@ export const SSHPane = ({
     fitRef.current = fit;
     term.loadAddon(fit);
     const links = new WebLinksAddon((_event, uri) => {
-      const { openApp } = useWindowStore.getState();
-      openApp("devBrowser", undefined, undefined, {
-        initialUrl: uri,
-        title: `Dev Browser`,
-      });
+      const popup = window.open("", "_blank");
+
+      void resolveTerminalLinkTarget(uri, connectionId)
+        .then((targetUrl) => {
+          if (!targetUrl) {
+            popup?.close();
+            return;
+          }
+
+          if (popup) {
+            try {
+              popup.opener = null;
+            } catch {}
+            popup.location.replace(targetUrl);
+            return;
+          }
+
+          window.open(targetUrl, "_blank", "noopener,noreferrer");
+        })
+        .catch((error) => {
+          popup?.close();
+          console.error("Failed to open terminal link", error);
+        });
     });
     term.loadAddon(links);
     const unicode11Addon = new Unicode11Addon();
@@ -1347,7 +1366,7 @@ export const SSHPane = ({
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, [focusTerminal, forceTerminalRepaint, forwardReservedTerminalShortcut, getViewportOffsetFromBottom, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer, tabId, terminalFontSize, windowId]);
+  }, [connectionId, focusTerminal, forceTerminalRepaint, forwardReservedTerminalShortcut, getViewportOffsetFromBottom, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer, tabId, terminalFontSize, windowId]);
 
   useEffect(() => {
     if (isActive) {
