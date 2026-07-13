@@ -4,6 +4,7 @@ export async function resolveTerminalLinkTarget(
 ): Promise<string | null> {
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
+  void connectionId;
 
   const isLocalhost =
     /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/.*)?$/i.test(trimmed);
@@ -23,32 +24,12 @@ export async function resolveTerminalLinkTarget(
     parsed.hostname === "127.0.0.1" ||
     parsed.hostname === "0.0.0.0";
 
-  if (!isParsedLocalhost || !connectionId) {
+  if (!isParsedLocalhost) {
     return formatted;
   }
 
-  const targetPort = parsed.port
-    ? parseInt(parsed.port, 10)
-    : parsed.protocol === "https:"
-      ? 443
-      : 80;
-
-  const res = await fetch("/api/tunnels", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      connectionId,
-      scheme: parsed.protocol.replace(":", ""),
-      targetHost: "127.0.0.1",
-      targetPort,
-    }),
-  });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || "Failed to create localhost tunnel");
-  }
-
-  const data = await res.json();
-  return `${data.url}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  const currentHostname =
+    typeof window !== "undefined" ? window.location.hostname : parsed.hostname;
+  const targetPort = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+  return `${parsed.protocol}//${currentHostname}:${targetPort}${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
