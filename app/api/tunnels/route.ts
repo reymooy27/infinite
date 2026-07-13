@@ -50,14 +50,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const relayBaseUrl = getRelayHttpBaseUrl().replace(/\/+$/, "");
     const nextData = { ...data } as Record<string, unknown>;
     if (typeof nextData.url === "string") {
       try {
         const parsed = new URL(nextData.url);
-        nextData.url = `${relayBaseUrl}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        nextData.url = `${parsed.pathname}${parsed.search}${parsed.hash}`;
       } catch {
-        nextData.url = `${relayBaseUrl}/${String(nextData.url).replace(/^\/+/, "")}`;
+        const normalized = String(nextData.url).replace(/^https?:\/\/[^/]+/i, "");
+        nextData.url = normalized.startsWith("/") ? normalized : `/${normalized.replace(/^\/+/, "")}`;
       }
     }
 
