@@ -1,6 +1,8 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import http from "http";
+import https from "https";
 import { WebSocket, WebSocketServer } from "ws";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
@@ -46,6 +48,17 @@ const apiLimiter = rateLimit({
     message: { error: "Too many requests, try again later" },
 });
 app.use("/api", apiLimiter);
+function getPublicServerBaseUrl(req) {
+    const forwardedProtoHeader = req.headers["x-forwarded-proto"];
+    const forwardedProto = Array.isArray(forwardedProtoHeader)
+        ? forwardedProtoHeader[0]
+        : forwardedProtoHeader;
+    const protocol = forwardedProto || req.protocol || "http";
+    return `${protocol}://${req.get("host")}`;
+}
+function normalizeTunnelScheme(value) {
+    return value === "https" ? "https" : "http";
+}
 app.post("/api/tunnels", async (req, res) => {
     const userId = getUserIdFromRequest(req);
     const connectionId = parseInt(String(req.body?.connectionId || "0"), 10);
@@ -53,6 +66,7 @@ app.post("/api/tunnels", async (req, res) => {
         ? req.body.targetHost
         : "127.0.0.1";
     const targetPort = parseInt(String(req.body?.targetPort || "0"), 10);
+    const scheme = normalizeTunnelScheme(req.body?.scheme);
     if (!connectionId || !targetPort) {
         res.status(400).json({ error: "Missing connectionId or targetPort" });
         return;
@@ -60,7 +74,12 @@ app.post("/api/tunnels", async (req, res) => {
     try {
         const connection = await loadConnection(connectionId, userId);
         const tunnel = await ensureLocalTunnel(connection, targetHost, targetPort);
-        res.json(tunnel);
+        const publicBaseUrl = getPublicServerBaseUrl(req);
+        const publicTunnelBaseUrl = `${publicBaseUrl}/api/tunnels/${connectionId}/${targetPort}/${scheme}`;
+        res.json({
+            ...tunnel,
+            url: publicTunnelBaseUrl,
+        });
     }
     catch (err) {
         const message = err instanceof Error ? err.message : "Failed to create tunnel";
@@ -71,6 +90,84 @@ app.post("/api/tunnels", async (req, res) => {
             error: message,
         });
         res.status(500).json({ error: message });
+    }
+});
+app.use("/api/tunnels/:connectionId/:targetPort/:scheme", async (req, res) => {
+    const userId = getUserIdFromRequest(req);
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    const targetPort = parseInt(String(req.params.targetPort || "0"), 10);
+    const scheme = normalizeTunnelScheme(req.params.scheme);
+    if (!connectionId || !targetPort) {
+        res.status(400).json({ error: "Missing connectionId or targetPort" });
+        return;
+    }
+    try {
+        const connection = await loadConnection(connectionId, userId);
+        const tunnel = await ensureLocalTunnel(connection, "127.0.0.1", targetPort);
+        const requestPath = req.url || "/";
+        const upstreamHeaders = { ...req.headers };
+        upstreamHeaders.host = `localhost:${targetPort}`;
+        delete upstreamHeaders.connection;
+        delete upstreamHeaders["content-length"];
+        const upstreamRequest = (scheme === "https" ? https : http).request({
+            protocol: `${scheme}:`,
+            hostname: "127.0.0.1",
+            port: tunnel.localPort,
+            method: req.method,
+            path: requestPath,
+            headers: upstreamHeaders,
+        }, (upstreamResponse) => {
+            const responseHeaders = { ...upstreamResponse.headers };
+            const location = upstreamResponse.headers.location;
+            if (location) {
+                try {
+                    const localOrigin = `${scheme}://localhost:${targetPort}`;
+                    const redirectTarget = new URL(location, `${localOrigin}/`);
+                    const isLocalRedirect = (redirectTarget.hostname === "localhost" ||
+                        redirectTarget.hostname === "127.0.0.1" ||
+                        redirectTarget.hostname === "0.0.0.0") &&
+                        Number(redirectTarget.port || (scheme === "https" ? "443" : "80")) === targetPort;
+                    if (isLocalRedirect) {
+                        responseHeaders.location =
+                            `${getPublicServerBaseUrl(req)}/api/tunnels/${connectionId}/${targetPort}/${scheme}` +
+                                `${redirectTarget.pathname}${redirectTarget.search}${redirectTarget.hash}`;
+                    }
+                }
+                catch { }
+            }
+            res.status(upstreamResponse.statusCode || 502);
+            Object.entries(responseHeaders).forEach(([key, value]) => {
+                if (value === undefined)
+                    return;
+                res.setHeader(key, value);
+            });
+            upstreamResponse.pipe(res);
+        });
+        upstreamRequest.on("error", (err) => {
+            logger.error("[Tunnel] Upstream proxy error", {
+                connectionId,
+                targetPort,
+                error: err.message,
+            });
+            if (!res.headersSent) {
+                res.status(502).json({ error: "Tunnel proxy request failed" });
+            }
+            else {
+                res.end();
+            }
+        });
+        req.pipe(upstreamRequest);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to proxy tunnel request";
+        logger.error("[Tunnel] Failed to proxy request", {
+            connectionId,
+            targetPort,
+            error: message,
+        });
+        if (!res.headersSent) {
+            res.status(500).json({ error: message });
+        }
     }
 });
 // Per-user active SSH session tracking

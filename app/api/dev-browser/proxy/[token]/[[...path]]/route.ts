@@ -25,7 +25,6 @@ function decodeOrigin(token: string): URL {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Unsupported protocol");
   }
-  url.pathname = "/";
   url.search = "";
   url.hash = "";
   return url;
@@ -33,7 +32,9 @@ function decodeOrigin(token: string): URL {
 
 function buildTargetUrl(origin: URL, pathParts: string[] | undefined, search: string): URL {
   const target = new URL(origin.toString());
-  target.pathname = `/${(pathParts ?? []).join("/")}`;
+  const basePath = target.pathname.replace(/\/+$/, "");
+  const suffix = (pathParts ?? []).join("/");
+  target.pathname = suffix ? `${basePath}/${suffix}` : `${basePath || "/"}`;
   target.search = search;
   target.hash = "";
   return target;

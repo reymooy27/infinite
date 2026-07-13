@@ -399,6 +399,7 @@ export default function DevBrowser({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             connectionId,
+            scheme: parsed.protocol.replace(":", ""),
             targetHost: "127.0.0.1",
             targetPort,
           }),
