@@ -1250,7 +1250,7 @@ export const SSHPane = ({
     const links = new WebLinksAddon((_event, uri) => {
       const popup = window.open("", "_blank");
 
-      void resolveTerminalLinkTarget(uri, connectionId)
+      void resolveTerminalLinkTarget(uri)
         .then((targetUrl) => {
           if (!targetUrl) {
             popup?.close();

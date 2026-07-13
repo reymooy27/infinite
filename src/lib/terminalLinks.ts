@@ -1,10 +1,8 @@
 export async function resolveTerminalLinkTarget(
   rawUrl: string,
-  connectionId?: number,
 ): Promise<string | null> {
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
-  void connectionId;
 
   const isLocalhost =
     /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/.*)?$/i.test(trimmed);
