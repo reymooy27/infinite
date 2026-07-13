@@ -1,5 +1,3 @@
-import { buildHttpBaseUrl } from "@/lib/ws";
-
 export async function resolveTerminalLinkTarget(
   rawUrl: string,
   connectionId?: number,
@@ -35,9 +33,7 @@ export async function resolveTerminalLinkTarget(
       ? 443
       : 80;
 
-  const apiBaseUrl =
-    typeof window !== "undefined" ? buildHttpBaseUrl() : "http://localhost:7891";
-  const res = await fetch(`${apiBaseUrl}/api/tunnels`, {
+  const res = await fetch("/api/tunnels", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
