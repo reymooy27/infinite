@@ -48,13 +48,28 @@ const apiLimiter = rateLimit({
     message: { error: "Too many requests, try again later" },
 });
 app.use("/api", apiLimiter);
+function resolveConfiguredPublicServerBaseUrl() {
+    const configured = process.env.PUBLIC_SERVER_URL || process.env.NEXT_PUBLIC_WS_URL || "";
+    if (!configured)
+        return null;
+    if (configured.startsWith("http://") || configured.startsWith("https://")) {
+        return configured.replace(/\/+$/, "");
+    }
+    if (configured.startsWith("ws://") || configured.startsWith("wss://")) {
+        return configured.replace(/^ws/, "http").replace(/\/+$/, "");
+    }
+    return `https://${configured.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+}
 function getPublicServerBaseUrl(req) {
+    const configured = resolveConfiguredPublicServerBaseUrl();
+    if (configured)
+        return configured;
     const forwardedProtoHeader = req.headers["x-forwarded-proto"];
     const forwardedProto = Array.isArray(forwardedProtoHeader)
         ? forwardedProtoHeader[0]
         : forwardedProtoHeader;
     const protocol = forwardedProto || req.protocol || "http";
-    return `${protocol}://${req.get("host")}`;
+    return `${protocol}://${req.get("host")}`.replace(/\/+$/, "");
 }
 function normalizeTunnelScheme(value) {
     return value === "https" ? "https" : "http";

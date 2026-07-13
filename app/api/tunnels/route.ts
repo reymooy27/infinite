@@ -31,14 +31,37 @@ export async function POST(request: NextRequest) {
       signal: AbortSignal.timeout(10_000),
     });
 
-    const text = await res.text();
+    const contentType = res.headers.get("content-type") ?? "application/json";
+    if (!contentType.includes("application/json")) {
+      const text = await res.text();
+      return new NextResponse(text, {
+        status: res.status,
+        headers: {
+          "Content-Type": contentType,
+        },
+      });
+    }
 
-    return new NextResponse(text, {
-      status: res.status,
-      headers: {
-        "Content-Type": res.headers.get("content-type") ?? "application/json",
-      },
-    });
+    const data = await res.json().catch(() => null);
+    if (!data || typeof data !== "object") {
+      return NextResponse.json(
+        { error: "Invalid relay tunnel response" },
+        { status: 502 },
+      );
+    }
+
+    const relayBaseUrl = getRelayHttpBaseUrl().replace(/\/+$/, "");
+    const nextData = { ...data } as Record<string, unknown>;
+    if (typeof nextData.url === "string") {
+      try {
+        const parsed = new URL(nextData.url);
+        nextData.url = `${relayBaseUrl}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      } catch {
+        nextData.url = `${relayBaseUrl}/${String(nextData.url).replace(/^\/+/, "")}`;
+      }
+    }
+
+    return NextResponse.json(nextData, { status: res.status });
   } catch {
     return NextResponse.json(
       { error: "Failed to reach relay tunnel service" },
