@@ -72,10 +72,6 @@ body {
   touch-action: auto;
 }
 
-.xterm-viewport {
-  overflow-y: auto !important;
-}
-
 .terminal {
   height: 100% !important;
 }

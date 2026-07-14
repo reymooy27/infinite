@@ -1444,6 +1444,7 @@ export const SSHPane = ({
     let startPos = { x: 0, y: 0 };
     let lastPos = { x: 0, y: 0 };
     let touchStartAt = 0;
+    let touchScrollRemainder = 0;
     let isDragSelection = false;
     let gestureMode: "pending" | "scroll" | "selection" = "pending";
 
@@ -1452,9 +1453,6 @@ export const SSHPane = ({
 
     const getScreen = (): HTMLElement | null =>
       container.querySelector(".xterm-screen");
-
-    const getViewport = (): HTMLElement | null =>
-      container.querySelector(".xterm-viewport");
 
     const dispatchDoc = (type: string, props: Record<string, number>) => {
       document.dispatchEvent(
@@ -1496,10 +1494,18 @@ export const SSHPane = ({
       }
 
       if (enableTouchScroll && isMobile && gestureMode === "scroll") {
-        const viewport = getViewport();
-        if (!viewport) return;
+        const term = termInstanceRef.current;
+        if (!term) return;
         e.preventDefault();
-        viewport.scrollTop -= touch.clientY - lastPos.y;
+        const cellHeight = term.element?.querySelector(".xterm-rows > div")?.getBoundingClientRect().height || 16;
+        touchScrollRemainder += (lastPos.y - touch.clientY) / cellHeight;
+        const lines = touchScrollRemainder < 0
+          ? Math.ceil(touchScrollRemainder)
+          : Math.floor(touchScrollRemainder);
+        if (lines !== 0) {
+          term.scrollLines(lines);
+          touchScrollRemainder -= lines;
+        }
         lastPos = { x: touch.clientX, y: touch.clientY };
         return;
       }
@@ -1549,6 +1555,7 @@ export const SSHPane = ({
       }
       isDragSelection = false;
       gestureMode = "pending";
+      touchScrollRemainder = 0;
     };
 
     const onAuxClick = (e: MouseEvent) => {
@@ -1722,10 +1729,15 @@ export const SSHPane = ({
     const ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
+    const isCurrentSocket = () => wsRef.current === ws;
     /* eslint-disable-next-line react-hooks/set-state-in-effect */
     setStatus("connecting");
 
     ws.onopen = () => {
+      if (!isCurrentSocket()) {
+        ws.close();
+        return;
+      }
       if (fit && term) {
         ws.send(
           JSON.stringify({
@@ -1744,23 +1756,26 @@ export const SSHPane = ({
 
     // Send ping every 20s to keep connection alive through proxies/firewalls
     const pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (isCurrentSocket() && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "ping" }));
       }
     }, 20000);
 
     ws.onclose = () => {
       clearInterval(pingInterval);
+      if (!isCurrentSocket()) return;
       snapshotTerminalBuffer();
       setStatus("disconnected");
     };
     ws.onerror = () => {
       clearInterval(pingInterval);
+      if (!isCurrentSocket()) return;
       snapshotTerminalBuffer();
       setStatus("error");
     };
 
     ws.onmessage = (e) => {
+      if (!isCurrentSocket()) return;
       try {
         if (e.data instanceof ArrayBuffer) {
           if (term) {
@@ -1808,6 +1823,9 @@ export const SSHPane = ({
     return () => {
       clearInterval(pingInterval);
       snapshotTerminalBuffer();
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
       ws.close();
     };
   }, [captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);

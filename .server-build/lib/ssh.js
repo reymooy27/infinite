@@ -562,6 +562,8 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
         }
         // Re-attach listeners
         ws.on("message", (msg) => {
+            if (session.ws !== ws)
+                return;
             try {
                 const parsed = JSON.parse(msg);
                 if (parsed.type === "data" && parsed.data) {
@@ -580,6 +582,8 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
         });
         ws.on("close", () => {
             if (sessions.get(windowId) !== session)
+                return;
+            if (session.ws !== ws)
                 return;
             logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
             session.ws = undefined;
@@ -654,6 +658,8 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
                 safeSocketSend(currentSession.ws, data);
             });
             ws.on("message", (msg) => {
+                if (currentSession.ws !== ws)
+                    return;
                 try {
                     const parsed = JSON.parse(msg);
                     if (parsed.type === "data" && parsed.data) {
@@ -697,6 +703,8 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
                     conn.end();
                     return;
                 }
+                if (session.ws !== ws)
+                    return;
                 if (windowId) {
                     logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
                     session.ws = undefined;

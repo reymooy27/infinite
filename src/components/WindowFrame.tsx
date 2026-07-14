@@ -100,9 +100,7 @@ export default function WindowFrame({
 
       // Manual fallback for standard scrollable elements
       if (contentRef.current) {
-        const targets = contentRef.current.querySelectorAll(
-          ".overflow-auto, .xterm-viewport",
-        );
+        const targets = contentRef.current.querySelectorAll(".overflow-auto");
         targets.forEach((t) => t.scrollBy({ top: amount, behavior: "smooth" }));
       }
     },

@@ -430,6 +430,7 @@ function proxyThroughAgent(
 
   browserWs.on("close", () => {
     if (windowId) {
+      if (getAgentProxySession(windowId)?.ws !== browserWs) return;
       detachAgentProxySession(windowId);
     } else {
       if (onAgentMessage) agentWs.off("message", onAgentMessage);
