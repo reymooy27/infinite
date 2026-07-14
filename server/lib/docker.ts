@@ -43,14 +43,21 @@ export interface DockerPruneResult {
   buildCache: string;
 }
 
-function parseTable(lines: string[]): string[][] {
-  return lines
-    .map((line) => line.split(/\t+/).map((c) => c.trim()))
-    .filter((cols) => cols.length > 1 || (cols.length === 1 && cols[0] !== ""));
+const ANSI_PATTERN = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+
+function cleanLine(line: string): string {
+  return line.replace(/\r/g, "").replace(ANSI_PATTERN, "").trimEnd();
 }
 
-function normalizeState(raw: string): DockerContainer["state"] {
-  const s = raw.toLowerCase();
+function parseTable(lines: string[]): string[][] {
+  return lines
+    .map(cleanLine)
+    .filter((line) => line.includes("\t"))
+    .map((line) => line.split("\t").map((c) => c.trim()));
+}
+
+function normalizeState(raw: string | undefined): DockerContainer["state"] {
+  const s = (raw ?? "").toLowerCase();
   if (s.startsWith("up")) return "running";
   if (s.startsWith("exited")) return "exited";
   if (s.startsWith("paused")) return "paused";
@@ -71,14 +78,14 @@ export async function listContainers(
   if (code !== 0) return [];
   const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
   return parseTable(lines).map((cols) => ({
-    id: cols[0],
-    names: cols[1],
-    image: cols[2],
-    status: cols[3],
+    id: cols[0] ?? "",
+    names: cols[1] ?? "",
+    image: cols[2] ?? "",
+    status: cols[3] ?? "",
     state: normalizeState(cols[3]),
     ports: cols[5] ?? "",
     created: cols[6] ?? "",
-  }));
+  })).filter((c) => c.id);
 }
 
 export async function dockerStats(
@@ -90,10 +97,11 @@ export async function dockerStats(
   const map: Record<string, { cpuPerc: string; memUsage: string }> = {};
   stdout
     .split("\n")
-    .filter((l) => l.trim())
+    .map(cleanLine)
+    .filter((l) => l.includes("\t"))
     .forEach((line) => {
       const [id, cpuPerc, memUsage] = line.split("\t");
-      if (id) map[id] = { cpuPerc: cpuPerc ?? "", memUsage: memUsage ?? "" };
+      if (id) map[id.trim()] = { cpuPerc: (cpuPerc ?? "").trim(), memUsage: (memUsage ?? "").trim() };
     });
   return map;
 }
@@ -104,12 +112,12 @@ export async function listImages(connection: SSHConnection): Promise<DockerImage
   if (code !== 0) return [];
   const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
   return parseTable(lines).map((cols) => ({
-    id: cols[0],
-    repository: cols[1] === "<none>" ? "" : cols[1],
-    tag: cols[2] === "<none>" ? "" : cols[2],
+    id: cols[0] ?? "",
+    repository: !cols[1] || cols[1] === "<none>" ? "" : cols[1],
+    tag: !cols[2] || cols[2] === "<none>" ? "" : cols[2],
     size: cols[3] ?? "",
     created: cols[4] ?? "",
-  }));
+  })).filter((i) => i.id);
 }
 
 export async function listVolumes(connection: SSHConnection): Promise<DockerVolume[]> {
@@ -118,11 +126,11 @@ export async function listVolumes(connection: SSHConnection): Promise<DockerVolu
   if (code !== 0) return [];
   const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
   return parseTable(lines).map((cols) => ({
-    name: cols[0],
+    name: cols[0] ?? "",
     driver: cols[1] ?? "",
     size: cols[2] ?? "",
     created: "",
-  }));
+  })).filter((v) => v.name);
 }
 
 export async function listNetworks(connection: SSHConnection): Promise<DockerNetwork[]> {
@@ -131,11 +139,11 @@ export async function listNetworks(connection: SSHConnection): Promise<DockerNet
   if (code !== 0) return [];
   const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
   return parseTable(lines).map((cols) => ({
-    id: cols[0],
-    name: cols[1],
+    id: cols[0] ?? "",
+    name: cols[1] ?? "",
     driver: cols[2] ?? "",
     scope: cols[3] ?? "",
-  }));
+  })).filter((n) => n.id);
 }
 
 async function dockerAction(

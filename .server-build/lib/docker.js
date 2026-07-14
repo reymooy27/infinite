@@ -1,12 +1,17 @@
 import { runSSHCommand } from "./ssh.js";
 import { logger } from "./logger.js";
+const ANSI_PATTERN = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+function cleanLine(line) {
+    return line.replace(/\r/g, "").replace(ANSI_PATTERN, "").trimEnd();
+}
 function parseTable(lines) {
     return lines
-        .map((line) => line.split(/\t+/).map((c) => c.trim()))
-        .filter((cols) => cols.length > 1 || (cols.length === 1 && cols[0] !== ""));
+        .map(cleanLine)
+        .filter((line) => line.includes("\t"))
+        .map((line) => line.split("\t").map((c) => c.trim()));
 }
 function normalizeState(raw) {
-    const s = raw.toLowerCase();
+    const s = (raw ?? "").toLowerCase();
     if (s.startsWith("up"))
         return "running";
     if (s.startsWith("exited"))
@@ -31,14 +36,14 @@ export async function listContainers(connection, opts = {}) {
         return [];
     const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
     return parseTable(lines).map((cols) => ({
-        id: cols[0],
-        names: cols[1],
-        image: cols[2],
-        status: cols[3],
+        id: cols[0] ?? "",
+        names: cols[1] ?? "",
+        image: cols[2] ?? "",
+        status: cols[3] ?? "",
         state: normalizeState(cols[3]),
         ports: cols[5] ?? "",
         created: cols[6] ?? "",
-    }));
+    })).filter((c) => c.id);
 }
 export async function dockerStats(connection) {
     const cmd = `docker stats --no-stream --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}'`;
@@ -48,11 +53,12 @@ export async function dockerStats(connection) {
     const map = {};
     stdout
         .split("\n")
-        .filter((l) => l.trim())
+        .map(cleanLine)
+        .filter((l) => l.includes("\t"))
         .forEach((line) => {
         const [id, cpuPerc, memUsage] = line.split("\t");
         if (id)
-            map[id] = { cpuPerc: cpuPerc ?? "", memUsage: memUsage ?? "" };
+            map[id.trim()] = { cpuPerc: (cpuPerc ?? "").trim(), memUsage: (memUsage ?? "").trim() };
     });
     return map;
 }
@@ -63,12 +69,12 @@ export async function listImages(connection) {
         return [];
     const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
     return parseTable(lines).map((cols) => ({
-        id: cols[0],
-        repository: cols[1] === "<none>" ? "" : cols[1],
-        tag: cols[2] === "<none>" ? "" : cols[2],
+        id: cols[0] ?? "",
+        repository: !cols[1] || cols[1] === "<none>" ? "" : cols[1],
+        tag: !cols[2] || cols[2] === "<none>" ? "" : cols[2],
         size: cols[3] ?? "",
         created: cols[4] ?? "",
-    }));
+    })).filter((i) => i.id);
 }
 export async function listVolumes(connection) {
     const cmd = `docker volume ls --format 'table {{.Name}}\t{{.Driver}}\t{{.Size}}'`;
@@ -77,11 +83,11 @@ export async function listVolumes(connection) {
         return [];
     const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
     return parseTable(lines).map((cols) => ({
-        name: cols[0],
+        name: cols[0] ?? "",
         driver: cols[1] ?? "",
         size: cols[2] ?? "",
         created: "",
-    }));
+    })).filter((v) => v.name);
 }
 export async function listNetworks(connection) {
     const cmd = `docker network ls --no-trunc --format 'table {{.ID}}\t{{.Name}}\t{{.Driver}}\t{{.Scope}}'`;
@@ -90,11 +96,11 @@ export async function listNetworks(connection) {
         return [];
     const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
     return parseTable(lines).map((cols) => ({
-        id: cols[0],
-        name: cols[1],
+        id: cols[0] ?? "",
+        name: cols[1] ?? "",
         driver: cols[2] ?? "",
         scope: cols[3] ?? "",
-    }));
+    })).filter((n) => n.id);
 }
 async function dockerAction(connection, action, id) {
     const cmd = `docker ${action} ${id}`;

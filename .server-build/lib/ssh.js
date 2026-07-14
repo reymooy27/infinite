@@ -204,7 +204,7 @@ export function runSSHCommand(connection, command, opts = {}) {
             reject(new Error("SSH command timed out"));
         }, opts.timeoutMs ?? 30000);
         conn.on("ready", () => {
-            conn.exec(command, { pty: true }, (err, stream) => {
+            conn.exec(command, (err, stream) => {
                 if (err) {
                     clearTimeout(timeout);
                     if (!settled) {
