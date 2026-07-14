@@ -332,12 +332,6 @@ export default function DockerManager({
     null,
   );
 
-  const apiBase =
-    typeof window !== "undefined"
-      ? (window as unknown as { __INFINITE_API_BASE__?: string }).__INFINITE_API_BASE__ ??
-        `${window.location.protocol}//${window.location.hostname}:7891`
-      : "http://localhost:7891";
-
   useEffect(() => {
     fetchConnections();
   }, [fetchConnections]);
@@ -358,12 +352,12 @@ export default function DockerManager({
     setError(null);
     try {
       const [c, i, v, n] = await Promise.all([
-        fetch(`${apiBase}/api/docker/${selectedId}/containers?all=1`).then((r) =>
+        fetch(`/api/docker/${selectedId}/containers?all=1`).then((r) =>
           r.json(),
         ),
-        fetch(`${apiBase}/api/docker/${selectedId}/images`).then((r) => r.json()),
-        fetch(`${apiBase}/api/docker/${selectedId}/volumes`).then((r) => r.json()),
-        fetch(`${apiBase}/api/docker/${selectedId}/networks`).then((r) => r.json()),
+        fetch(`/api/docker/${selectedId}/images`).then((r) => r.json()),
+        fetch(`/api/docker/${selectedId}/volumes`).then((r) => r.json()),
+        fetch(`/api/docker/${selectedId}/networks`).then((r) => r.json()),
       ]);
       if (c.error) throw new Error(c.error);
       if (i.error) throw new Error(i.error);
@@ -378,7 +372,7 @@ export default function DockerManager({
     } finally {
       setLoading(false);
     }
-  }, [apiBase, selectedId]);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -398,7 +392,7 @@ export default function DockerManager({
       if (!selectedId) return;
       try {
         const res = await fetch(
-          `${apiBase}/api/docker/${selectedId}/containers/${action}`,
+          `/api/docker/${selectedId}/containers/${action}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -415,7 +409,7 @@ export default function DockerManager({
         showToast(err instanceof Error ? err.message : "Action failed");
       }
     },
-    [apiBase, loadAll, selectedId, showToast],
+    [loadAll, selectedId, showToast],
   );
 
   const removeImage = useCallback(
@@ -423,7 +417,7 @@ export default function DockerManager({
       if (!selectedId) return;
       try {
         const res = await fetch(
-          `${apiBase}/api/docker/${selectedId}/images/remove`,
+          `/api/docker/${selectedId}/images/remove`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -438,7 +432,7 @@ export default function DockerManager({
         showToast(err instanceof Error ? err.message : "Remove failed");
       }
     },
-    [apiBase, loadAll, selectedId, showToast],
+    [loadAll, selectedId, showToast],
   );
 
   const removeVolume = useCallback(
@@ -446,7 +440,7 @@ export default function DockerManager({
       if (!selectedId) return;
       try {
         const res = await fetch(
-          `${apiBase}/api/docker/${selectedId}/volumes/remove`,
+          `/api/docker/${selectedId}/volumes/remove`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -461,7 +455,7 @@ export default function DockerManager({
         showToast(err instanceof Error ? err.message : "Remove failed");
       }
     },
-    [apiBase, loadAll, selectedId, showToast],
+    [loadAll, selectedId, showToast],
   );
 
   const removeNetwork = useCallback(
@@ -469,7 +463,7 @@ export default function DockerManager({
       if (!selectedId) return;
       try {
         const res = await fetch(
-          `${apiBase}/api/docker/${selectedId}/networks/remove`,
+          `/api/docker/${selectedId}/networks/remove`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -484,7 +478,7 @@ export default function DockerManager({
         showToast(err instanceof Error ? err.message : "Remove failed");
       }
     },
-    [apiBase, loadAll, selectedId, showToast],
+    [loadAll, selectedId, showToast],
   );
 
   const prune = useCallback(async () => {
@@ -494,7 +488,7 @@ export default function DockerManager({
       onConfirm: async () => {
         setConfirm(null);
         try {
-          const res = await fetch(`${apiBase}/api/docker/${selectedId}/prune`, {
+          const res = await fetch(`/api/docker/${selectedId}/prune`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ volumes: false }),
@@ -511,14 +505,14 @@ export default function DockerManager({
         }
       },
     });
-  }, [apiBase, loadAll, selectedId, showToast]);
+  }, [loadAll, selectedId, showToast]);
 
   const viewLogs = useCallback(
     async (id: string, name: string) => {
       if (!selectedId) return;
       try {
         const res = await fetch(
-          `${apiBase}/api/docker/${selectedId}/containers/${id}/logs?tail=500`,
+          `/api/docker/${selectedId}/containers/${id}/logs?tail=500`,
         );
         const data = await res.json();
         setDrawer({ title: `Logs: ${name}`, content: data.logs ?? data.error ?? "" });
@@ -526,7 +520,7 @@ export default function DockerManager({
         showToast(err instanceof Error ? err.message : "Failed to load logs");
       }
     },
-    [apiBase, selectedId, showToast],
+    [selectedId, showToast],
   );
 
   const viewInspect = useCallback(
@@ -534,7 +528,7 @@ export default function DockerManager({
       if (!selectedId) return;
       try {
         const res = await fetch(
-          `${apiBase}/api/docker/${selectedId}/containers/${id}/inspect`,
+          `/api/docker/${selectedId}/containers/${id}/inspect`,
         );
         const data = await res.json();
         setDrawer({
@@ -548,7 +542,7 @@ export default function DockerManager({
         showToast(err instanceof Error ? err.message : "Failed to inspect");
       }
     },
-    [apiBase, selectedId, showToast],
+    [selectedId, showToast],
   );
 
   const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
