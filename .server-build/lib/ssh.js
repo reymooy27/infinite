@@ -55,6 +55,7 @@ function buildCwdTrackingBootstrap(initialDirectory) {
     return `${commands.join("\n")}\r`;
 }
 const sessions = new Map();
+const pendingSessionStarts = new Map();
 const agentSessions = new Map();
 const tunnels = new Map();
 const SESSION_TIMEOUT = 1000 * 60 * 60 * 8; // 8 hours
@@ -86,6 +87,47 @@ function replayRecentOutput(session) {
     for (const chunk of session.recentOutput) {
         session.ws.send(chunk);
     }
+}
+function attachSessionSocket(session, ws, onDetach) {
+    session.ws = ws;
+    ws.on("message", (msg) => {
+        if (session.ws !== ws)
+            return;
+        try {
+            const parsed = JSON.parse(msg);
+            if (parsed.type === "data" && parsed.data) {
+                session.stream.write(parsed.data);
+            }
+            else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
+                session.stream.setWindow(parsed.rows, parsed.cols, 0, 0);
+            }
+            else {
+                handleFileTransferMessage(session.conn, ws, parsed);
+            }
+        }
+        catch {
+            logger.debug("[SSH] Malformed message from attached socket");
+        }
+    });
+    ws.on("close", () => {
+        if (session.ws !== ws)
+            return;
+        onDetach();
+    });
+}
+function attachPendingSessionSocket(windowId, pending, ws) {
+    pending.ws = ws;
+    ws.on("close", () => {
+        if (pendingSessionStarts.get(windowId) !== pending)
+            return;
+        if (pending.ws !== ws)
+            return;
+        logger.info(`[SSH] Pending WebSocket closed for session ${windowId}`);
+        pending.ws = undefined;
+        pending.cancelled = true;
+        pendingSessionStarts.delete(windowId);
+        pending.conn.end();
+    });
 }
 function validatePrivateKey(keyStr) {
     if (!keyStr || typeof keyStr !== "string") {
@@ -553,37 +595,13 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
             clearTimeout(session.cleanupTimer);
             session.cleanupTimer = undefined;
         }
-        // Update the session's WebSocket
-        session.ws = ws;
         // Send connected status immediately
         ws.send(JSON.stringify({ type: "connected" }));
         if (replayOnAttach) {
             replayRecentOutput(session);
         }
-        // Re-attach listeners
-        ws.on("message", (msg) => {
-            if (session.ws !== ws)
-                return;
-            try {
-                const parsed = JSON.parse(msg);
-                if (parsed.type === "data" && parsed.data) {
-                    session.stream.write(parsed.data);
-                }
-                else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
-                    session.stream.setWindow(parsed.rows, parsed.cols, 0, 0);
-                }
-                else {
-                    handleFileTransferMessage(session.conn, ws, parsed);
-                }
-            }
-            catch {
-                logger.debug(`[SSH] Malformed message from session ${windowId}`);
-            }
-        });
-        ws.on("close", () => {
+        attachSessionSocket(session, ws, () => {
             if (sessions.get(windowId) !== session)
-                return;
-            if (session.ws !== ws)
                 return;
             logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
             session.ws = undefined;
@@ -596,6 +614,12 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
         });
         return;
     }
+    if (windowId && pendingSessionStarts.has(windowId)) {
+        const pending = pendingSessionStarts.get(windowId);
+        logger.info(`[SSH] Re-attaching to pending session ${windowId}`);
+        attachPendingSessionSocket(windowId, pending, ws);
+        return;
+    }
     logger.info(`[SSH] Connecting to ${connection.host}:${connection.port} as ${connection.username}`, {
         connectionId: connection.id,
         name: connection.name,
@@ -604,6 +628,7 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
     });
     const conn = new Client();
     let session = null;
+    let pendingStart = null;
     let config;
     try {
         config = getSSHConfig(connection);
@@ -619,32 +644,54 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
     }
     const initialCols = 80;
     const initialRows = 24;
+    if (windowId) {
+        pendingStart = {
+            conn,
+            ws,
+            cancelled: false,
+        };
+        pendingSessionStarts.set(windowId, pendingStart);
+        attachPendingSessionSocket(windowId, pendingStart, ws);
+    }
     conn.on("ready", () => {
+        if (pendingStart?.cancelled)
+            return;
         logger.info(`[SSH] Shell ready for connection ${connection.id}`);
-        ws.send(JSON.stringify({ type: "connected" }));
+        safeSocketSend(pendingStart?.ws ?? ws, JSON.stringify({ type: "connected" }));
         const shellOptions = {
             term: "xterm-256color",
             cols: initialCols,
             rows: initialRows,
         };
         conn.shell(shellOptions, (err, stream) => {
+            if (pendingStart?.cancelled) {
+                stream.close();
+                conn.end();
+                return;
+            }
             if (err) {
                 logger.error(`[SSH] Shell error for connection ${connection.id}`, { error: err.message });
-                safeSocketSend(ws, JSON.stringify({
+                safeSocketSend(pendingStart?.ws ?? ws, JSON.stringify({
                     type: "error",
                     message: `Shell error: ${err.message}`,
                 }));
-                safeSocketClose(ws);
+                safeSocketClose(pendingStart?.ws ?? ws);
+                if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {
+                    pendingSessionStarts.delete(windowId);
+                }
                 return;
             }
             session = {
                 conn,
                 stream,
-                ws,
+                ws: pendingStart?.ws ?? ws,
                 recentOutput: [],
                 recentOutputBytes: 0,
             };
             const currentSession = session;
+            if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {
+                pendingSessionStarts.delete(windowId);
+            }
             if (windowId)
                 sessions.set(windowId, session);
             logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
@@ -657,23 +704,23 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
                 appendRecentOutput(currentSession, data);
                 safeSocketSend(currentSession.ws, data);
             });
-            ws.on("message", (msg) => {
-                if (currentSession.ws !== ws)
+            attachSessionSocket(currentSession, currentSession.ws, () => {
+                if (windowId && sessions.get(windowId) !== currentSession)
                     return;
-                try {
-                    const parsed = JSON.parse(msg);
-                    if (parsed.type === "data" && parsed.data) {
-                        stream.write(parsed.data);
-                    }
-                    else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
-                        stream.setWindow(parsed.rows, parsed.cols, 0, 0);
-                    }
-                    else {
-                        handleFileTransferMessage(conn, ws, parsed);
-                    }
+                if (windowId) {
+                    logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
+                    currentSession.ws = undefined;
+                    currentSession.cleanupTimer = setTimeout(() => {
+                        logger.info(`[SSH] Cleaning up idle session ${windowId}`);
+                        stream.close();
+                        conn.end();
+                        sessions.delete(windowId);
+                    }, SESSION_TIMEOUT);
                 }
-                catch {
-                    logger.debug(`[SSH] Malformed message from connection ${connection.id}`);
+                else {
+                    logger.info("[SSH] WebSocket closed for ephemeral connection, ending...");
+                    stream.close();
+                    conn.end();
                 }
             });
             stream.on("close", () => {
@@ -691,35 +738,12 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
                 });
                 safeSocketSend(session?.ws ?? ws, JSON.stringify({ type: "error", message: streamErr.message }));
                 safeSocketClose(session?.ws ?? ws);
+                if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {
+                    pendingSessionStarts.delete(windowId);
+                }
                 if (windowId)
                     sessions.delete(windowId);
                 conn.end();
-            });
-            ws.on("close", () => {
-                if (windowId && sessions.get(windowId) !== session)
-                    return;
-                if (!session) {
-                    logger.info(`[SSH] WebSocket closed before session init for connection ${connection.id}`);
-                    conn.end();
-                    return;
-                }
-                if (session.ws !== ws)
-                    return;
-                if (windowId) {
-                    logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
-                    session.ws = undefined;
-                    session.cleanupTimer = setTimeout(() => {
-                        logger.info(`[SSH] Cleaning up idle session ${windowId}`);
-                        stream.close();
-                        conn.end();
-                        sessions.delete(windowId);
-                    }, SESSION_TIMEOUT);
-                }
-                else {
-                    logger.info(`[SSH] WebSocket closed for ephemeral connection, ending...`);
-                    stream.close();
-                    conn.end();
-                }
             });
         });
     });
@@ -728,15 +752,21 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
             error: err.message,
             code: err.code
         });
-        safeSocketSend(session?.ws ?? ws, JSON.stringify({ type: "error", message: err.message }));
-        safeSocketClose(session?.ws ?? ws);
+        safeSocketSend(session?.ws ?? pendingStart?.ws ?? ws, JSON.stringify({ type: "error", message: err.message }));
+        safeSocketClose(session?.ws ?? pendingStart?.ws ?? ws);
+        if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {
+            pendingSessionStarts.delete(windowId);
+        }
         if (windowId)
             sessions.delete(windowId);
     });
     conn.on("close", () => {
         logger.info(`[SSH] Connection closed for ${connection.id}`);
-        safeSocketSend(session?.ws ?? ws, JSON.stringify({ type: "disconnected" }));
-        safeSocketClose(session?.ws ?? ws);
+        safeSocketSend(session?.ws ?? pendingStart?.ws ?? ws, JSON.stringify({ type: "disconnected" }));
+        safeSocketClose(session?.ws ?? pendingStart?.ws ?? ws);
+        if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {
+            pendingSessionStarts.delete(windowId);
+        }
         if (windowId)
             sessions.delete(windowId);
     });
@@ -758,6 +788,9 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
         }
         else {
             ws.send(JSON.stringify({ type: "error", message: error.message }));
+        }
+        if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {
+            pendingSessionStarts.delete(windowId);
         }
         ws.close();
         return null;
