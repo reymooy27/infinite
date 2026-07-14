@@ -73,10 +73,10 @@ export async function listContainers(
   opts: { all?: boolean } = {},
 ): Promise<DockerContainer[]> {
   const filter = opts.all ? "--all" : "";
-  const cmd = `docker ps ${filter} --no-trunc --format 'table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.State}}\t{{.Ports}}\t{{.CreatedAt}}'`;
+  const cmd = `docker ps ${filter} --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.State}}\t{{.Ports}}\t{{.CreatedAt}}'`;
   const { stdout, code } = await runSSHCommand(connection, cmd);
   if (code !== 0) return [];
-  const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
+  const lines = stdout.split("\n").filter((l) => l.trim());
   return parseTable(lines).map((cols) => ({
     id: cols[0] ?? "",
     names: cols[1] ?? "",
@@ -107,10 +107,10 @@ export async function dockerStats(
 }
 
 export async function listImages(connection: SSHConnection): Promise<DockerImage[]> {
-  const cmd = `docker images --no-trunc --format 'table {{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}'`;
+  const cmd = `docker images --no-trunc --format '{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}'`;
   const { stdout, code } = await runSSHCommand(connection, cmd);
   if (code !== 0) return [];
-  const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
+  const lines = stdout.split("\n").filter((l) => l.trim());
   return parseTable(lines).map((cols) => ({
     id: cols[0] ?? "",
     repository: !cols[1] || cols[1] === "<none>" ? "" : cols[1],
@@ -121,10 +121,10 @@ export async function listImages(connection: SSHConnection): Promise<DockerImage
 }
 
 export async function listVolumes(connection: SSHConnection): Promise<DockerVolume[]> {
-  const cmd = `docker volume ls --format 'table {{.Name}}\t{{.Driver}}\t{{.Size}}'`;
+  const cmd = `docker volume ls --format '{{.Name}}\t{{.Driver}}\t{{.Size}}'`;
   const { stdout, code } = await runSSHCommand(connection, cmd);
   if (code !== 0) return [];
-  const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
+  const lines = stdout.split("\n").filter((l) => l.trim());
   return parseTable(lines).map((cols) => ({
     name: cols[0] ?? "",
     driver: cols[1] ?? "",
@@ -134,10 +134,10 @@ export async function listVolumes(connection: SSHConnection): Promise<DockerVolu
 }
 
 export async function listNetworks(connection: SSHConnection): Promise<DockerNetwork[]> {
-  const cmd = `docker network ls --no-trunc --format 'table {{.ID}}\t{{.Name}}\t{{.Driver}}\t{{.Scope}}'`;
+  const cmd = `docker network ls --no-trunc --format '{{.ID}}\t{{.Name}}\t{{.Driver}}\t{{.Scope}}'`;
   const { stdout, code } = await runSSHCommand(connection, cmd);
   if (code !== 0) return [];
-  const lines = stdout.split("\n").slice(1).filter((l) => l.trim());
+  const lines = stdout.split("\n").filter((l) => l.trim());
   return parseTable(lines).map((cols) => ({
     id: cols[0] ?? "",
     name: cols[1] ?? "",
