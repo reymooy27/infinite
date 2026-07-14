@@ -76,10 +76,6 @@ body {
   overflow-y: auto !important;
 }
 
-.xterm-scrollable-element {
-  height: 100% !important;
-}
-
 .terminal {
   height: 100% !important;
 }

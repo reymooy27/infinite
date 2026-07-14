@@ -545,7 +545,7 @@ function handleFileTransferMessage(conn, ws, msg) {
             break;
     }
 }
-export function createSSHSocket(connection, ws, windowId, initialDirectory) {
+export function createSSHSocket(connection, ws, windowId, initialDirectory, replayOnAttach = true) {
     if (windowId && sessions.has(windowId)) {
         const session = sessions.get(windowId);
         logger.info(`[SSH] Re-attaching to session ${windowId}`);
@@ -557,7 +557,9 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory) {
         session.ws = ws;
         // Send connected status immediately
         ws.send(JSON.stringify({ type: "connected" }));
-        replayRecentOutput(session);
+        if (replayOnAttach) {
+            replayRecentOutput(session);
+        }
         // Re-attach listeners
         ws.on("message", (msg) => {
             try {

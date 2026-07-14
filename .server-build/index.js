@@ -478,6 +478,7 @@ wss.on("connection", async (ws, req) => {
     const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
     const windowId = u.searchParams.get("windowId") || "";
     const initialDirectory = u.searchParams.get("directory") || undefined;
+    const replayOnAttach = u.searchParams.get("replay") !== "0";
     logger.info(`[WS] SSH connection, connectionId: ${connId}, userId: ${userId}`);
     if (!connId) {
         ws.send(JSON.stringify({ type: "error", message: "Missing connectionId" }));
@@ -497,7 +498,7 @@ wss.on("connection", async (ws, req) => {
             proxyThroughAgent(ws, agentWs, connection, windowId, initialDirectory);
             return;
         }
-        createSSHSocket(connection, ws, windowId, initialDirectory);
+        createSSHSocket(connection, ws, windowId, initialDirectory, replayOnAttach);
     }
     catch (err) {
         const message = err instanceof Error ? err.message : "Failed to load SSH connection";

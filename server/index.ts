@@ -568,6 +568,7 @@ wss.on("connection", async (ws, req) => {
   const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
   const windowId = u.searchParams.get("windowId") || "";
   const initialDirectory = u.searchParams.get("directory") || undefined;
+  const replayOnAttach = u.searchParams.get("replay") !== "0";
 
   logger.info(
     `[WS] SSH connection, connectionId: ${connId}, userId: ${userId}`,
@@ -599,6 +600,7 @@ wss.on("connection", async (ws, req) => {
       ws as Parameters<typeof createSSHSocket>[1],
       windowId,
       initialDirectory,
+      replayOnAttach,
     );
   } catch (err) {
     const message =

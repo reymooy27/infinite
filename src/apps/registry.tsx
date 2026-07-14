@@ -1180,6 +1180,7 @@ export const SSHPane = ({
       connectionId,
       directory: projectDirectory || "",
       windowId: sessionId,
+      replay: "0",
       r: retryKey,
     });
   }, [connectionId, projectDirectory, windowId, tabId, retryKey]);
@@ -1296,13 +1297,9 @@ export const SSHPane = ({
 
     requestAnimationFrame(focusTerminal);
 
-    // Restore cached terminal content from previous project switch
     const cached = getBuffer(bufferKeyRef.current);
     if (cached && cached.lines.length > 0) {
-      viewportOffsetRef.current = cached.scrollOffsetFromBottom;
-      term.write(cached.lines.join("\r\n"), () => {
-        scheduleViewportRestore(cached.scrollOffsetFromBottom);
-      });
+      viewportOffsetRef.current = clampViewportOffset(cached.scrollOffsetFromBottom);
     }
     deleteBuffer(bufferKeyRef.current);
 
@@ -1377,7 +1374,7 @@ export const SSHPane = ({
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, [connectionId, focusTerminal, forceTerminalRepaint, forwardReservedTerminalShortcut, getViewportOffsetFromBottom, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer, tabId, terminalFontSize, windowId]);
+  }, [clampViewportOffset, connectionId, focusTerminal, forceTerminalRepaint, forwardReservedTerminalShortcut, getViewportOffsetFromBottom, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer, tabId, terminalFontSize, windowId]);
 
   useEffect(() => {
     if (isActive) {

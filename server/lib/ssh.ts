@@ -782,6 +782,7 @@ export function createSSHSocket(
   },
   windowId?: string,
   initialDirectory?: string,
+  replayOnAttach = true,
 ) {
   if (windowId && sessions.has(windowId)) {
     const session = sessions.get(windowId)!;
@@ -797,7 +798,9 @@ export function createSSHSocket(
 
     // Send connected status immediately
     ws.send(JSON.stringify({ type: "connected" }));
-    replayRecentOutput(session);
+    if (replayOnAttach) {
+      replayRecentOutput(session);
+    }
 
     // Re-attach listeners
     ws.on("message", (msg: unknown) => {
