@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, GitBranch } from "lucide-react";
-import { SSHPane } from "@/apps/registry";
+import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, GitBranch, Boxes } from "lucide-react";
+import { SSHPane, registry } from "@/apps/registry";
+import DockerManager from "@/apps/DockerManager";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
@@ -53,9 +54,11 @@ export default function FocusModeLayout({
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
 
   const sshWindows = getVisibleSSHWindows(windows);
+  const focusWindows = windows.filter((w) => !w.minimized);
   const activeWindow =
-    sshWindows.find((w) => w.id === focusModeWindowId) ??
+    focusWindows.find((w) => w.id === focusModeWindowId) ??
     sshWindows[0] ??
+    focusWindows.find((w) => w.appId === "docker") ??
     null;
   const activeWindowId = activeWindow?.id ?? null;
 
@@ -79,16 +82,23 @@ export default function FocusModeLayout({
     (s) => (activeSessionId ? s.terminalCwds[activeSessionId] : undefined),
   );
   const getWindowLabel = (windowId: string) => {
-    const win = sshWindows.find((item) => item.id === windowId);
-    if (!win) return "Terminal";
-    const meta = getSSHMetadata(win);
+    const win = focusWindows.find((item) => item.id === windowId);
+    if (!win) return "Window";
+    if (win.appId === "ssh") {
+      const meta = getSSHMetadata(win);
+      return (
+        (win.metadata?.title as string | undefined) ??
+        meta?.tabs.find((tab) => tab.id === meta.activeTabId)?.title ??
+        meta?.tabs.find((tab) => tab.id === meta.activeTabId)?.label ??
+        meta?.tabs[0]?.title ??
+        meta?.tabs[0]?.label ??
+        "Terminal"
+      );
+    }
     return (
       (win.metadata?.title as string | undefined) ??
-      meta?.tabs.find((tab) => tab.id === meta.activeTabId)?.title ??
-      meta?.tabs.find((tab) => tab.id === meta.activeTabId)?.label ??
-      meta?.tabs[0]?.title ??
-      meta?.tabs[0]?.label ??
-      "Terminal"
+      registry[win.appId]?.title ??
+      "Window"
     );
   };
 
@@ -120,6 +130,16 @@ export default function FocusModeLayout({
     setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
     setFocusModeWindowId(nextTerminal.windowId);
     focusWindow(nextTerminal.windowId);
+  };
+
+  const openApp = useWindowStore((s) => s.openApp);
+
+  const handleOpenDocker = () => {
+    openApp("docker");
+    const wins = useWindowStore.getState().windows;
+    const last = wins[wins.length - 1];
+    if (last) setFocusModeWindowId(last.id);
+    setTabPanelOpen(false);
   };
 
   useEffect(() => {
@@ -292,12 +312,23 @@ export default function FocusModeLayout({
           >
             <GitBranch size={14} />
           </button>
+          <button
+            onClick={handleOpenDocker}
+            title="Open Docker Manager"
+            className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center ${
+              activeWindow?.appId === "docker"
+                ? "bg-neutral-800 text-white border-neutral-700"
+                : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
+            }`}
+          >
+            <Boxes size={14} />
+          </button>
         </div>
       )}
 
       {tabPanelOpen && (
         <div ref={tabPanelRef} className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1.5 flex flex-col gap-0.5">
-          {sshWindows.map((win) => {
+          {focusWindows.map((win) => {
             const isSelected = win.id === activeWindow?.id;
             return (
               <div
@@ -314,7 +345,7 @@ export default function FocusModeLayout({
               >
                 <span className="truncate">{getWindowLabel(win.id)}</span>
                 <span className="ml-2 shrink-0 text-[10px] uppercase tracking-[0.18em] text-neutral-500">
-                  Win
+                  {win.appId === "ssh" ? "Win" : (registry[win.appId]?.title ?? win.appId)}
                 </span>
               </div>
             );
@@ -363,7 +394,12 @@ export default function FocusModeLayout({
       )}
 
       <div className="relative flex-1 min-h-0">
-        {activeWindow ? (
+        {activeWindow && activeWindow.appId === "docker" ? (
+          <DockerManager
+            windowId={activeWindow.id}
+            connectionId={activeWindow.metadata?.connectionId as number | undefined}
+          />
+        ) : activeWindow ? (
           tabs.map((tab) => (
             <SSHPane
               key={tab.id}
@@ -383,12 +419,20 @@ export default function FocusModeLayout({
             <div className="text-center">
               <p className="text-sm text-neutral-400 mb-1">No terminal open</p>
               <p className="text-xs text-neutral-600 mb-4">Add an SSH connection to get started</p>
-              <button
-                onClick={() => onOpenSection("ssh")}
-                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs rounded-lg transition-colors cursor-pointer"
-              >
-                Open SSH Manager
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onOpenSection("ssh")}
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  Open SSH Manager
+                </button>
+                <button
+                  onClick={handleOpenDocker}
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Boxes size={13} /> Open Docker
+                </button>
+              </div>
             </div>
           </div>
         )}

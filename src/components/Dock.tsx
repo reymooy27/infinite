@@ -889,7 +889,7 @@ export default function Dock() {
         {/* Focus mode toggle */}
         <button
           onClick={handleToggleFocusMode}
-          title={focusMode ? "Switch to canvas mode" : "Focus mode (terminal only)"}
+          title={focusMode ? "Switch to canvas mode" : "Focus mode"}
           className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
             focusMode
               ? "bg-blue-600 text-white"
