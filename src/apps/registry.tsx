@@ -1001,15 +1001,22 @@ export const SSHPane = ({
     return Math.max(0, buffer.baseY - viewportY);
   }, []);
 
+  const clampViewportOffset = useCallback((offset: number) => {
+    const term = termInstanceRef.current;
+    if (!term) return 0;
+    return Math.min(Math.max(0, offset), term.buffer.active.baseY);
+  }, []);
+
   const restoreViewportOffset = useCallback((offsetFromBottom?: number) => {
     const term = termInstanceRef.current;
     if (!term) return;
     const buffer = term.buffer.active;
-    const offset =
+    const offset = clampViewportOffset(
       typeof offsetFromBottom === "number"
         ? offsetFromBottom
-        : viewportOffsetRef.current;
-    const targetLine = Math.max(0, buffer.baseY - Math.max(0, offset));
+        : viewportOffsetRef.current,
+    );
+    const targetLine = offset <= 1 ? buffer.baseY : buffer.baseY - offset;
     suppressViewportTrackingUntilRef.current = performance.now() + 260;
     (
       term as XTerminal & {
@@ -1017,16 +1024,17 @@ export const SSHPane = ({
       }
     ).scrollToLine(targetLine, true);
     lastKnownViewportYRef.current = targetLine;
-    viewportOffsetRef.current = Math.max(0, offset);
-  }, []);
+    viewportOffsetRef.current = offset <= 1 ? 0 : offset;
+  }, [clampViewportOffset]);
 
   const scheduleViewportRestore = useCallback((offsetFromBottom?: number) => {
-    const offset =
+    const offset = clampViewportOffset(
       typeof offsetFromBottom === "number"
         ? offsetFromBottom
-        : pendingViewportRestoreRef.current ?? viewportOffsetRef.current;
+        : pendingViewportRestoreRef.current ?? viewportOffsetRef.current,
+    );
 
-    pendingViewportRestoreRef.current = Math.max(0, offset);
+    pendingViewportRestoreRef.current = offset;
 
     if (restoreViewportRafRef.current !== null) {
       cancelAnimationFrame(restoreViewportRafRef.current);
@@ -1041,7 +1049,7 @@ export const SSHPane = ({
         restoreViewportRafRef.current = null;
       });
     });
-  }, [restoreViewportOffset]);
+  }, [clampViewportOffset, restoreViewportOffset]);
 
   const snapshotTerminalBuffer = useCallback(() => {
     const term = termInstanceRef.current;
@@ -1057,15 +1065,17 @@ export const SSHPane = ({
       lines.pop();
     }
 
-    const viewportOffset = getViewportOffsetFromBottom();
+    const viewportOffset = isActiveRef.current
+      ? clampViewportOffset(getViewportOffsetFromBottom())
+      : clampViewportOffset(viewportOffsetRef.current);
     viewportOffsetRef.current = viewportOffset;
     saveBuffer(bufferKeyRef.current, lines, viewportOffset);
-  }, [getViewportOffsetFromBottom]);
+  }, [clampViewportOffset, getViewportOffsetFromBottom]);
 
   const syncTerminalLayout = useCallback((recreateCanvas = false) => {
     const term = termInstanceRef.current;
     const fit = fitRef.current;
-    if (!term || !fit) return;
+    if (!term || !fit || !isActiveRef.current) return;
     const fitWithPropose = fit as FitAddon & {
       proposeDimensions?: () => { cols: number; rows: number } | undefined;
     };
@@ -1078,7 +1088,7 @@ export const SSHPane = ({
     ) {
       return;
     }
-    const viewportOffset = getViewportOffsetFromBottom();
+    const viewportOffset = clampViewportOffset(getViewportOffsetFromBottom());
     viewportOffsetRef.current = viewportOffset;
     pendingViewportRestoreRef.current = viewportOffset;
     suppressViewportTrackingUntilRef.current = performance.now() + 320;
@@ -1093,7 +1103,7 @@ export const SSHPane = ({
       term.refresh(0, term.rows - 1);
     }
     scheduleViewportRestore(viewportOffset);
-  }, [getViewportOffsetFromBottom, scheduleViewportRestore]);
+  }, [clampViewportOffset, getViewportOffsetFromBottom, scheduleViewportRestore]);
 
   const forceTerminalRepaint = useCallback(() => {
     syncTerminalLayout(true);
@@ -1319,6 +1329,7 @@ export const SSHPane = ({
     term.onScroll(() => {
       const term = termInstanceRef.current;
       if (!term) return;
+      if (!isActiveRef.current) return;
       if (performance.now() < suppressViewportTrackingUntilRef.current) return;
 
       lastKnownViewportYRef.current = term.buffer.active.viewportY;
@@ -1385,7 +1396,7 @@ export const SSHPane = ({
   }, [forceTerminalRepaint, terminalFontSize]);
 
   useEffect(() => {
-    if (!isMobile || !termInstanceRef.current) return;
+    if (!isMobile || !isActiveRef.current || !termInstanceRef.current) return;
 
     const previousHeight = lastKeyboardHeightRef.current;
     const nextHeight = keyboardHeight ?? 0;
