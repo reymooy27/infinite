@@ -380,6 +380,9 @@ export default function FocusModeGitPanel({
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(true);
   const [stashOpen, setStashOpen] = useState(true);
+  const [selectedFileDiff, setSelectedFileDiff] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const branchSearchRef = useRef<HTMLInputElement>(null);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -427,6 +430,40 @@ export default function FocusModeGitPanel({
     },
     [connectionId, directory, projectId],
   );
+
+  const fetchDiff = useCallback(async (filePath: string, staged: boolean) => {
+    if (!projectId) return;
+    
+    setDiffLoading(true);
+    setSelectedFilePath(filePath);
+    
+    try {
+      const params = new URLSearchParams({
+        file: filePath,
+        staged: String(staged),
+      });
+      
+      if (directory) {
+        params.set("directory", directory);
+      }
+      if (connectionId) {
+        params.set("connectionId", String(connectionId));
+      }
+      
+      const res = await fetch(`/api/projects/${projectId}/git/diff?${params}`);
+      const body = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(body.error || "Failed to load diff");
+      }
+      
+      setSelectedFileDiff(body.diff || "No changes");
+    } catch (err) {
+      setSelectedFileDiff(err instanceof Error ? err.message : "Failed to load diff");
+    } finally {
+      setDiffLoading(false);
+    }
+  }, [projectId, directory, connectionId]);
 
   useEffect(() => {
     if (!open) return;
@@ -849,7 +886,15 @@ export default function FocusModeGitPanel({
     return (
       <div
         key={row.id}
-        onClick={() => setSelectedRowId(row.id)}
+        onClick={() => {
+          setSelectedRowId(row.id);
+          if (selectedFilePath === row.change.path && selectedFileDiff) {
+            setSelectedFileDiff(null);
+            setSelectedFilePath(null);
+          } else {
+            void fetchDiff(row.change.path, row.change.staged);
+          }
+        }}
         className={`group flex w-full items-start gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors cursor-pointer ${
           selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
         }`}
@@ -1125,6 +1170,48 @@ export default function FocusModeGitPanel({
                 </div>
               )}
 
+              {selectedFileDiff && (
+                <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
+                  <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
+                    <span className="truncate flex-1 mr-2">{selectedFilePath}</span>
+                    <button
+                      onClick={() => {
+                        setSelectedFileDiff(null);
+                        setSelectedFilePath(null);
+                      }}
+                      className="rounded p-1 hover:bg-neutral-800"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <div className="max-h-[300px] overflow-auto p-2">
+                    {diffLoading ? (
+                      <div className="flex items-center justify-center py-4 text-neutral-500">
+                        <LoaderCircle size={14} className="animate-spin mr-2" />
+                        <span className="text-xs">Loading diff...</span>
+                      </div>
+                    ) : (
+                      <pre className="text-[11px] font-mono whitespace-pre leading-relaxed">
+                        {selectedFileDiff.split("\n").map((line, i) => {
+                          let className = "text-neutral-400";
+                          if (line.startsWith("+") && !line.startsWith("+++")) {
+                            className = "text-emerald-400";
+                          } else if (line.startsWith("-") && !line.startsWith("---")) {
+                            className = "text-rose-400";
+                          } else if (line.startsWith("@@")) {
+                            className = "text-sky-400";
+                          } else if (line.startsWith("diff") || line.startsWith("index") || line.startsWith("---") || line.startsWith("+++")) {
+                            className = "text-neutral-500";
+                          }
+                          return (
+                            <div key={i} className={className}>{line || "\u00A0"}</div>
+                          );
+                        })}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                 <button
                   onClick={() => setHistoryOpen((prev) => !prev)}

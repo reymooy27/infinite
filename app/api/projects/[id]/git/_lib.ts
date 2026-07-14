@@ -357,7 +357,7 @@ async function getProject(projectId: string) {
   } satisfies GitProjectRecord;
 }
 
-async function createExecutionContext(projectId: string, requestedDirectory?: string | null, connectionId?: number | null) {
+export async function createExecutionContext(projectId: string, requestedDirectory?: string | null, connectionId?: number | null) {
   const project = await getProject(projectId);
   const directory = requestedDirectory?.trim() || project.directory;
 
@@ -525,7 +525,7 @@ function parseStashes(output: string) {
     .filter((entry): entry is GitStashEntry => Boolean(entry));
 }
 
-async function execGitOrThrow(ctx: GitExecutionContext, args: string[]) {
+export async function execGitOrThrow(ctx: GitExecutionContext, args: string[]) {
   const result = await ctx.runGit(args);
   if (!result.ok) {
     throw formatGitCommandError(result.stdout, result.stderr, result.exitCode);
