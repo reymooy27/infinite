@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Server,
   Container as ContainerIcon,
+  X,
 } from "lucide-react";
 import { useSSHStore } from "@/stores/useSSHStore";
 import type { SSHConnection } from "@/types";
@@ -286,9 +287,13 @@ function DetailDrawer({
 export default function DockerManager({
   connectionId,
   windowId,
+  onClose,
+  onConnectionChange,
 }: {
   connectionId?: number;
   windowId?: string;
+  onClose?: () => void;
+  onConnectionChange?: (id: number | null) => void;
 }) {
   void windowId;
   const connections = useSSHStore((s) => s.connections);
@@ -302,6 +307,14 @@ export default function DockerManager({
       }
       return null;
     },
+  );
+
+  const handleSelectConnection = useCallback(
+    (conn: SSHConnection | null) => {
+      setSelectedConnection(conn);
+      onConnectionChange?.(conn?.id ?? null);
+    },
+    [onConnectionChange],
   );
   const [tab, setTab] = useState<Tab>("containers");
   const [containers, setContainers] = useState<DockerContainer[]>([]);
@@ -328,6 +341,14 @@ export default function DockerManager({
   useEffect(() => {
     fetchConnections();
   }, [fetchConnections]);
+
+  useEffect(() => {
+    if (connectionId == null) return;
+    const found = connections.find((c) => c.id === connectionId) ?? null;
+    if (!found || found.id === selectedConnection?.id) return;
+    const handle = setTimeout(() => setSelectedConnection(found), 0);
+    return () => clearTimeout(handle);
+  }, [connectionId, connections, selectedConnection?.id]);
 
   const selectedId = selectedConnection?.id;
 
@@ -722,15 +743,32 @@ export default function DockerManager({
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Close"
+              className="flex h-7 w-7 items-center justify-center rounded border border-neutral-700 text-neutral-400 cursor-pointer hover:bg-neutral-800 hover:text-white"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 
       <div className="flex items-center gap-2 border-b border-neutral-800 bg-neutral-900/60 px-3 py-1.5 text-[11px] text-neutral-400">
         <Server size={12} />
         {selectedConnection ? (
-          <span className="truncate">
-            {selectedConnection.name} ({selectedConnection.username}@{selectedConnection.host})
-          </span>
+          <>
+            <span className="truncate">
+              {selectedConnection.name} ({selectedConnection.username}@{selectedConnection.host})
+            </span>
+            <button
+              onClick={() => handleSelectConnection(null)}
+              className="ml-auto shrink-0 rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:bg-neutral-800"
+            >
+              Change server
+            </button>
+          </>
         ) : (
           <span>No server selected</span>
         )}
@@ -740,7 +778,7 @@ export default function DockerManager({
         {!selectedConnection ? (
           <ConnectionPicker
             connections={connections}
-            onSelect={setSelectedConnection}
+            onSelect={handleSelectConnection}
           />
         ) : (
           content

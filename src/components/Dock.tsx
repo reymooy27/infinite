@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Boxes } from "lucide-react";
+
 import registry from "@/apps/registry";
+import { useDockerStore } from "@/stores/useDockerStore";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
@@ -10,7 +13,7 @@ import { useSettingsStore } from "@/stores/useSettingsStore";
 import { centerWindowById } from "@/lib/focusWindow";
 import type { AppId, SSHConnection } from "@/types";
 
-const DOCK_APPS: AppId[] = ["notes", "ssh", "docker"];
+const DOCK_APPS: AppId[] = ["notes", "ssh"];
 const BROWSER_DOCK_APPS: AppId[] = ["devBrowser", "browserCanvas"];
 const BROWSER_CHOICES: Array<{
   appId: (typeof BROWSER_DOCK_APPS)[number];
@@ -336,6 +339,8 @@ export default function Dock() {
   };
 
   const sshConnections = useSSHStore((s) => s.connections);
+  const dockerOpen = useDockerStore((s) => s.open);
+  const toggleDockerPanel = useDockerStore((s) => s.togglePanel);
   const fetchConnections = useSSHStore((s) => s.fetchConnections);
 
   useEffect(() => {
@@ -390,7 +395,6 @@ export default function Dock() {
 
   const hasWindows = windows.length > 0;
   const isSshPlacing = placingAppId === "ssh";
-  const isDockerPlacing = placingAppId === "docker";
   const isBrowserPlacing =
     placingAppId !== null && BROWSER_DOCK_APPS.includes(placingAppId);
   const isBrowserOpen = windows.some((w) =>
@@ -449,18 +453,6 @@ export default function Dock() {
   const handleBrowserChoice = (appId: (typeof BROWSER_DOCK_APPS)[number]) => {
     setShowBrowserPicker(false);
     setPlacingApp(appId);
-  };
-
-  const handleDockerLauncher = () => {
-    setShowWinMenu(false);
-    setShowFileTransfer(false);
-    setShowBrowserPicker(false);
-    setShowSshPicker(false);
-    if (isDockerPlacing) {
-      clearPlacing();
-      return;
-    }
-    setPlacingApp("docker");
   };
 
   const handleSshLauncher = () => {
@@ -773,10 +765,6 @@ export default function Dock() {
                     handleSshLauncher();
                     return;
                   }
-                  if (appId === "docker") {
-                    handleDockerLauncher();
-                    return;
-                  }
                   setShowSshPicker(false);
                   if (isPlacing) {
                     clearPlacing();
@@ -885,6 +873,19 @@ export default function Dock() {
             </div>
           )}
         </div>
+
+        {/* Docker manager toggle */}
+        <button
+          onClick={toggleDockerPanel}
+          title="Docker Manager"
+          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+            dockerOpen
+              ? "bg-blue-600 text-white"
+              : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+          }`}
+        >
+          <Boxes size={16} />
+        </button>
 
         {/* Focus mode toggle */}
         <button

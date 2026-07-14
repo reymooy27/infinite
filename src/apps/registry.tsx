@@ -5,14 +5,13 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Boxes, Copy, Download, FileTerminal, Globe, Monitor, NotepadText, RefreshCw, Upload } from "lucide-react";
+import { Copy, Download, FileTerminal, Globe, Monitor, NotepadText, RefreshCw, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import FileTransferWindow from "@/components/FileTransferModal";
 import DevBrowser from "./DevBrowser";
-import DockerManager from "./DockerManager";
 import Notes from "./Notes";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
@@ -2261,17 +2260,6 @@ export const registry: Record<AppId, AppDefinition> = {
     }>,
     defaultWidth: 560,
     defaultHeight: 520,
-  },
-  docker: {
-    id: "docker",
-    title: "Docker Manager",
-    icon: <Boxes />,
-    component: DockerManager as React.ComponentType<{
-      connectionId?: number;
-      windowId?: string;
-    }>,
-    defaultWidth: 900,
-    defaultHeight: 620,
   },
 };
 

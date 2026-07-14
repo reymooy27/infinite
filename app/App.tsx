@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
+import DockerPanel from "@/components/DockerPanel";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import FocusModeLayout from "@/components/FocusModeLayout";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
@@ -243,6 +244,7 @@ export default function App() {
           <Dock />
         </>
       )}
+      <DockerPanel />
       <Sidebar
         openSection={pendingSection}
         onOpenSectionConsumed={() => setPendingSection(null)}
