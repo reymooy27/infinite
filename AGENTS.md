@@ -25,4 +25,3 @@
 - `src/stores/useWindowStore.js` — Zustand z-index store
 - `vite.config.js` — Vite config with React + Tailwind plugins
 - `patches/@xterm+xterm+6.0.0.patch` — Link click offset fix
-

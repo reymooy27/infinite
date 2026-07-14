@@ -9,6 +9,7 @@ import rateLimit from "express-rate-limit";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
 import { attachAgentProxySession, clearAgentProxySession, createSSHSocket, createSFTPConnection, detachAgentProxySession, ensureLocalTunnel, getAgentProxySession, setAgentProxySessionExpireHandler, setAgentProxySessionHandlers, } from "./lib/ssh.js";
+import { dockerStats, getContainerLogs, inspectContainer, listContainers, listImages, listNetworks, listVolumes, pauseContainer, pruneDocker, removeContainer, removeImage, removeNetwork, removeVolume, restartContainer, startContainer, stopContainer, unpauseContainer, } from "./lib/docker.js";
 import { logger } from "./lib/logger.js";
 import { browserManager } from "./lib/browser.js";
 const LOCAL_USER_ID = "local-user";
@@ -183,6 +184,240 @@ app.use("/api/tunnels/:connectionId/:targetPort/:scheme", async (req, res) => {
         if (!res.headersSent) {
             res.status(500).json({ error: message });
         }
+    }
+});
+// ---------------- Docker Manager API ----------------
+// All Docker operations run over SSH against a saved connection.
+async function withConnection(req, connectionId, fn) {
+    const userId = getUserIdFromRequest(req);
+    const connection = await loadConnection(connectionId, userId);
+    return fn(connection);
+}
+app.get("/api/docker/:connectionId/containers", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    if (!connectionId) {
+        res.status(400).json({ error: "Missing connectionId" });
+        return;
+    }
+    try {
+        await withConnection(req, connectionId, async (connection) => {
+            const all = req.query.all === "1" || req.query.all === "true";
+            const containers = await listContainers(connection, { all });
+            const stats = await dockerStats(connection);
+            const merged = containers.map((c) => ({
+                ...c,
+                cpuPerc: stats[c.id]?.cpuPerc ?? "",
+                memUsage: stats[c.id]?.memUsage ?? "",
+            }));
+            res.json({ containers: merged });
+        });
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to list containers";
+        logger.error("[Docker] list containers failed", { connectionId, error: message });
+        res.status(500).json({ error: message });
+    }
+});
+app.get("/api/docker/:connectionId/images", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    if (!connectionId) {
+        res.status(400).json({ error: "Missing connectionId" });
+        return;
+    }
+    try {
+        await withConnection(req, connectionId, async (connection) => {
+            const images = await listImages(connection);
+            res.json({ images });
+        });
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to list images";
+        res.status(500).json({ error: message });
+    }
+});
+app.get("/api/docker/:connectionId/volumes", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    if (!connectionId) {
+        res.status(400).json({ error: "Missing connectionId" });
+        return;
+    }
+    try {
+        await withConnection(req, connectionId, async (connection) => {
+            const volumes = await listVolumes(connection);
+            res.json({ volumes });
+        });
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to list volumes";
+        res.status(500).json({ error: message });
+    }
+});
+app.get("/api/docker/:connectionId/networks", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    if (!connectionId) {
+        res.status(400).json({ error: "Missing connectionId" });
+        return;
+    }
+    try {
+        await withConnection(req, connectionId, async (connection) => {
+            const networks = await listNetworks(connection);
+            res.json({ networks });
+        });
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to list networks";
+        res.status(500).json({ error: message });
+    }
+});
+app.post("/api/docker/:connectionId/containers/:action", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    const action = String(req.params.action || "");
+    const id = String(req.body?.id || "");
+    const allowed = ["start", "stop", "restart", "pause", "unpause", "remove"];
+    if (!connectionId || !id) {
+        res.status(400).json({ error: "Missing connectionId or id" });
+        return;
+    }
+    if (!allowed.includes(action)) {
+        res.status(400).json({ error: `Unknown action: ${action}` });
+        return;
+    }
+    try {
+        const result = await withConnection(req, connectionId, async (connection) => {
+            switch (action) {
+                case "start":
+                    return startContainer(connection, id);
+                case "stop":
+                    return stopContainer(connection, id);
+                case "restart":
+                    return restartContainer(connection, id);
+                case "pause":
+                    return pauseContainer(connection, id);
+                case "unpause":
+                    return unpauseContainer(connection, id);
+                case "remove":
+                    return removeContainer(connection, id, Boolean(req.body?.force));
+                default:
+                    return { ok: false, message: "Unknown action" };
+            }
+        });
+        if (result.ok) {
+            res.json(result);
+        }
+        else {
+            res.status(400).json(result);
+        }
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Docker action failed";
+        res.status(500).json({ ok: false, message });
+    }
+});
+app.post("/api/docker/:connectionId/images/remove", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    const id = String(req.body?.id || "");
+    if (!connectionId || !id) {
+        res.status(400).json({ error: "Missing connectionId or id" });
+        return;
+    }
+    try {
+        const result = await withConnection(req, connectionId, (connection) => removeImage(connection, id, Boolean(req.body?.force)));
+        if (result.ok)
+            res.json(result);
+        else
+            res.status(400).json(result);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to remove image";
+        res.status(500).json({ ok: false, message });
+    }
+});
+app.post("/api/docker/:connectionId/volumes/remove", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    const name = String(req.body?.name || "");
+    if (!connectionId || !name) {
+        res.status(400).json({ error: "Missing connectionId or name" });
+        return;
+    }
+    try {
+        const result = await withConnection(req, connectionId, (connection) => removeVolume(connection, name, Boolean(req.body?.force)));
+        if (result.ok)
+            res.json(result);
+        else
+            res.status(400).json(result);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to remove volume";
+        res.status(500).json({ ok: false, message });
+    }
+});
+app.post("/api/docker/:connectionId/networks/remove", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    const id = String(req.body?.id || "");
+    if (!connectionId || !id) {
+        res.status(400).json({ error: "Missing connectionId or id" });
+        return;
+    }
+    try {
+        const result = await withConnection(req, connectionId, (connection) => removeNetwork(connection, id));
+        if (result.ok)
+            res.json(result);
+        else
+            res.status(400).json(result);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to remove network";
+        res.status(500).json({ ok: false, message });
+    }
+});
+app.get("/api/docker/:connectionId/containers/:id/logs", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    const id = String(req.params.id || "");
+    if (!connectionId || !id) {
+        res.status(400).json({ error: "Missing connectionId or id" });
+        return;
+    }
+    try {
+        const logs = await withConnection(req, connectionId, (connection) => getContainerLogs(connection, id, {
+            tail: req.query.tail ? parseInt(String(req.query.tail), 10) : undefined,
+            since: req.query.since ? String(req.query.since) : undefined,
+        }));
+        res.json({ logs });
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to fetch logs";
+        res.status(500).json({ error: message });
+    }
+});
+app.get("/api/docker/:connectionId/containers/:id/inspect", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    const id = String(req.params.id || "");
+    if (!connectionId || !id) {
+        res.status(400).json({ error: "Missing connectionId or id" });
+        return;
+    }
+    try {
+        const inspect = await withConnection(req, connectionId, (connection) => inspectContainer(connection, id));
+        res.json({ inspect });
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to inspect container";
+        res.status(500).json({ error: message });
+    }
+});
+app.post("/api/docker/:connectionId/prune", async (req, res) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    if (!connectionId) {
+        res.status(400).json({ error: "Missing connectionId" });
+        return;
+    }
+    try {
+        const result = await withConnection(req, connectionId, (connection) => pruneDocker(connection, { volumes: Boolean(req.body?.volumes) }));
+        res.json(result);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to prune";
+        res.status(500).json({ error: message });
     }
 });
 // Per-user active SSH session tracking

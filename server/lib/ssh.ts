@@ -6,7 +6,7 @@ import { logger } from "./logger.js";
 
 const ERR_UNHANDLED = "ERR_UNHANDLED_ERROR";
 
-interface SSHConnection {
+export interface SSHConnection {
   id: number;
   name: string;
   host: string;
@@ -306,6 +306,90 @@ function connectSSH(connection: SSHConnection): Promise<Client> {
     }
   });
 }
+
+
+/**
+ * Run a one-shot command over SSH and resolve with stdout/stderr and exit code.
+ * Used by REST API routes (e.g. Docker manager) that do not need an interactive shell.
+ */
+export function runSSHCommand(
+  connection: SSHConnection,
+  command: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  return new Promise((resolve, reject) => {
+    let config;
+    try {
+      config = getSSHConfig(connection);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    const conn = new Client();
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { conn.end(); } catch {}
+      reject(new Error("SSH command timed out"));
+    }, opts.timeoutMs ?? 30000);
+
+    conn.on("ready", () => {
+      conn.exec(command, { pty: true }, (err, stream) => {
+        if (err) {
+          clearTimeout(timeout);
+          if (!settled) {
+            settled = true;
+            try { conn.end(); } catch {}
+            reject(err);
+          }
+          return;
+        }
+        let stdout = "";
+        let stderr = "";
+        stream.on("data", (d: Buffer) => { stdout += d.toString("utf8"); });
+        stream.stderr.on("data", (d: Buffer) => { stderr += d.toString("utf8"); });
+        stream.on("close", (code: number | null) => {
+          clearTimeout(timeout);
+          if (!settled) {
+            settled = true;
+            try { conn.end(); } catch {}
+            resolve({ stdout, stderr, code });
+          }
+        });
+        stream.on("error", (streamErr: Error) => {
+          clearTimeout(timeout);
+          if (!settled) {
+            settled = true;
+            try { conn.end(); } catch {}
+            reject(streamErr);
+          }
+        });
+      });
+    });
+
+    conn.on("error", (err: Error) => {
+      clearTimeout(timeout);
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
+
+    try {
+      conn.connect(config);
+    } catch (err) {
+      clearTimeout(timeout);
+      if (!settled) {
+        settled = true;
+        reject(err as Error);
+      }
+    }
+  });
+}
+
 
 export async function ensureLocalTunnel(
   connection: SSHConnection,

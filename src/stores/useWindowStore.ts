@@ -55,6 +55,7 @@ const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
   devBrowser: { width: 1024, height: 768 },
   browserCanvas: { width: 1280, height: 800 },
   fileTransfer: { width: 560, height: 520 },
+  docker: { width: 900, height: 620 },
 };
 
 export const useWindowStore = create<WindowState>((set, get) => ({

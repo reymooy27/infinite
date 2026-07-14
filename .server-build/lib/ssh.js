@@ -177,6 +177,93 @@ function connectSSH(connection) {
         }
     });
 }
+/**
+ * Run a one-shot command over SSH and resolve with stdout/stderr and exit code.
+ * Used by REST API routes (e.g. Docker manager) that do not need an interactive shell.
+ */
+export function runSSHCommand(connection, command, opts = {}) {
+    return new Promise((resolve, reject) => {
+        let config;
+        try {
+            config = getSSHConfig(connection);
+        }
+        catch (err) {
+            reject(err);
+            return;
+        }
+        const conn = new Client();
+        let settled = false;
+        const timeout = setTimeout(() => {
+            if (settled)
+                return;
+            settled = true;
+            try {
+                conn.end();
+            }
+            catch { }
+            reject(new Error("SSH command timed out"));
+        }, opts.timeoutMs ?? 30000);
+        conn.on("ready", () => {
+            conn.exec(command, { pty: true }, (err, stream) => {
+                if (err) {
+                    clearTimeout(timeout);
+                    if (!settled) {
+                        settled = true;
+                        try {
+                            conn.end();
+                        }
+                        catch { }
+                        reject(err);
+                    }
+                    return;
+                }
+                let stdout = "";
+                let stderr = "";
+                stream.on("data", (d) => { stdout += d.toString("utf8"); });
+                stream.stderr.on("data", (d) => { stderr += d.toString("utf8"); });
+                stream.on("close", (code) => {
+                    clearTimeout(timeout);
+                    if (!settled) {
+                        settled = true;
+                        try {
+                            conn.end();
+                        }
+                        catch { }
+                        resolve({ stdout, stderr, code });
+                    }
+                });
+                stream.on("error", (streamErr) => {
+                    clearTimeout(timeout);
+                    if (!settled) {
+                        settled = true;
+                        try {
+                            conn.end();
+                        }
+                        catch { }
+                        reject(streamErr);
+                    }
+                });
+            });
+        });
+        conn.on("error", (err) => {
+            clearTimeout(timeout);
+            if (!settled) {
+                settled = true;
+                reject(err);
+            }
+        });
+        try {
+            conn.connect(config);
+        }
+        catch (err) {
+            clearTimeout(timeout);
+            if (!settled) {
+                settled = true;
+                reject(err);
+            }
+        }
+    });
+}
 export async function ensureLocalTunnel(connection, targetHost, targetPort) {
     const key = `${connection.id}:${targetHost}:${targetPort}`;
     const existing = tunnels.get(key);

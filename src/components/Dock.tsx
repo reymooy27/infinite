@@ -10,7 +10,7 @@ import { useSettingsStore } from "@/stores/useSettingsStore";
 import { centerWindowById } from "@/lib/focusWindow";
 import type { AppId, SSHConnection } from "@/types";
 
-const DOCK_APPS: AppId[] = ["notes", "ssh"];
+const DOCK_APPS: AppId[] = ["notes", "ssh", "docker"];
 const BROWSER_DOCK_APPS: AppId[] = ["devBrowser", "browserCanvas"];
 const BROWSER_CHOICES: Array<{
   appId: (typeof BROWSER_DOCK_APPS)[number];
@@ -390,6 +390,7 @@ export default function Dock() {
 
   const hasWindows = windows.length > 0;
   const isSshPlacing = placingAppId === "ssh";
+  const isDockerPlacing = placingAppId === "docker";
   const isBrowserPlacing =
     placingAppId !== null && BROWSER_DOCK_APPS.includes(placingAppId);
   const isBrowserOpen = windows.some((w) =>
@@ -448,6 +449,18 @@ export default function Dock() {
   const handleBrowserChoice = (appId: (typeof BROWSER_DOCK_APPS)[number]) => {
     setShowBrowserPicker(false);
     setPlacingApp(appId);
+  };
+
+  const handleDockerLauncher = () => {
+    setShowWinMenu(false);
+    setShowFileTransfer(false);
+    setShowBrowserPicker(false);
+    setShowSshPicker(false);
+    if (isDockerPlacing) {
+      clearPlacing();
+      return;
+    }
+    setPlacingApp("docker");
   };
 
   const handleSshLauncher = () => {
@@ -758,6 +771,10 @@ export default function Dock() {
                   setShowBrowserPicker(false);
                   if (appId === "ssh") {
                     handleSshLauncher();
+                    return;
+                  }
+                  if (appId === "docker") {
+                    handleDockerLauncher();
                     return;
                   }
                   setShowSshPicker(false);
