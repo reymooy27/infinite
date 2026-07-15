@@ -383,6 +383,9 @@ export default function FocusModeGitPanel({
   const [selectedFileDiff, setSelectedFileDiff] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
+  const [commitDiff, setCommitDiff] = useState<string | null>(null);
+  const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const branchSearchRef = useRef<HTMLInputElement>(null);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -462,6 +465,37 @@ export default function FocusModeGitPanel({
       setSelectedFileDiff(err instanceof Error ? err.message : "Failed to load diff");
     } finally {
       setDiffLoading(false);
+    }
+  }, [projectId, directory, connectionId]);
+
+  const fetchCommitDiff = useCallback(async (hash: string) => {
+    if (!projectId) return;
+
+    setCommitDiffLoading(true);
+    setSelectedCommitHash(hash);
+
+    try {
+      const params = new URLSearchParams({ hash });
+
+      if (directory) {
+        params.set("directory", directory);
+      }
+      if (connectionId) {
+        params.set("connectionId", String(connectionId));
+      }
+
+      const res = await fetch(`/api/projects/${projectId}/git/commit-diff?${params}`);
+      const body = await res.json();
+
+      if (!res.ok) {
+        throw new Error(body.error || "Failed to load diff");
+      }
+
+      setCommitDiff(body.diff || "No changes");
+    } catch (err) {
+      setCommitDiff(err instanceof Error ? err.message : "Failed to load diff");
+    } finally {
+      setCommitDiffLoading(false);
     }
   }, [projectId, directory, connectionId]);
 
@@ -1225,20 +1259,79 @@ export default function FocusModeGitPanel({
                     {data.recentCommits.length === 0 && (
                       <div className="px-3 py-2.5 text-xs text-neutral-500">No commit history</div>
                     )}
-                    {data.recentCommits.map((commit) => (
-                      <div key={`${commit.hash}-${commit.subject}`} className="px-3 py-1.5 text-xs text-neutral-300">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[11px] text-neutral-500">{commit.hash}</span>
-                          <span className="truncate text-neutral-100">{commit.subject}</span>
-                        </div>
-                        <div className="mt-1 text-[10px] text-neutral-500">
-                          {commit.authorName} · {commit.relativeDate}
-                        </div>
-                      </div>
-                    ))}
+                    {data.recentCommits.map((commit) => {
+                      const selected = selectedCommitHash === commit.hash;
+                      return (
+                        <button
+                          key={`${commit.hash}-${commit.subject}`}
+                          onClick={() => {
+                            if (selected) {
+                              setSelectedCommitHash(null);
+                              setCommitDiff(null);
+                            } else {
+                              void fetchCommitDiff(commit.hash);
+                            }
+                          }}
+                          className={`block w-full px-3 py-1.5 text-left text-xs text-neutral-300 transition-colors hover:bg-neutral-800/60 ${
+                            selected ? "bg-neutral-800/80" : ""
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] text-neutral-500">{commit.hash}</span>
+                            <span className="truncate text-neutral-100">{commit.subject}</span>
+                          </div>
+                          <div className="mt-1 text-[10px] text-neutral-500">
+                            {commit.authorName} · {commit.relativeDate}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
+
+              {selectedCommitHash && (
+                <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
+                  <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
+                    <span className="truncate flex-1 mr-2 font-mono">{selectedCommitHash} diff</span>
+                    <button
+                      onClick={() => {
+                        setSelectedCommitHash(null);
+                        setCommitDiff(null);
+                      }}
+                      className="rounded p-1 hover:bg-neutral-800"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <div className="max-h-[300px] overflow-auto p-2">
+                    {commitDiffLoading ? (
+                      <div className="flex items-center justify-center py-4 text-neutral-500">
+                        <LoaderCircle size={14} className="animate-spin mr-2" />
+                        <span className="text-xs">Loading diff...</span>
+                      </div>
+                    ) : (
+                      <pre className="text-[11px] font-mono whitespace-pre leading-relaxed">
+                        {commitDiff?.split("\n").map((line, i) => {
+                          let className = "text-neutral-400";
+                          if (line.startsWith("+") && !line.startsWith("+++")) {
+                            className = "text-emerald-400";
+                          } else if (line.startsWith("-") && !line.startsWith("---")) {
+                            className = "text-rose-400";
+                          } else if (line.startsWith("@@")) {
+                            className = "text-sky-400";
+                          } else if (line.startsWith("diff") || line.startsWith("index") || line.startsWith("---") || line.startsWith("+++")) {
+                            className = "text-neutral-500";
+                          }
+                          return (
+                            <div key={i} className={className}>{line || "\u00A0"}</div>
+                          );
+                        })}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                 <button
