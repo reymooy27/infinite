@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 function getRelayHttpBaseUrl() {
+  // Server-side relay target. In docker-compose the backend is a sibling
+  // service, not localhost, so prefer an explicit RELAY_URL.
+  const relay = process.env.RELAY_URL;
+  if (relay) return relay.replace(/\/+$/, "");
+
   const configured = process.env.NEXT_PUBLIC_WS_URL;
 
   if (configured) {

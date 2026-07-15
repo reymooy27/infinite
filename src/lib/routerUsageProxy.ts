@@ -30,7 +30,9 @@ export async function proxyRouterUsage(
     }
 
     const baseUrl = normalizeRouterUsageBaseUrl(
-      searchParams.get("baseUrl") || DEFAULT_ROUTER_USAGE_BASE_URL,
+      searchParams.get("baseUrl") ||
+        process.env.ROUTER_USAGE_BASE_URL ||
+        DEFAULT_ROUTER_USAGE_BASE_URL,
     );
 
     let upstream: URL;

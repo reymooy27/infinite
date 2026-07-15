@@ -21,13 +21,18 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "7890:7890"
+    # Host networking lets the frontend reach host-bound services (9router on
+    # :20128, the backend relay on :7891, postgres on :5432) directly via
+    # 127.0.0.1. The docker bridge cannot reach the host because the host
+    # firewall drops bridge->host traffic.
+    network_mode: "host"
     environment:
-      DATABASE_URL: postgresql://infinite:infinite@db:5432/infinite
-      DIRECT_URL: postgresql://infinite:infinite@db:5432/infinite
+      DATABASE_URL: postgresql://infinite:infinite@127.0.0.1:5432/infinite
+      DIRECT_URL: postgresql://infinite:infinite@127.0.0.1:5432/infinite
       ENCRYPTION_SECRET: e45ecd03425f98373b8144e9560e4e7b1f3a3caf635dd53eb74433594091db85
       NEXT_PUBLIC_WS_URL: ""
+      RELAY_URL: http://127.0.0.1:7891
+      ROUTER_USAGE_BASE_URL: http://127.0.0.1:20128
     depends_on:
       db:
         condition: service_healthy
