@@ -12,7 +12,7 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 - SSH connections inside draggable xterm.js windows
 - Optional SSH relay agent for private networks, Tailscale, or LAN-only hosts
 - Remote browser windows backed by Puppeteer
-- Notes and project-oriented workspace state stored in PostgreSQL
+- Notes and project-oriented workspace state stored in a local SQLite file
 
 ## Stack
 
@@ -20,15 +20,16 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 - React 19
 - Tailwind CSS v4
 - Express + WebSocket
-- Prisma + PostgreSQL
+- Prisma + SQLite
 - xterm.js
 - ssh2
 - Puppeteer
 
 ## Quick Start (Docker — recommended)
 
-The fastest way to try Infinite. Runs the database, frontend, and relay
-server in one command:
+The fastest way to try Infinite. Runs the frontend and relay server in one
+command. State lives in a local SQLite file — no separate database container
+is needed:
 
 ```bash
 docker compose up -d --build
@@ -40,11 +41,10 @@ Ports:
 
 - frontend: `http://localhost:7890`
 - relay server: `http://localhost:7891`
-- database: `localhost:5432` (`infinite` / `infinite` / `infinite`)
 
-The frontend container runs `prisma db push` on startup, so the database
-schema is created automatically. No `.env` file is required for the Docker
-setup.
+Both containers share a single SQLite database file on a Docker volume
+(`sqlite_data`). The schema is created automatically on startup via
+`prisma db push`, so no `.env` file is required for the Docker setup.
 
 Stop the stack:
 
@@ -66,7 +66,6 @@ Docker.
 ### Requirements
 
 - Node.js 20+
-- PostgreSQL 14+ running on `localhost:5432`
 - npm
 
 > Note: `npm install` downloads Puppeteer's bundled Chromium (~300 MB). If
@@ -89,8 +88,7 @@ Put the output in `.env` as `ENCRYPTION_SECRET`. A complete `.env` looks
 like:
 
 ```env
-DATABASE_URL=postgresql://infinite:infinite@localhost:5432/infinite
-DIRECT_URL=postgresql://infinite:infinite@localhost:5432/infinite
+DATABASE_URL=file:./infinite.db
 ENCRYPTION_SECRET=<paste-your-generated-secret-here>
 NEXT_PUBLIC_WS_URL=
 ALLOWED_ORIGINS=http://localhost:3000
@@ -98,8 +96,7 @@ ALLOWED_ORIGINS=http://localhost:3000
 
 Variable reference:
 
-- `DATABASE_URL`: main Prisma/app database connection
-- `DIRECT_URL`: direct database connection for Prisma operations
+- `DATABASE_URL`: path to the SQLite database file
 - `ENCRYPTION_SECRET`: encrypts saved SSH passwords and private keys
   — **if you lose this, saved credentials cannot be recovered**
 - `NEXT_PUBLIC_WS_URL`: leave empty for local dev; set to your relay server
@@ -108,33 +105,10 @@ Variable reference:
 
 ### 2. Set up the database
 
-The default `.env.example` expects a PostgreSQL role `infinite` with password
-`infinite` and a database named `infinite`. Pick one:
-
-**Option A — run Postgres in Docker (easiest if you don't have Postgres
-installed):**
-
-```bash
-docker run -d --name infinite-pg \
-  -e POSTGRES_USER=infinite \
-  -e POSTGRES_PASSWORD=infinite \
-  -e POSTGRES_DB=infinite \
-  -p 5432:5432 \
-  postgres:16-alpine
-```
-
-**Option B — use a native Postgres install:**
-
-```bash
-# macOS (Homebrew)
-brew services start postgresql@16
-createuser infinite -P        # enter "infinite" as the password when prompted
-createdb infinite -O infinite
-
-# Debian / Ubuntu
-sudo -u postgres psql -c "CREATE USER infinite WITH PASSWORD 'infinite';"
-sudo -u postgres psql -c "CREATE DATABASE infinite OWNER infinite;"
-```
+Infinite uses a local SQLite file (default `./infinite.db`, created next to
+the Prisma schema). No external database server is required — `npm run
+db:push` below creates the schema automatically. To use a different location,
+set `DATABASE_URL=file:/path/to/infinite.db` in `.env`.
 
 ### 3. Install dependencies and push the schema
 
@@ -337,7 +311,7 @@ Infinite has three components, plus an optional agent:
 | ---------- | ---------------------- | ------------ | ----------------------------------------------------------------- |
 | `frontend` | Next.js 16 (App Router) | `3000` (dev) / `7890` (docker) | UI, API routes, Prisma client                  |
 | `server`   | Express + WebSocket    | `7891`       | SSH sessions, browser control, agent relay, status checks         |
-| `db`       | PostgreSQL 16          | `5432`       | Persisted state (connections, layouts, notes, projects, agents)   |
+| `db`       | SQLite file            | n/a          | Persisted state (connections, layouts, notes, projects, agents)   |
 | `agent`    | Standalone Node.js     | outbound WS  | Optional proxy that runs where the SSH target is reachable        |
 
 The `frontend` and `server` can run on the same host or different hosts.
@@ -348,45 +322,38 @@ WebSocket.
 For local single-host Docker, see [Quick Start](#quick-start-docker--recommended).
 For local single-host Node.js, see [Manual Install](#manual-install-local-development).
 
-### Split Host (frontend on Vercel, server elsewhere)
+### Split Host (frontend and server on different machines)
 
-`vercel.json` is preconfigured to deploy the Next.js app to Vercel. Point
-`NEXT_PUBLIC_WS_URL` at the public URL of the relay server. Run the relay
-server on a host that:
+The frontend and relay server are independent processes and can run on
+separate hosts. Point `NEXT_PUBLIC_WS_URL` at the public URL of the relay
+server. Run the relay server on a host that:
 
 - has a stable public address (or is reachable through Tailscale, Cloudflare
   Tunnel, WireGuard, etc.)
 - can reach the SSH targets you want to expose
 
-Suggested setup:
+Run the relay server on a separate machine (VPS, home lab, etc.) with
+`Dockerfile.server`. The example runs on port `7891`:
 
-1. Deploy the frontend:
+```bash
+docker build -f Dockerfile.server -t infinite-server .
+docker run -d \
+  --name infinite-server \
+  -p 7891:7891 \
+  -e DATABASE_URL=file:/data/infinite.db \
+  -e ENCRYPTION_SECRET=... \
+  -e PORT=7891 \
+  -e ALLOWED_ORIGINS=https://your-frontend.example.com \
+  infinite-server
+```
 
-   ```bash
-   vercel deploy --prod
-   ```
+Set `NEXT_PUBLIC_WS_URL` in the frontend environment to
+`wss://relay.example.com`. If the relay host is behind Tailscale, use the
+Tailscale hostname so both ends speak over the tailnet.
 
-2. Run the relay server on a separate machine (VPS, home lab, etc.) with
-   `Dockerfile.server`. The example runs on port `7891`:
-
-   ```bash
-   docker build -f Dockerfile.server -t infinite-server .
-   docker run -d \
-     --name infinite-server \
-     -p 7891:7891 \
-     -e DATABASE_URL=... \
-     -e DIRECT_URL=... \
-     -e ENCRYPTION_SECRET=... \
-     -e PORT=7891 \
-     -e ALLOWED_ORIGINS=https://your-vercel-app.vercel.app \
-     infinite-server
-   ```
-
-3. Set `NEXT_PUBLIC_WS_URL` in the Vercel project to
-   `wss://relay.example.com`.
-
-4. If the relay host is behind Tailscale, use the Tailscale hostname in
-   `NEXT_PUBLIC_WS_URL` so both ends speak over the tailnet.
+> Note: in a split-host setup each host gets its own SQLite file unless they
+> share a disk or volume. For a single-host Docker Compose deploy the file is
+> shared automatically via the `sqlite_data` volume.
 
 ### Reverse Proxy (nginx example)
 

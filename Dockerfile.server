@@ -1,7 +1,7 @@
 FROM node:20-alpine
 WORKDIR /app
 
-RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont python3 make g++
 
 COPY package.json package-lock.json ./
 COPY patches/ ./patches/
@@ -9,8 +9,7 @@ COPY prisma/ ./prisma/
 COPY prisma.config.ts ./
 COPY server/tsconfig.json ./server/tsconfig.json
 COPY server/tsconfig.build.json ./server/tsconfig.build.json
-ENV DATABASE_URL=postgresql://x:x@localhost:5432/x
-ENV DIRECT_URL=postgresql://x:x@localhost:5432/x
+ENV DATABASE_URL=file:/data/infinite.db
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN npm ci
@@ -19,4 +18,5 @@ COPY server/ ./server/
 RUN npx tsc -p server/tsconfig.build.json
 
 EXPOSE 7891
+# Create the SQLite schema on the shared volume if it does not exist yet.
 CMD ["sh", "-c", "npx prisma db push && npx prisma generate && node .server-build/index.js"]

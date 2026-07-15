@@ -1,9 +1,0 @@
-{
-  "buildCommand": "prisma generate && npm run build",
-  "outputDirectory": ".next",
-  "installCommand": "npm install",
-  "framework": "nextjs",
-  "env": {
-    "NEXT_PUBLIC_WS_URL": "wss://pc.tailf79140.ts.net"
-  }
-}

@@ -2,6 +2,11 @@
 logs
 *.log
 npm-debug.log*
+
+# SQLite database files
+*.db
+*.db-wal
+*.db-shm
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*

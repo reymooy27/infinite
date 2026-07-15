@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 model Connection {
@@ -66,7 +66,7 @@ model Project {
   name            String
   userId          String   @default("local-user") @map("user_id")
   directory       String?  @map("directory")
-  canvasData      Json     @default("{\"windows\":[]}")
+  canvasData      Json
   canvasTransform Json?    @map("canvas_transform")
   isDefault       Boolean  @default(false) @map("is_default")
   createdAt       DateTime @default(now()) @map("created_at")

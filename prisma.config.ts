@@ -7,6 +7,6 @@ config({ override: true });
 export default defineConfig({
   schema: "prisma/schema.prisma",
   datasource: {
-    url: env("DIRECT_URL"),
+    url: env("DATABASE_URL"),
   },
 });

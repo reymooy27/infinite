@@ -1,15 +1,10 @@
 // lib/prisma.ts
-import { Pool } from "pg";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "@prisma/client";
 
-// Use the pooled DATABASE_URL for the app runtime
-const connectionString = process.env.DATABASE_URL;
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
-
-export const prisma = globalForPrisma.prisma || new PrismaClient({ adapter });
+const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL! });
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
