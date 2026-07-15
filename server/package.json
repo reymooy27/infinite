@@ -7,20 +7,19 @@
   },
   "dependencies": {
     "@panva/hkdf": "^1.2.1",
-    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "better-sqlite3": "^12.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "jose": "^6.2.3",
-    "pg": "^8.20.0",
     "ssh2": "^1.16.0",
     "tsx": "^4.19.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@flydotio/dockerfile": "^0.7.10",
     "prisma": "^7.8.0"
   }
 }
