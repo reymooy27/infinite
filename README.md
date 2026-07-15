@@ -9,10 +9,26 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 ## What It Does
 
 - Infinite canvas with pan/zoom and persistent window layouts
-- SSH connections inside draggable xterm.js windows
-- Optional SSH relay agent for private networks, Tailscale, or LAN-only hosts
-- Remote browser windows backed by Puppeteer
-- Notes and project-oriented workspace state stored in a local SQLite file
+- SSH connections inside draggable, multi-tab xterm.js windows
+- Optional SSH relay **agent** for private networks, Tailscale, or LAN-only hosts
+- Two browser windows: a **remote browser** (streamed via Puppeteer) and a
+  **Dev browser** (tunnels a localhost port on an SSH host)
+- **File transfer** (SFTP upload/download) over a saved SSH connection
+- **Docker manager** — control containers/images/volumes on a remote host over SSH
+- **Git view** — status tree, diff viewer, and commit/push/pull/stash per project
+- **AI provider & key management** — encrypted API-key vault with per-key usage
+- **9router usage analytics** — read-only dashboard of AI/LLM traffic
+  (requests, tokens, cost, breakdown by model/provider/key/endpoint)
+  pulled live from a [9router](https://9router.dev) service
+- **Notes**, **bookmarks**, and **projects** for project-oriented workspace state
+- **Canvas navigation aids** — off-screen window compass and a "next
+  terminal" switcher for many open windows
+- **Terminal customization** — font size, background color, on-screen
+  shortcut buttons, and a configurable mobile quick bar
+- **Focus mode** — distraction-free layout with the terminal, git sidebar, and
+  Docker toggle
+- Mobile **quick bar** and **shortcut drawer** for terminal/tmux key pads
+- All state persisted in a local SQLite file — no external database required
 
 ## Stack
 
@@ -24,6 +40,126 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 - xterm.js
 - ssh2
 - Puppeteer
+
+## Features
+
+### Canvas & layouts
+
+An infinite, pannable/zoomable canvas. Windows (SSH terminals, browsers, notes,
+file transfer, Docker manager) are draggable and resizable. Layout state is
+saved automatically and restored on reload.
+
+### SSH terminals
+
+xterm.js terminals over WebSocket to a saved SSH connection. Supports multiple
+tabs per window, touch scrolling/selection on mobile, tmux helpers, and
+terminal buffer caching across project switches.
+
+### Relay agent
+
+For SSH targets not publicly reachable: a small Node.js process (`agent/`)
+runs on a machine with access to the target and bridges the session back over
+WebSocket. See [Agent Mode](#agent-mode).
+
+### Browsers
+
+- **Remote browser** — a headless Chromium (Puppeteer) screencast streamed over
+  `/ws/browser`. Navigate, back/forward, refresh, mobile keyboard.
+- **Dev browser** — opens a localhost URL *on the SSH host* by tunneling the
+  port through the relay, so you can view a dev server running remotely.
+
+### File transfer
+
+SFTP upload/download launched from the Dock. Pairs with a saved SSH connection.
+
+### Docker manager
+
+Full Docker control — list/start/stop/restart/pause/remove/prune containers,
+images, volumes, and networks, plus logs and inspect — executed **over SSH**
+against a saved connection. Live **`docker stats`** (CPU % / memory) stream
+alongside each container. Open it from the Dock, the Focus Mode Docker
+toggle, or as a slide-in **Docker panel**.
+
+### Git view
+
+Per active project: working-tree status (staged / unstaged / untracked), a diff
+viewer, and stage / unstage / discard / commit / branch / push / pull / stash
+actions. Reached via the Focus Mode git toggle.
+
+### AI provider & key management
+
+A vault for AI provider API keys. Add providers (name + base URL) and keys
+(encrypted at rest with `ENCRYPTION_SECRET`); view per-key usage. Managed in
+Settings → API Management. There is no built-in chat UI — it is a key store and
+usage tracker.
+
+### Usage analytics (9router)
+
+A read-only dashboard of AI/LLM API traffic. Infinite does not store
+usage itself — it fetches summaries from a running
+[9router](https://9router.dev) instance (default
+`http://127.0.0.1:20128`, configurable in Settings → **9router usage
+source**).
+
+The Usage panel (sidebar → **Usage**) shows:
+
+- totals for the selected period (today / 24h / 7d / 30d / 60d):
+  requests, prompt tokens, completion tokens, cached tokens, and
+  estimated cost
+- a breakdown table grouped by **model**, **provider**, or **API key**
+  (plus **endpoint** when present)
+- the most recent requests
+
+The same "today" summary also appears at a glance in the Projects
+switcher. Point the endpoint at your 9router base URL; Infinite only
+reads the summary — the source of truth stays in 9router.
+
+### Dev browser console & viewport
+
+The Dev browser adds two tools on top of the localhost tunnel:
+
+- a **console panel** that captures the remote page's JS console
+  (log / warn / error / info), filterable and drag-resizable
+- **viewport presets** — desktop, tablet (768px), and mobile (390px)
+  — to emulate responsive layouts against the remote dev server
+
+### Terminal customization
+
+In Settings → **Terminal** you can tune the terminal appearance and
+mobile UX:
+
+- **font size** (8–24px)
+- **background color** (8 presets + custom)
+- **terminal button shortcuts** toggle (on-screen control keys, arrows,
+  enter/tab)
+- **quick bar buttons** — pick which terminal and tmux shortcuts
+  (up to 9) show in the mobile quick bar
+
+### Canvas navigation aids
+
+When many windows are spread across the infinite canvas:
+
+- a **navigation indicator** (compass) appears when the nearest window
+  is off-screen — it points in that window's direction, shows the
+  distance, and centers the view on click
+- a **next terminal** control cycles focus to the next visible SSH
+  terminal window
+- a **leave-page guard** confirms before navigating away with unsaved
+  canvas state
+
+### Projects, notes & bookmarks
+
+- **Projects** group workspace state (canvas + directory) and can be switched
+  with Cmd+Shift+P.
+- **Notes** are canvas note windows, persisted.
+- **Bookmarks** are saved URLs, used as quick-links in the Dev browser.
+
+### Focus mode & mobile UX
+
+- **Focus mode** (Cmd+Shift+F) hides the canvas and shows a single terminal plus
+  the git sidebar and Docker toggle.
+- **Quick bar** and **shortcut drawer** surface copy/paste and terminal/tmux/nav
+  key pads for touch devices.
 
 ## Quick Start (Docker — recommended)
 
@@ -147,9 +283,16 @@ Main models in [prisma/schema.prisma](/home/rey/project/infinite/prisma/schema.p
 - `Project`: project workspace state
 - `Note`: notes
 - `Bookmark`: saved URLs
+- `AIProvider`: AI provider definitions (name, base URL)
+- `AIKey`: encrypted API keys per provider, with usage tracking
 
 For local development this app uses a fixed local user id, so no auth setup
 is currently required.
+
+Infinite was migrated from Postgres to **SQLite** (Prisma + the
+`better-sqlite3` driver adapter) — no external database server is needed
+and state lives in a single file. A `scripts/migrate-pg-to-sqlite.mjs`
+helper exists for moving an existing Postgres dump into the SQLite schema.
 
 ## How To Use
 
@@ -164,17 +307,49 @@ In the SSH panel:
    - port
    - username
    - auth method: password or private key
-3. Leave the route as `Via Fly server (public IP)` if the target is publicly
+3. Leave the route as `Via relay server (public IP)` if the target is publicly
    reachable from the relay server
 4. Save and click `Connect`
 
 This opens an SSH terminal window on the canvas.
 
-### 2. Use the remote browser
+### 2. Open a browser window
 
-If a saved connection supports it, use the `Dev` button beside that SSH
-connection to open the browser window attached to the same backend
-connection.
+- **Dev browser (localhost tunnel):** on a saved connection, use the `Dev`
+  button to open a browser window that tunnels a localhost port on the SSH
+  host — handy for viewing a remote dev server. Bookmarks appear as quick-links.
+- **Remote browser (Puppeteer):** open the remote browser window to stream a
+  headless Chromium session. Enter any URL to navigate.
+
+### 3. Transfer files
+
+From the Dock, pick a saved connection and choose upload or download. Transfers
+run over SFTP on that SSH connection.
+
+### 4. Manage Docker
+
+Open the Docker manager from the Dock (or the Docker toggle in Focus Mode). It
+runs Docker commands **over SSH** against the selected connection — start, stop,
+restart, pause, remove, or prune containers, plus images, volumes, networks,
+logs, and inspect.
+
+### 5. Use Git
+
+Enter Focus Mode (Cmd+Shift+F), then open the git sidebar. For the active
+project you can view the status tree, open a diff, and stage / unstage /
+discard / commit / branch / push / pull / stash.
+
+### 6. Manage AI providers & keys
+
+Open Settings → API Management. Add a provider (name + base URL), then add keys
+(encrypted at rest). Track per-key usage from the Usage panel. There is no
+built-in chat — this is a key vault and usage tracker.
+
+### 7. Projects, notes & bookmarks
+
+- Create and switch **Projects** from the Projects panel or Cmd+Shift+P; each
+  project stores its own canvas and working directory.
+- Add **Notes** as canvas windows and **Bookmarks** as saved URLs.
 
 ## Agent Mode
 
@@ -275,9 +450,11 @@ This repo runs two app processes in development:
 The frontend handles UI and local API routes. The Express server handles:
 
 - SSH WebSocket sessions
-- Browser session control
+- Browser session control (Puppeteer) and localhost tunnels
 - agent relay connections
 - online agent status checks
+- Docker control over SSH
+- Git operations for projects
 
 ## Scripts
 
@@ -293,14 +470,19 @@ npm run db:studio
 
 ## Important Files
 
-- [src/App.jsx](/home/rey/project/infinite/src/App.jsx:1): top-level workspace layout
+- [app/App.tsx](/home/rey/project/infinite/app/App.tsx:1): top-level workspace layout
 - [src/components/Canvas.jsx](/home/rey/project/infinite/src/components/Canvas.jsx:1): infinite canvas wrapper
 - [src/components/WindowFrame.jsx](/home/rey/project/infinite/src/components/WindowFrame.jsx:1): draggable/resizable window shell
 - [src/apps/registry.tsx](/home/rey/project/infinite/src/apps/registry.tsx:1): app registry including SSH terminal wiring
 - [src/components/SSHPanel.tsx](/home/rey/project/infinite/src/components/SSHPanel.tsx:1): saved SSH connections UI
 - [src/components/AgentPanel.tsx](/home/rey/project/infinite/src/components/AgentPanel.tsx:1): create/list agent UI
+- [src/apps/DockerManager.tsx](/home/rey/project/infinite/src/apps/DockerManager.tsx:1): Docker manager window
+- [src/components/FocusModeGitPanel.tsx](/home/rey/project/infinite/src/components/FocusModeGitPanel.tsx:1): git status/diff/commit UI
+- [src/components/SettingsPanel.tsx](/home/rey/project/infinite/src/components/SettingsPanel.tsx:1): settings + AI API management
+- [src/components/FileTransferModal.tsx](/home/rey/project/infinite/src/components/FileTransferModal.tsx:1): SFTP transfer UI
 - [server/index.ts](/home/rey/project/infinite/server/index.ts:1): Express + WebSocket relay server
 - [server/lib/ssh.ts](/home/rey/project/infinite/server/lib/ssh.ts:1): SSH session handling and agent proxy logic
+- [server/lib/docker.ts](/home/rey/project/infinite/server/lib/docker.ts:1): Docker-over-SSH control
 - [agent/index.js](/home/rey/project/infinite/agent/index.js:1): relay agent process
 
 ## Deployment
@@ -311,7 +493,7 @@ Infinite has three components, plus an optional agent:
 | ---------- | ---------------------- | ------------ | ----------------------------------------------------------------- |
 | `frontend` | Next.js 16 (App Router) | `3000` (dev) / `7890` (docker) | UI, API routes, Prisma client                  |
 | `server`   | Express + WebSocket    | `7891`       | SSH sessions, browser control, agent relay, status checks         |
-| `db`       | SQLite file            | n/a          | Persisted state (connections, layouts, notes, projects, agents)   |
+| `db`       | SQLite file            | n/a          | Persisted state (connections, layouts, notes, projects, agents, bookmarks, AI keys) |
 | `agent`    | Standalone Node.js     | outbound WS  | Optional proxy that runs where the SSH target is reachable        |
 
 The `frontend` and `server` can run on the same host or different hosts.
