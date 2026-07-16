@@ -47,13 +47,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const duplicate = await prisma.aIProvider.findFirst({
-      where: {
-        id: { not: id },
-        userId: LOCAL_USER_ID,
-        name: { equals: name, mode: "insensitive" },
-      },
+    const matches = await prisma.aIProvider.findMany({
+      where: { userId: LOCAL_USER_ID, id: { not: id } },
+      select: { name: true },
     });
+    const duplicate = matches.some((m) => m.name.toLowerCase() === name.toLowerCase());
 
     if (duplicate) {
       logApiRequest(method, path, 409, Date.now() - start);

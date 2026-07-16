@@ -91,9 +91,23 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.aIProvider.findFirst({
       where: {
         userId: LOCAL_USER_ID,
-        name: { equals: name, mode: "insensitive" },
+        name: { equals: name },
       },
     });
+
+    if (!existing) {
+      const matches = await prisma.aIProvider.findMany({
+        where: { userId: LOCAL_USER_ID },
+        select: { name: true },
+      });
+      if (matches.some((m) => m.name.toLowerCase() === name.toLowerCase())) {
+        logApiRequest(method, path, 409, Date.now() - start);
+        return NextResponse.json(
+          { error: "Provider already exists" },
+          { status: 409 },
+        );
+      }
+    }
 
     if (existing) {
       logApiRequest(method, path, 409, Date.now() - start);
