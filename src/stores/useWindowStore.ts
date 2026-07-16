@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { AppId, WindowData, TerminalTab } from "@/types";
-import { normalizeWindow } from "@/types";
+import { isAppId, normalizeWindow } from "@/types";
 import { canvasTransform } from "@/lib/canvasTransform";
 
 interface WindowState {
@@ -53,7 +53,6 @@ const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
   notes: { width: 600, height: 450 },
   ssh: { width: 400, height: 350 },
   devBrowser: { width: 1024, height: 768 },
-  browserCanvas: { width: 1280, height: 800 },
   fileTransfer: { width: 560, height: 520 },
 };
 
@@ -231,7 +230,9 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       const res = await fetch("/api/layout");
       const data = await res.json();
       if (data.windows) {
-        const normalized: WindowData[] = data.windows.map(normalizeWindow);
+        const normalized: WindowData[] = data.windows
+          .filter((w: WindowData) => isAppId(w.appId))
+          .map(normalizeWindow);
         const topZ = Math.max(0, ...normalized.map((w) => w.z || 0));
         const topmost = normalized.reduce<WindowData | null>(
           (best, w) => ((w.z || 0) > (best?.z || 0) ? w : best),
@@ -268,7 +269,9 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       const res = await fetch(`/api/projects/${projectId}/canvas`);
       const data = await res.json();
       if (data.windows) {
-        const normalized: WindowData[] = data.windows.map(normalizeWindow);
+        const normalized: WindowData[] = data.windows
+          .filter((w: WindowData) => isAppId(w.appId))
+          .map(normalizeWindow);
         const topZ = Math.max(0, ...normalized.map((w) => w.z || 0));
         const topmost = normalized.reduce<WindowData | null>(
           (best, w) => ((w.z || 0) > (best?.z || 0) ? w : best),

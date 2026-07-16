@@ -10,7 +10,7 @@
 # ---- Description (single line, <= 350 chars) ----
 description: >-
   Browser-based spatial workspace for developers: infinite canvas with
-  draggable SSH terminals, remote browser windows, notes, and project
+  draggable SSH terminals, dev browser windows, notes, and project
   context, all backed by a WebSocket relay and an optional agent for
   private-network hosts.
 
@@ -29,7 +29,6 @@ topics:
   - express
   - ssh
   - xterm
-  - puppeteer
   - developer-tools
   - workspace
   - self-hosted

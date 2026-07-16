@@ -1,6 +1,11 @@
 import type React from "react";
 
-export type AppId = "notes" | "ssh" | "devBrowser" | "browserCanvas" | "fileTransfer";
+export const APP_IDS = ["notes", "ssh", "devBrowser", "fileTransfer"] as const;
+export type AppId = (typeof APP_IDS)[number];
+
+export function isAppId(value: unknown): value is AppId {
+  return APP_IDS.includes(value as AppId);
+}
 
 export interface SSHConnection {
   id: number;

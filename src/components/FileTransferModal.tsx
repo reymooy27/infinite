@@ -636,7 +636,7 @@ export default function FileTransferWindow({ windowId }: { windowId?: string }) 
               <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-[11px] font-medium text-white">Remote browser</p>
+                    <p className="text-[11px] font-medium text-white">Remote files</p>
                     <p className="text-[10px] text-neutral-500">Open folders. Add files or folder archives to queue.</p>
                   </div>
                 </div>

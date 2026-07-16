@@ -1,18 +1,17 @@
 # Infinite
 
 > Browser-based spatial workspace for developers: infinite canvas, draggable
-> SSH terminals, remote browser windows, and project context, all in one
+> SSH terminals, dev browser windows, and project context, all in one
 > place.
 
-Infinite is a browser-based spatial workspace for development tools. It gives you an infinite canvas with draggable windows for SSH sessions, notes, a remote browser, and project context.
+Infinite is a browser-based spatial workspace for development tools. It gives you an infinite canvas with draggable windows for SSH sessions, notes, a dev browser, and project context.
 
 ## What It Does
 
 - Infinite canvas with pan/zoom and persistent window layouts
 - SSH connections inside draggable, multi-tab xterm.js windows
 - Optional SSH relay **agent** for private networks, Tailscale, or LAN-only hosts
-- Two browser windows: a **remote browser** (streamed via Puppeteer) and a
-  **Dev browser** (tunnels a localhost port on an SSH host)
+- **Dev browser** (tunnels a localhost port on an SSH host)
 - **File transfer** (SFTP upload/download) over a saved SSH connection
 - **Docker manager** — control containers/images/volumes on a remote host over SSH
 - **Git view** — status tree, diff viewer, and commit/push/pull/stash per project
@@ -39,7 +38,6 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 - Prisma + SQLite
 - xterm.js
 - ssh2
-- Puppeteer
 
 ## Features
 
@@ -61,11 +59,9 @@ For SSH targets not publicly reachable: a small Node.js process (`agent/`)
 runs on a machine with access to the target and bridges the session back over
 WebSocket. See [Agent Mode](#agent-mode).
 
-### Browsers
+### Dev browser
 
-- **Remote browser** — a headless Chromium (Puppeteer) screencast streamed over
-  `/ws/browser`. Navigate, back/forward, refresh, mobile keyboard.
-- **Dev browser** — opens a localhost URL *on the SSH host* by tunneling the
+- Opens a localhost URL *on the SSH host* by tunneling the
   port through the relay, so you can view a dev server running remotely.
 
 ### File transfer
@@ -204,10 +200,6 @@ Docker.
 - Node.js 20+
 - npm
 
-> Note: `npm install` downloads Puppeteer's bundled Chromium (~300 MB). If
-> you're on Alpine, behind a strict proxy, or low on disk, see
-> [Puppeteer troubleshooting](#puppeteer-troubleshooting) below.
-
 ### 1. Configure environment
 
 ```bash
@@ -318,8 +310,6 @@ This opens an SSH terminal window on the canvas.
 - **Dev browser (localhost tunnel):** on a saved connection, use the `Dev`
   button to open a browser window that tunnels a localhost port on the SSH
   host — handy for viewing a remote dev server. Bookmarks appear as quick-links.
-- **Remote browser (Puppeteer):** open the remote browser window to stream a
-  headless Chromium session. Enter any URL to navigate.
 
 ### 3. Transfer files
 
@@ -426,20 +416,6 @@ Important:
 - the `host` field must be resolvable from the machine running the agent
 - the agent machine must itself be able to reach the SSH target
 
-## Puppeteer troubleshooting
-
-`npm install` pulls Puppeteer, which downloads a bundled Chromium build. If
-it fails:
-
-- Disk full or low memory: Puppeteer needs ~300 MB free.
-- Behind a proxy: set `HTTPS_PROXY` and `PUPPETEER_DOWNLOAD_BASE_URL` to a
-  mirror.
-- Don't want Chromium downloaded: set `PUPPETEER_SKIP_DOWNLOAD=true` in
-  `.env`. The remote browser feature will not work until Chromium is
-  installed manually.
-- Need a system Chrome: set
-  `PUPPETEER_EXECUTABLE_PATH=/path/to/chrome` in `.env`.
-
 ## Architecture
 
 This repo runs two app processes in development:
@@ -450,7 +426,7 @@ This repo runs two app processes in development:
 The frontend handles UI and local API routes. The Express server handles:
 
 - SSH WebSocket sessions
-- Browser session control (Puppeteer) and localhost tunnels
+- localhost tunnels
 - agent relay connections
 - online agent status checks
 - Docker control over SSH

@@ -2,10 +2,7 @@ FROM node:22-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
-    libnss3 \
     ca-certificates \
-    fonts-liberation \
     python3 \
     make \
     g++ \
@@ -18,8 +15,6 @@ COPY prisma.config.ts ./
 COPY server/tsconfig.json ./server/tsconfig.json
 COPY server/tsconfig.build.json ./server/tsconfig.build.json
 ENV DATABASE_URL=file:/data/infinite.db
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 RUN npm ci
 
 COPY server/ ./server/

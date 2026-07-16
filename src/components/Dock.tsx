@@ -14,7 +14,7 @@ import { centerWindowById } from "@/lib/focusWindow";
 import type { AppId, SSHConnection } from "@/types";
 
 const DOCK_APPS: AppId[] = ["notes", "ssh"];
-const BROWSER_DOCK_APPS: AppId[] = ["devBrowser", "browserCanvas"];
+const BROWSER_DOCK_APPS: AppId[] = ["devBrowser"];
 const BROWSER_CHOICES: Array<{
   appId: (typeof BROWSER_DOCK_APPS)[number];
   label: string;
@@ -24,11 +24,6 @@ const BROWSER_CHOICES: Array<{
     appId: "devBrowser",
     label: "Dev Web",
     description: "Open dev browser window for local web testing.",
-  },
-  {
-    appId: "browserCanvas",
-    label: "Puppeteer",
-    description: "Open streamed browser window backed by Puppeteer.",
   },
 ];
 

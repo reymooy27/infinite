@@ -11,7 +11,6 @@ import { decrypt } from "./lib/crypto.js";
 import { attachAgentProxySession, clearAgentProxySession, createSSHSocket, createSFTPConnection, detachAgentProxySession, ensureLocalTunnel, getAgentProxySession, setAgentProxySessionExpireHandler, setAgentProxySessionHandlers, } from "./lib/ssh.js";
 import { dockerStats, getContainerLogs, inspectContainer, listContainers, listImages, listNetworks, listVolumes, pauseContainer, pruneDocker, removeContainer, removeImage, removeNetwork, removeVolume, restartContainer, startContainer, stopContainer, unpauseContainer, } from "./lib/docker.js";
 import { logger } from "./lib/logger.js";
-import { browserManager } from "./lib/browser.js";
 const LOCAL_USER_ID = "local-user";
 const app = express();
 const server = createServer(app);
@@ -626,7 +625,7 @@ function proxyThroughAgent(browserWs, agentWs, connection, windowId, initialDire
 }
 server.on("upgrade", (req, socket, head) => {
     const pathname = req.url ? new URL(req.url, "http://localhost").pathname : "";
-    if (pathname === "/ws/ssh" || pathname === "/ws/agent" || pathname === "/ws/sftp" || pathname === "/ws/browser") {
+    if (pathname === "/ws/ssh" || pathname === "/ws/agent" || pathname === "/ws/sftp") {
         wss.handleUpgrade(req, socket, head, (ws) => {
             wss.emit("connection", ws, req);
         });
@@ -639,21 +638,6 @@ wss.on("connection", async (ws, req) => {
     const rawUrl = req.url || "";
     const u = new URL(rawUrl, "http://localhost");
     const pathname = u.pathname;
-    // Remote browser endpoint
-    if (pathname === "/ws/browser") {
-        const windowId = u.searchParams.get("windowId") || `anon-${Date.now()}`;
-        const width = parseInt(u.searchParams.get("width") || "1024", 10);
-        const height = parseInt(u.searchParams.get("height") || "768", 10);
-        browserManager.handleConnection(ws, windowId, width, height).catch((err) => {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.error("[browser] handleConnection error", { err: message });
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "error", message }));
-            }
-            ws.close(1011, "Browser error");
-        });
-        return;
-    }
     // Agent registration endpoint
     if (pathname === "/ws/agent") {
         const token = u.searchParams.get("token");
@@ -758,11 +742,9 @@ server.listen(PORT, () => {
 function shutdown(signal) {
     logger.info(`${signal} received, shutting down...`);
     wss.clients.forEach((ws) => ws.close(1001, "Server shutting down"));
-    browserManager.shutdown().finally(() => {
-        server.close(() => {
-            logger.info("Server closed");
-            process.exit(0);
-        });
+    server.close(() => {
+        logger.info("Server closed");
+        process.exit(0);
     });
     setTimeout(() => process.exit(1), 10_000);
 }

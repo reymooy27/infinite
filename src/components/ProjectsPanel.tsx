@@ -260,7 +260,7 @@ export default function ProjectsPanel() {
                   Select server folder
                 </h3>
                 <p className="text-[10px] text-neutral-500">
-                  Same remote browser as file transfer.
+                  Same remote file picker as file transfer.
                 </p>
               </div>
               <button
