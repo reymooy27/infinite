@@ -466,8 +466,8 @@ export default function UsagePanel() {
           </div>
         </div>
 
-        <div className="mt-3 overflow-hidden rounded-lg border border-neutral-700">
-          <div className="grid grid-cols-[minmax(0,1.8fr)_80px_110px_90px_140px] gap-3 bg-neutral-900/80 px-3 py-2 text-[10px] uppercase tracking-wide text-neutral-500">
+        <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-700">
+          <div className="grid min-w-[720px] grid-cols-[minmax(180px,1.8fr)_80px_110px_90px_140px] gap-3 bg-neutral-900/80 px-3 py-2 text-[10px] uppercase tracking-wide text-neutral-500">
             <div>{tableOptions.find((option) => option.id === resolvedTableView)?.label}</div>
             <div className="text-right">Req</div>
             <div className="text-right">In / Out</div>
@@ -487,7 +487,7 @@ export default function UsagePanel() {
               {rows.slice(0, 20).map((row) => (
                 <div
                   key={`${resolvedTableView}-${row.label}-${row.sublabel}`}
-                  className="grid grid-cols-[minmax(0,1.8fr)_80px_110px_90px_140px] gap-3 px-3 py-2.5 text-[12px]"
+                  className="grid min-w-[720px] grid-cols-[minmax(180px,1.8fr)_80px_110px_90px_140px] gap-3 px-3 py-2.5 text-[12px]"
                 >
                   <div className="min-w-0" title={row.label}>
                     <div className="truncate font-medium text-neutral-100">
