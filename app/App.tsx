@@ -13,15 +13,19 @@ import NavigationIndicator from "@/components/NavigationIndicator";
 import Sidebar from "@/components/Sidebar";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import WindowFrame from "@/components/WindowFrame";
+import { getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
+import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { canvasTransform } from "@/lib/canvasTransform";
+import { getSSHMetadata } from "@/types";
 
 export default function App() {
   const { block, unblock } = useNavigationBlockStore();
   const windows = useWindowStore((s) => s.windows);
+  const focusTargetId = useWindowStore((s) => s.focusTargetId);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const bgColor = useSettingsStore((s) => s.bgColor);
@@ -33,6 +37,26 @@ export default function App() {
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const savedTransformRef = useRef<{ x: number; y: number; scale: number } | null>(null);
   const prevFocusModeRef = useRef(focusMode);
+  const visibleSSHWindows = getVisibleSSHWindows(windows);
+  const activeSSHWindow =
+    visibleSSHWindows.find((win) => win.id === focusTargetId) ??
+    visibleSSHWindows[0] ??
+    null;
+  const activeSSHMetadata = activeSSHWindow ? getSSHMetadata(activeSSHWindow) : null;
+  const activeSSHTab =
+    activeSSHMetadata?.tabs.find((tab) => tab.id === activeSSHMetadata.activeTabId) ??
+    activeSSHMetadata?.tabs[0] ??
+    null;
+  const gitConnectionId =
+    activeSSHTab?.connectionId ??
+    (activeSSHWindow?.metadata?.connectionId as number | undefined);
+  const gitSessionId =
+    activeSSHWindow && activeSSHTab
+      ? `${activeSSHWindow.id}-${activeSSHTab.id}`
+      : "";
+  const gitDirectory = useTerminalSessionStore(
+    (s) => (gitSessionId ? s.terminalCwds[gitSessionId] : undefined),
+  );
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -259,9 +283,11 @@ export default function App() {
               />
               <div className="relative h-full">
                 <FocusModeGitPanel
-                  key={activeProjectId}
+                  key={`${activeProjectId}:${gitConnectionId ?? "none"}:${gitDirectory ?? ""}`}
                   open
                   projectId={activeProjectId}
+                  connectionId={gitConnectionId}
+                  directory={gitDirectory}
                   onClose={() => setGitPanelOpen(false)}
                 />
               </div>
