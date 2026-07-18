@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Boxes } from "lucide-react";
+import { Boxes, GitBranch } from "lucide-react";
 
 import registry from "@/apps/registry";
 import { useDockerStore } from "@/stores/useDockerStore";
@@ -248,7 +248,17 @@ function FTConnectionList({
   );
 }
 
-export default function Dock() {
+interface DockProps {
+  gitOpen: boolean;
+  gitDisabled: boolean;
+  onToggleGit: () => void;
+}
+
+export default function Dock({
+  gitOpen,
+  gitDisabled,
+  onToggleGit,
+}: DockProps) {
   const windows = useWindowStore((s) => s.windows);
   const placingAppId = useWindowStore((s) => s.placingAppId);
   const setPlacingApp = useWindowStore((s) => s.setPlacingApp);
@@ -880,6 +890,20 @@ export default function Dock() {
           }`}
         >
           <Boxes size={16} />
+        </button>
+
+        {/* Git manager toggle */}
+        <button
+          onClick={onToggleGit}
+          disabled={gitDisabled}
+          title="Git"
+          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group disabled:opacity-30 disabled:cursor-not-allowed ${
+            gitOpen
+              ? "bg-blue-600 text-white"
+              : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+          }`}
+        >
+          <GitBranch size={16} />
         </button>
 
         {/* Focus mode toggle */}
