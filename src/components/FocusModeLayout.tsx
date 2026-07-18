@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, GitBranch, Boxes } from "lucide-react";
+import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
@@ -123,6 +123,13 @@ export default function FocusModeLayout({
     setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
     setFocusModeWindowId(nextTerminal.windowId);
     focusWindow(nextTerminal.windowId);
+  };
+
+  const handlePage = (action: "pageup" | "pagedown") => {
+    if (!activeWindowId) return;
+    window.dispatchEvent(
+      new CustomEvent(`app-page-${activeWindowId}`, { detail: { action } }),
+    );
   };
 
   useEffect(() => {
@@ -389,7 +396,6 @@ export default function FocusModeLayout({
               hasNavigated={tab.hasNavigated}
               keyboardHeight={keyboardHeight}
               refreshNonce={paneRefreshKey}
-              enableTouchScroll
             />
           ))
         ) : (
@@ -405,6 +411,28 @@ export default function FocusModeLayout({
                 Open SSH Manager
               </button>
             </div>
+          </div>
+        )}
+        {activeWindow && (
+          <div className="absolute right-2 top-1/2 z-40 flex -translate-y-1/2 flex-col gap-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => handlePage("pageup")}
+              title="Page up"
+              aria-label="Page up"
+              className="flex size-9 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800/80 text-white shadow-lg backdrop-blur-sm active:bg-neutral-600"
+            >
+              <ChevronUp size={18} strokeWidth={3} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePage("pagedown")}
+              title="Page down"
+              aria-label="Page down"
+              className="flex size-9 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800/80 text-white shadow-lg backdrop-blur-sm active:bg-neutral-600"
+            >
+              <ChevronDown size={18} strokeWidth={3} />
+            </button>
           </div>
         )}
         <FocusModeGitPanel
