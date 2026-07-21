@@ -27,14 +27,14 @@ ENV NODE_ENV=production
 ENV DATABASE_URL=file:/data/infinite.db
 ENV PORT=7890
 ENV HOSTNAME="0.0.0.0"
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
+
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-COPY --from=builder /app/next.config.ts ./next.config.ts
-COPY --from=builder /app/package.json ./package.json
+
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+
 EXPOSE 7890
-# Create the SQLite schema on the shared volume if it does not exist yet.
-# `prisma db push` is idempotent, so either container can initialize it.
-CMD ["sh", "-c", "npx prisma db push && npx next start -p 7890 -H 0.0.0.0"]
+CMD ["sh", "-c", "npx prisma db push && node server.js"]
