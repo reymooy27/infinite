@@ -905,25 +905,25 @@ export default function Dock({
         >
           <GitBranch size={16} />
         </button>
-
-        {/* Focus mode toggle */}
-        <button
-          onClick={handleToggleFocusMode}
-          title={focusMode ? "Switch to canvas mode" : "Focus mode"}
-          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
-            focusMode
-              ? "bg-blue-600 text-white"
-              : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
-          }`}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <path d="M7 8l4 4-4 4" />
-            <path d="M13 16h4" />
-          </svg>
-        </button>
       </div>
     </div>
+
+    {/* Focus mode toggle — fixed top-right */}
+    <button
+      onClick={handleToggleFocusMode}
+      title={focusMode ? "Switch to canvas mode" : "Focus mode"}
+      className={`fixed top-4 right-4 z-[9999] flex items-center justify-center w-10 h-10 rounded-xl border shadow-2xl transition-colors cursor-pointer ${
+        focusMode
+          ? "bg-blue-600 text-white border-blue-500"
+          : "bg-neutral-900/90 border-neutral-700 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 backdrop-blur-md"
+      }`}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="M7 8l4 4-4 4" />
+        <path d="M13 16h4" />
+      </svg>
+    </button>
     </>
   );
 }

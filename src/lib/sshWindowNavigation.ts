@@ -41,3 +41,20 @@ export function getNextSSHTerminalTarget(
 
   return terminals[(currentIndex + 1) % terminals.length] ?? null;
 }
+
+export function getPrevSSHTerminalTarget(
+  windows: WindowData[],
+  currentWindowId?: string | null,
+  currentTabId?: string | null,
+) {
+  const terminals = getVisibleSSHTerminals(windows);
+  if (terminals.length < 2 || !currentWindowId || !currentTabId) return null;
+
+  const currentIndex = terminals.findIndex(
+    (terminal) =>
+      terminal.windowId === currentWindowId && terminal.tabId === currentTabId,
+  );
+  if (currentIndex === -1) return terminals[terminals.length - 1] ?? null;
+
+  return terminals[(currentIndex - 1 + terminals.length) % terminals.length] ?? null;
+}

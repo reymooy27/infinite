@@ -238,6 +238,8 @@ export const SSHPane = ({
       return false;
     }
 
+    if (event.defaultPrevented) return true;
+
     const active = document.activeElement;
     if (!active || !terminalRef.current.contains(active)) {
       return false;

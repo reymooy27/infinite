@@ -7,8 +7,9 @@ import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
+import TerminalPrevButton from "@/components/TerminalPrevButton";
 import { getBrowserId } from "@/lib/browserId";
-import { getNextSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
+import { getNextSSHTerminalTarget, getPrevSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
 import { useWindowStore } from "@/stores/useWindowStore";
@@ -75,6 +76,7 @@ export default function FocusModeLayout({
   const tabs = sshMeta?.tabs ?? [];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "";
   const nextTerminal = getNextSSHTerminalTarget(windows, activeWindowId, activeTabId);
+  const prevTerminal = getPrevSSHTerminalTarget(windows, activeWindowId, activeTabId);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
   const connectionId = (activeTab?.connectionId ?? activeWindow?.metadata?.connectionId) as number | undefined;
   const activeSessionId = activeWindowId && activeTabId ? `${activeWindowId}-${activeTabId}` : "";
@@ -123,6 +125,13 @@ export default function FocusModeLayout({
     setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
     setFocusModeWindowId(nextTerminal.windowId);
     focusWindow(nextTerminal.windowId);
+  };
+
+  const handlePrevWindow = () => {
+    if (!prevTerminal) return;
+    setActiveTerminalTab(prevTerminal.windowId, prevTerminal.tabId);
+    setFocusModeWindowId(prevTerminal.windowId);
+    focusWindow(prevTerminal.windowId);
   };
 
   const handlePage = (action: "pageup" | "pagedown") => {
@@ -293,6 +302,12 @@ export default function FocusModeLayout({
             </span>
             <ChevronDown size={11} className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`} />
           </button>
+          <TerminalPrevButton
+            onClick={handlePrevWindow}
+            disabled={!prevTerminal}
+            iconOnly
+            className="px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
+          />
           <TerminalNextButton
             onClick={handleNextWindow}
             disabled={!nextTerminal}
