@@ -75,6 +75,7 @@ export const SSHPane = ({
   const statusRef = useRef(status);
   const isActiveRef = useRef(isActive);
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
+  const hasSentAutoCommandRef = useRef(false);
 
   useEffect(() => {
     statusRef.current = status;
@@ -924,10 +925,13 @@ export const SSHPane = ({
               useWindowStore.getState().markTabNavigated(windowId, tabId);
             }
             // Auto-send command if specified (for coding agents)
-            if (autoCommand && ws.readyState === WebSocket.OPEN) {
+            if (autoCommand && !hasSentAutoCommandRef.current && ws.readyState === WebSocket.OPEN) {
+              hasSentAutoCommandRef.current = true;
               setTimeout(() => {
-                ws.send(JSON.stringify({ type: "data", data: autoCommand + "\n" }));
-              }, 500);
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: "data", data: autoCommand + "\n" }));
+                }
+              }, 1000);
             }
           }
           const binaryStr = atob(msg.data);

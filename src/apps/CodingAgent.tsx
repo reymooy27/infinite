@@ -2,6 +2,7 @@
 
 import { SSHPane } from "./registry";
 import { useWindowStore } from "@/stores/useWindowStore";
+import { useSSHStore } from "@/stores/useSSHStore";
 
 type AgentType = "opencode" | "codex" | "claude";
 
@@ -27,6 +28,20 @@ export function CodingAgentPane({
   windowId?: string;
 }) {
   const tabId = `coding-agent-${agent}`;
+  const sshConnections = useSSHStore((s) => s.connections);
+
+  if (!connectionId && sshConnections.length === 0) {
+    return (
+      <div className="w-full h-full flex flex-col bg-[#0a0a0a] items-center justify-center p-4">
+        <div className="text-center">
+          <p className="text-neutral-400 text-sm mb-2">No SSH connections</p>
+          <p className="text-neutral-500 text-xs">
+            Add an SSH connection first to use coding agents.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
@@ -57,11 +72,15 @@ export default function CodingAgentWrapper({
 }) {
   const win = useWindowStore((s) => s.windows.find((w) => w.id === windowId));
   const agent = (win?.metadata?.agent as AgentType) || "opencode";
+  const sshConnections = useSSHStore((s) => s.connections);
+
+  // Use connectionId from metadata, or fallback to first SSH connection
+  const effectiveConnectionId = connectionId || (win?.metadata?.connectionId as number) || sshConnections[0]?.id;
 
   return (
     <CodingAgentPane
       agent={agent}
-      connectionId={connectionId}
+      connectionId={effectiveConnectionId}
       windowId={windowId}
     />
   );

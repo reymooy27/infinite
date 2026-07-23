@@ -493,7 +493,12 @@ export default function Dock({
 
   const handleCodingAgentChoice = (agent: "opencode" | "codex" | "claude") => {
     setShowCodingAgentPicker(false);
-    setPlacingApp("codingAgent", { agent });
+    // Use first SSH connection if available
+    const conn = sshConnections[0];
+    setPlacingApp("codingAgent", {
+      agent,
+      ...(conn ? { connectionId: conn.id, title: `${agent} - ${conn.name}` } : {}),
+    });
   };
 
   const handleSshLauncher = () => {
