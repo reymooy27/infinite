@@ -28,6 +28,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
     appId: AppId;
     x: number;
     y: number;
+    metadata?: Record<string, unknown> | null;
   } | null>(null);
   const [isZooming, setIsZooming] = useState(false);
   const draggingId = useWindowStore((s) => s.draggingId);
@@ -213,6 +214,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
               : conn?.name;
           const tabId = getBrowserId("tab-");
           openApp("ssh", x, y, {
+            ...placingMetadata,
             connectionId: selectedConnectionId,
             title,
             tabs: [{ id: tabId, label: "Tab 1", connectionId: selectedConnectionId }],
@@ -223,7 +225,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
 
         if (placingAppId === "ssh" && conns.length > 0) {
           if (conns.length > 1) {
-            setPendingConnectionApp({ appId: placingAppId, x, y });
+            setPendingConnectionApp({ appId: placingAppId, x, y, metadata: placingMetadata });
             fetchConnections();
             return;
           }
@@ -231,14 +233,15 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
           const conn = conns[0];
           const tabId = getBrowserId("tab-");
           openApp("ssh", x, y, {
+            ...placingMetadata,
             connectionId: conn.id,
-            title: conn.name,
+            title: placingMetadata?.title || conn.name,
             tabs: [{ id: tabId, label: "Tab 1", connectionId: conn.id }],
             activeTabId: tabId,
           });
           return;
         }
-        setPendingConnectionApp({ appId: placingAppId, x, y });
+        setPendingConnectionApp({ appId: placingAppId, x, y, metadata: placingMetadata });
         fetchConnections();
         return;
       }
@@ -369,8 +372,9 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
       pendingConnectionApp.x,
       pendingConnectionApp.y,
       {
+        ...pendingConnectionApp.metadata,
         connectionId: conn.id,
-        title: isSsh ? conn.name : `${conn.name} ${registry[pendingConnectionApp.appId].title}`,
+        title: pendingConnectionApp.metadata?.title || (isSsh ? conn.name : `${conn.name} ${registry[pendingConnectionApp.appId].title}`),
         ...(isSsh && {
           tabs: [{ id: tabId, label: "Tab 1", connectionId: conn.id }],
           activeTabId: tabId,
