@@ -89,6 +89,7 @@ function fmtDate(value: string | undefined) {
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 
@@ -319,7 +320,7 @@ export default function UsagePanel() {
   return (
     <div className="flex flex-col gap-2.5 p-2.5">
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
-        <div className="flex gap-3 flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-[13px] font-medium text-neutral-100">
@@ -341,7 +342,7 @@ export default function UsagePanel() {
               <div className="mt-2 text-[11px] text-red-300">{error}</div>
             )}
             {!error && (
-              <div className="mt-3 w-full rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
+              <div className="mt-3 rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[10px] uppercase tracking-wide text-neutral-500">
                     {PERIOD_LABELS[period]} usage
@@ -383,7 +384,10 @@ export default function UsagePanel() {
                               {item.model}
                             </div>
                             <div className="truncate text-[11px] text-neutral-500">
-                              {item.provider || "Unknown provider"}
+                              {pickText(
+                                stats?.byModel?.[item.model]?.provider,
+                                item.provider,
+                              ) || "Unknown provider"}
                             </div>
                           </div>
                           <div className="shrink-0 text-right text-[11px] text-neutral-400">
