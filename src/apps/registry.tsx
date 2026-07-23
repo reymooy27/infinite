@@ -502,11 +502,19 @@ export const SSHPane = ({
   useEffect(() => {
     if (isActive) {
       requestAnimationFrame(() => {
+        // Sync viewport tracking refs from actual terminal state before repainting.
+        // onScroll tracking is paused while inactive, so these can go stale
+        // when the agent writes output to a hidden tab.
+        const term = termInstanceRef.current;
+        if (term) {
+          lastKnownViewportYRef.current = term.buffer.active.viewportY;
+          viewportOffsetRef.current = getViewportOffsetFromBottom();
+        }
         forceTerminalRepaint();
         focusTerminal();
       });
     }
-  }, [focusTerminal, forceTerminalRepaint, isActive]);
+  }, [focusTerminal, forceTerminalRepaint, getViewportOffsetFromBottom, isActive]);
 
   useEffect(() => {
     if (termInstanceRef.current) {

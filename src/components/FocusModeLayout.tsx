@@ -502,8 +502,8 @@ export default function FocusModeLayout({
                 hasNavigated={tab.hasNavigated}
                 keyboardHeight={keyboardHeight}
                 refreshNonce={paneRefreshKey}
-                autoCommand={activeWindow.metadata?.autoCommand as string | undefined}
-                onReady={handleAgentReady}
+                autoCommand={tab.id === tabs[0]?.id ? activeWindow.metadata?.autoCommand as string | undefined : undefined}
+                onReady={tab.id === tabs[0]?.id ? handleAgentReady : undefined}
               />
             ))}
             {activeWindow.metadata?.autoCommand && !agentReady && (
