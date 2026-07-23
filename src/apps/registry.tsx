@@ -24,6 +24,9 @@ import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 
+// Module-level set persists across component remounts/reconnects
+const sentAutoCommands = new Set<string>();
+
 export const SSHPane = ({
   connectionId,
   windowId,
@@ -76,8 +79,9 @@ export const SSHPane = ({
   const statusRef = useRef(status);
   const isActiveRef = useRef(isActive);
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
-  const sentAutoCommandsRef = useRef<Set<string>>(new Set());
   const waitingForAgentRef = useRef(false);
+  const autoCommandRef = useRef(autoCommand);
+  const onReadyRef = useRef(onReady);
 
   useEffect(() => {
     statusRef.current = status;
@@ -86,6 +90,14 @@ export const SSHPane = ({
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+
+  useEffect(() => {
+    autoCommandRef.current = autoCommand;
+  }, [autoCommand]);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
   const viewportOffsetRef = useRef(0);
   const pendingViewportRestoreRef = useRef<number | null>(null);
   const restoreViewportRafRef = useRef<number | null>(null);
@@ -886,18 +898,19 @@ export const SSHPane = ({
 
       // Auto-send command if specified (for coding agents)
       // Delay to ensure shell prompt is ready
-      const commandKey = `${windowId}-${tabId}-${autoCommand}`;
-      if (autoCommand && !sentAutoCommandsRef.current.has(commandKey)) {
-        sentAutoCommandsRef.current.add(commandKey);
+      const commandKey = `${windowId}-${tabId}`;
+      const cmd = autoCommandRef.current;
+      if (cmd && !sentAutoCommands.has(commandKey)) {
+        sentAutoCommands.add(commandKey);
         setTimeout(() => {
           if (isCurrentSocket() && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "data", data: autoCommand + "\n" }));
+            ws.send(JSON.stringify({ type: "data", data: cmd + "\n" }));
             waitingForAgentRef.current = true;
           }
         }, 2000);
-      } else if (!autoCommand && onReady) {
+      } else if (!cmd && onReadyRef.current) {
         // No autoCommand, call onReady immediately on first data
-        onReady();
+        onReadyRef.current();
       }
     };
 
@@ -941,7 +954,7 @@ export const SSHPane = ({
             // Notify ready when agent responds after autoCommand
             if (waitingForAgentRef.current) {
               waitingForAgentRef.current = false;
-              setTimeout(() => onReady?.(), 500);
+              setTimeout(() => onReadyRef.current?.(), 500);
             }
           }
           return;
@@ -969,7 +982,7 @@ export const SSHPane = ({
           // Notify ready when agent responds after autoCommand
           if (waitingForAgentRef.current) {
             waitingForAgentRef.current = false;
-            setTimeout(() => onReady?.(), 500);
+            setTimeout(() => onReadyRef.current?.(), 500);
           }
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
@@ -987,7 +1000,7 @@ export const SSHPane = ({
       }
       ws.close();
     };
-  }, [autoCommand, captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, onReady, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
+  }, [captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
 
   const handleCopy = useCallback(async () => {
     const term = termInstanceRef.current;
