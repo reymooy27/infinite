@@ -466,13 +466,13 @@ export default function FocusModeLayout({
               )}
             </div>
           ))}
-          <div className="flex items-center gap-1 border-t border-neutral-800 mt-0.5 pt-2">
+          <div className="flex flex-col gap-1 border-t border-neutral-800 mt-0.5 pt-2">
             <div
               onClick={() => {
                 handleAddTab();
                 setTabPanelOpen(false);
               }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors text-neutral-500 hover:bg-neutral-800 hover:text-white flex-1"
+              className="flex items-center gap-2 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors text-neutral-500 hover:bg-neutral-800 hover:text-white"
             >
               <Plus size={12} />
               <span>New tab</span>
@@ -482,18 +482,19 @@ export default function FocusModeLayout({
                 ref={codingAgentBtnRef}
                 onClick={() => setCodingAgentPickerOpen((v) => !v)}
                 title="Coding Agent"
-                className={`p-1.5 transition-colors cursor-pointer rounded ${
+                className={`flex items-center gap-2 px-3 py-2 rounded text-xs cursor-pointer transition-colors w-full ${
                   codingAgentPickerOpen
                     ? "text-white bg-neutral-800"
                     : "text-neutral-500 hover:text-white hover:bg-neutral-800"
                 }`}
               >
-                <Bot size={12} />
+                <Bot size={14} />
+                <span>Coding Agent</span>
               </button>
               {codingAgentPickerOpen && (
                 <div
                   ref={codingAgentRef}
-                  className="absolute bottom-full right-0 mb-1 w-48 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
+                  className="absolute bottom-full left-0 mb-1 w-48 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
                 >
                   <div className="px-3 py-2 border-b border-neutral-800 text-xs text-neutral-500 font-medium">
                     Coding Agent
