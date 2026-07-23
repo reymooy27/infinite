@@ -144,8 +144,13 @@ function buildRows(
           : tableView === "apiKey"
             ? pickText(normalizedProvider, "Unknown provider")
             : tableView === "endpoint"
-              ? [normalizedProvider, normalizedRawModel].filter(Boolean).join(" · ")
-              : [normalizedProvider, normalizedKey !== modelLabel ? normalizedKey : ""]
+              ? [normalizedProvider, normalizedRawModel]
+                  .filter(Boolean)
+                  .join(" · ")
+              : [
+                  normalizedProvider,
+                  normalizedKey !== modelLabel ? normalizedKey : "",
+                ]
                   .filter(Boolean)
                   .join(" · ") || "Unknown provider";
 
@@ -162,7 +167,11 @@ function buildRows(
     .sort((a, b) => {
       if (b.requests !== a.requests) return b.requests - a.requests;
       if (b.cost !== a.cost) return b.cost - a.cost;
-      return b.promptTokens + b.completionTokens - (a.promptTokens + a.completionTokens);
+      return (
+        b.promptTokens +
+        b.completionTokens -
+        (a.promptTokens + a.completionTokens)
+      );
     });
 }
 
@@ -214,9 +223,12 @@ export default function UsagePanel() {
           period,
           baseUrl,
         });
-        const statsRes = await fetch(`/api/router-usage/stats?${query.toString()}`, {
-          cache: "no-store",
-        });
+        const statsRes = await fetch(
+          `/api/router-usage/stats?${query.toString()}`,
+          {
+            cache: "no-store",
+          },
+        );
         const statsBody = await statsRes.json();
 
         if (!statsRes.ok) {
@@ -252,9 +264,12 @@ export default function UsagePanel() {
         period,
         baseUrl,
       });
-      const statsRes = await fetch(`/api/router-usage/stats?${query.toString()}`, {
-        cache: "no-store",
-      });
+      const statsRes = await fetch(
+        `/api/router-usage/stats?${query.toString()}`,
+        {
+          cache: "no-store",
+        },
+      );
       const statsBody = await statsRes.json();
 
       if (!statsRes.ok) {
@@ -263,9 +278,7 @@ export default function UsagePanel() {
 
       setStats(statsBody);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to reach 9router",
-      );
+      setError(err instanceof Error ? err.message : "Failed to reach 9router");
     } finally {
       setRefreshing(false);
     }
@@ -285,7 +298,9 @@ export default function UsagePanel() {
     return options;
   }, [stats]);
 
-  const resolvedTableView = tableOptions.some((option) => option.id === tableView)
+  const resolvedTableView = tableOptions.some(
+    (option) => option.id === tableView,
+  )
     ? tableView
     : "model";
 
@@ -304,7 +319,7 @@ export default function UsagePanel() {
   return (
     <div className="flex flex-col gap-2.5 p-2.5">
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex gap-3 flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-[13px] font-medium text-neutral-100">
@@ -373,7 +388,8 @@ export default function UsagePanel() {
                           </div>
                           <div className="shrink-0 text-right text-[11px] text-neutral-400">
                             <div>
-                              {fmtCompact(item.promptTokens)} / {fmtCompact(item.completionTokens)}
+                              {fmtCompact(item.promptTokens)} /{" "}
+                              {fmtCompact(item.completionTokens)}
                             </div>
                             <div>{fmtDate(item.timestamp)}</div>
                           </div>
@@ -468,7 +484,12 @@ export default function UsagePanel() {
 
         <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-700">
           <div className="grid min-w-[720px] grid-cols-[minmax(180px,1.8fr)_80px_110px_90px_140px] gap-3 bg-neutral-900/80 px-3 py-2 text-[10px] uppercase tracking-wide text-neutral-500">
-            <div>{tableOptions.find((option) => option.id === resolvedTableView)?.label}</div>
+            <div>
+              {
+                tableOptions.find((option) => option.id === resolvedTableView)
+                  ?.label
+              }
+            </div>
             <div className="text-right">Req</div>
             <div className="text-right">In / Out</div>
             <div className="text-right">Cost</div>
@@ -480,7 +501,8 @@ export default function UsagePanel() {
             </div>
           ) : rows.length === 0 ? (
             <div className="px-3 py-6 text-center text-[12px] text-neutral-500">
-              No usage data yet. Make sure 9router is running and has recorded usage.
+              No usage data yet. Make sure 9router is running and has recorded
+              usage.
             </div>
           ) : (
             <div className="divide-y divide-neutral-800">
@@ -493,7 +515,10 @@ export default function UsagePanel() {
                     <div className="truncate font-medium text-neutral-100">
                       {row.label}
                     </div>
-                    <div className="truncate text-[11px] text-neutral-500" title={row.sublabel}>
+                    <div
+                      className="truncate text-[11px] text-neutral-500"
+                      title={row.sublabel}
+                    >
                       {row.sublabel || "—"}
                     </div>
                   </div>
@@ -501,7 +526,8 @@ export default function UsagePanel() {
                     {fmtNumber(row.requests)}
                   </div>
                   <div className="text-right text-neutral-300">
-                    {fmtCompact(row.promptTokens)} / {fmtCompact(row.completionTokens)}
+                    {fmtCompact(row.promptTokens)} /{" "}
+                    {fmtCompact(row.completionTokens)}
                   </div>
                   <div className="text-right text-neutral-300">
                     {fmtCost(row.cost)}

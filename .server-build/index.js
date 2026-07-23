@@ -1,4 +1,6 @@
-import "dotenv/config";
+import { config } from "dotenv";
+import path from "path";
+config({ path: path.resolve(process.cwd(), "server/.env"), override: true });
 import express from "express";
 import { createServer } from "http";
 import http from "http";

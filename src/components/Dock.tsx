@@ -493,11 +493,11 @@ export default function Dock({
 
   const handleCodingAgentChoice = (agent: "opencode" | "codex" | "claude") => {
     setShowCodingAgentPicker(false);
-    // Use first SSH connection if available
+    // Use first SSH connection if available, open as SSH terminal with autoCommand
     const conn = sshConnections[0];
-    setPlacingApp("codingAgent", {
-      agent,
-      ...(conn ? { connectionId: conn.id, title: `${agent} - ${conn.name}` } : {}),
+    setPlacingApp("ssh", {
+      autoCommand: agent,
+      ...(conn ? { connectionId: conn.id, title: `${agent} — ${conn.name}` } : {}),
     });
   };
 
@@ -877,9 +877,9 @@ export default function Dock({
                   title="Coding Agent"
                 >
                   <span className="text-base leading-none">
-                    {registry.codingAgent.icon}
+                    <Bot size={18} />
                   </span>
-                  {windows.some((w) => w.appId === "codingAgent") && (
+                  {windows.some((w) => w.appId === "ssh" && w.metadata?.autoCommand) && (
                     <span className="w-1 h-1 rounded-full bg-blue-400" />
                   )}
                 </button>

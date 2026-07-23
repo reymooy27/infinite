@@ -9,7 +9,7 @@ COPY patches/ ./patches/
 COPY prisma/ ./prisma/
 COPY prisma.config.ts ./
 ENV DATABASE_URL=file:/data/infinite.db
-RUN npm ci
+RUN npm ci && npm cache clean --force
 
 # --- Build ---
 FROM base AS builder
@@ -34,7 +34,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+RUN npm i -g prisma
 
 EXPOSE 7890
-CMD ["sh", "-c", "npx prisma db push && node server.js"]
+CMD prisma db push && node server.js

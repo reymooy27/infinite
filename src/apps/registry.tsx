@@ -5,13 +5,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Bot, Copy, Download, FileTerminal, Globe, NotepadText, RefreshCw, Upload } from "lucide-react";
+import { Copy, Download, FileTerminal, Globe, Loader2, NotepadText, RefreshCw, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import FileTransferWindow from "@/components/FileTransferModal";
-import CodingAgentWrapper from "./CodingAgent";
 import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
@@ -1266,6 +1265,15 @@ const SSHTerminal = ({
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
   const nextTerminal = getNextSSHTerminalTarget(windows, windowId, activeTabId);
 
+  // Read autoCommand from metadata (for coding agents), only apply to first tab
+  const autoCommand = win?.metadata?.autoCommand as string | undefined;
+  const autoCommandTabId = tabs[0]?.id;
+  const [agentReady, setAgentReady] = useState(!autoCommand);
+
+  const handleAgentReady = useCallback(() => {
+    setAgentReady(true);
+  }, []);
+
   const handleAddTab = () => {
     if (!windowId) return;
     const newTabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1347,8 +1355,23 @@ const SSHTerminal = ({
             isActive={tab.id === activeTabId}
             hasNavigated={tab.hasNavigated}
             refreshNonce={paneRefreshKey}
+            autoCommand={tab.id === autoCommandTabId ? autoCommand : undefined}
+            onReady={tab.id === autoCommandTabId ? handleAgentReady : undefined}
           />
         ))}
+
+        {/* Loader overlay for coding agent */}
+        {autoCommand && !agentReady && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0a0a]">
+            <Loader2 className="w-6 h-6 text-neutral-400 animate-spin mb-3" />
+            <p className="text-sm text-neutral-400">
+              Starting {autoCommand}...
+            </p>
+            <p className="text-xs text-neutral-600 mt-1">
+              Connecting to server and launching agent
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1399,17 +1422,6 @@ export const registry: Record<AppId, AppDefinition> = {
     }>,
     defaultWidth: 560,
     defaultHeight: 520,
-  },
-  codingAgent: {
-    id: "codingAgent",
-    title: "Coding Agent",
-    icon: <Bot />,
-    component: CodingAgentWrapper as React.ComponentType<{
-      connectionId?: number;
-      windowId?: string;
-    }>,
-    defaultWidth: 800,
-    defaultHeight: 600,
   },
 };
 
