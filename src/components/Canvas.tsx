@@ -41,7 +41,7 @@ export default function Canvas({ children }: { children: React.ReactNode }) {
   const clearFocus = useWindowStore((s) => s.clearFocus);
   const fitViewportKey = useWindowStore((s) => s.fitViewportKey);
   const fitViewportWindows = useWindowStore((s) => s.fitViewportWindows);
-  const DEFAULT_SCALE = 0.1;
+  const DEFAULT_SCALE = 0.5;
   const connections = useSSHStore((s) => s.connections);
   const fetchConnections = useSSHStore((s) => s.fetchConnections);
   const sshLoading = useSSHStore((s) => s.loading);

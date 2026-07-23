@@ -133,17 +133,15 @@ type FlatRow =
       change: GitChange;
     };
 
-type ConfirmationState =
-  | null
-  | {
-      title: string;
-      message: string;
-      action: GitAction;
-      branch?: string;
-      paths?: string[];
-      messageText?: string;
-      confirmLabel?: string;
-    };
+type ConfirmationState = null | {
+  title: string;
+  message: string;
+  action: GitAction;
+  branch?: string;
+  paths?: string[];
+  messageText?: string;
+  confirmLabel?: string;
+};
 
 interface FocusModeGitPanelProps {
   open: boolean;
@@ -167,8 +165,10 @@ function getStatusText(change: GitChange) {
 function getStatusClassName(change: GitChange) {
   if (change.conflicted) return "text-red-300";
   if (change.untracked) return "text-emerald-300";
-  if (change.indexStatus === "R" || change.workTreeStatus === "R") return "text-sky-300";
-  if (change.indexStatus === "D" || change.workTreeStatus === "D") return "text-rose-300";
+  if (change.indexStatus === "R" || change.workTreeStatus === "R")
+    return "text-sky-300";
+  if (change.indexStatus === "D" || change.workTreeStatus === "D")
+    return "text-rose-300";
   if (change.staged && change.unstaged) return "text-amber-200";
   if (change.staged) return "text-sky-300";
   if (change.workTreeStatus === "M") return "text-yellow-200";
@@ -238,11 +238,16 @@ function buildGitTree(changes: GitChange[]) {
     }
   }
 
-  const convertFolder = (folder: MutableFolder, depth: number): GitTreeFolderNode => {
+  const convertFolder = (
+    folder: MutableFolder,
+    depth: number,
+  ): GitTreeFolderNode => {
     const sortedFolders = [...folder.folders]
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((child) => convertFolder(child, depth + 1));
-    const sortedFiles = [...folder.files].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedFiles = [...folder.files].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
     return {
       kind: "folder",
       id: `folder:${folder.path}`,
@@ -260,7 +265,9 @@ function buildGitTree(changes: GitChange[]) {
       .filter((folder) => folder.path !== "")
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((folder) => convertFolder(folder, 0)),
-    files: [...(rootFolder?.files ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    files: [...(rootFolder?.files ?? [])].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    ),
   };
 }
 
@@ -368,14 +375,19 @@ export default function FocusModeGitPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
-  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
+  const [collapsedFolders, setCollapsedFolders] = useState<
+    Record<string, boolean>
+  >({});
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchSearch, setBranchSearch] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
   const [commitComposerOpen, setCommitComposerOpen] = useState(false);
   const [stageAllBeforeCommit, setStageAllBeforeCommit] = useState(false);
-  const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationState>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -383,7 +395,9 @@ export default function FocusModeGitPanel({
   const [selectedFileDiff, setSelectedFileDiff] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
+  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
+    null,
+  );
   const [commitDiff, setCommitDiff] = useState<string | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const branchSearchRef = useRef<HTMLInputElement>(null);
@@ -413,10 +427,13 @@ export default function FocusModeGitPanel({
           query.set("directory", directory.trim());
         }
         const suffix = query.size > 0 ? `?${query.toString()}` : "";
-        const res = await fetch(`/api/projects/${projectId}/git-status${suffix}`, {
-          cache: "no-store",
-          signal,
-        });
+        const res = await fetch(
+          `/api/projects/${projectId}/git-status${suffix}`,
+          {
+            cache: "no-store",
+            signal,
+          },
+        );
         const body = await res.json();
 
         if (!res.ok) {
@@ -426,7 +443,9 @@ export default function FocusModeGitPanel({
         setData(body);
       } catch (err) {
         if (signal?.aborted) return;
-        setError(err instanceof Error ? err.message : "Failed to load git status");
+        setError(
+          err instanceof Error ? err.message : "Failed to load git status",
+        );
       } finally {
         if (!signal?.aborted && !silent) setLoading(false);
       }
@@ -434,70 +453,84 @@ export default function FocusModeGitPanel({
     [connectionId, directory, projectId],
   );
 
-  const fetchDiff = useCallback(async (filePath: string, staged: boolean) => {
-    if (!projectId) return;
-    
-    setDiffLoading(true);
-    setSelectedFilePath(filePath);
-    
-    try {
-      const params = new URLSearchParams({
-        file: filePath,
-        staged: String(staged),
-      });
-      
-      if (directory) {
-        params.set("directory", directory);
+  const fetchDiff = useCallback(
+    async (filePath: string, staged: boolean) => {
+      if (!projectId) return;
+
+      setDiffLoading(true);
+      setSelectedFilePath(filePath);
+
+      try {
+        const params = new URLSearchParams({
+          file: filePath,
+          staged: String(staged),
+        });
+
+        if (directory) {
+          params.set("directory", directory);
+        }
+        if (connectionId) {
+          params.set("connectionId", String(connectionId));
+        }
+
+        const res = await fetch(
+          `/api/projects/${projectId}/git/diff?${params}`,
+        );
+        const body = await res.json();
+
+        if (!res.ok) {
+          throw new Error(body.error || "Failed to load diff");
+        }
+
+        setSelectedFileDiff(body.diff || "No changes");
+      } catch (err) {
+        setSelectedFileDiff(
+          err instanceof Error ? err.message : "Failed to load diff",
+        );
+      } finally {
+        setDiffLoading(false);
       }
-      if (connectionId) {
-        params.set("connectionId", String(connectionId));
+    },
+    [projectId, directory, connectionId],
+  );
+
+  const fetchCommitDiff = useCallback(
+    async (hash: string) => {
+      if (!projectId) return;
+
+      setCommitDiffLoading(true);
+      setSelectedCommitHash(hash);
+
+      try {
+        const params = new URLSearchParams({ hash });
+
+        if (directory) {
+          params.set("directory", directory);
+        }
+        if (connectionId) {
+          params.set("connectionId", String(connectionId));
+        }
+
+        const res = await fetch(
+          `/api/projects/${projectId}/git/commit-diff?${params}`,
+        );
+        const body = await res.json();
+
+        if (!res.ok) {
+          throw new Error(body.error || "Failed to load diff");
+        }
+
+        setCommitDiff(body.diff || "No changes");
+      } catch (err) {
+        setCommitDiff(
+          err instanceof Error ? err.message : "Failed to load diff",
+        );
+      } finally {
+        setCommitDiffLoading(false);
       }
-      
-      const res = await fetch(`/api/projects/${projectId}/git/diff?${params}`);
-      const body = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(body.error || "Failed to load diff");
-      }
-      
-      setSelectedFileDiff(body.diff || "No changes");
-    } catch (err) {
-      setSelectedFileDiff(err instanceof Error ? err.message : "Failed to load diff");
-    } finally {
-      setDiffLoading(false);
-    }
-  }, [projectId, directory, connectionId]);
-
-  const fetchCommitDiff = useCallback(async (hash: string) => {
-    if (!projectId) return;
-
-    setCommitDiffLoading(true);
-    setSelectedCommitHash(hash);
-
-    try {
-      const params = new URLSearchParams({ hash });
-
-      if (directory) {
-        params.set("directory", directory);
-      }
-      if (connectionId) {
-        params.set("connectionId", String(connectionId));
-      }
-
-      const res = await fetch(`/api/projects/${projectId}/git/commit-diff?${params}`);
-      const body = await res.json();
-
-      if (!res.ok) {
-        throw new Error(body.error || "Failed to load diff");
-      }
-
-      setCommitDiff(body.diff || "No changes");
-    } catch (err) {
-      setCommitDiff(err instanceof Error ? err.message : "Failed to load diff");
-    } finally {
-      setCommitDiffLoading(false);
-    }
-  }, [projectId, directory, connectionId]);
+    },
+    [projectId, directory, connectionId],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -549,17 +582,24 @@ export default function FocusModeGitPanel({
   const activeRowId =
     selectedRowId && visibleRows.some((row) => row.id === selectedRowId)
       ? selectedRowId
-      : visibleRows[0]?.id ?? null;
+      : (visibleRows[0]?.id ?? null);
   const selectedRow = visibleRows.find((row) => row.id === activeRowId) ?? null;
   const filteredBranches = useMemo(() => {
     if (!data) return [];
     const query = branchSearch.trim().toLowerCase();
     if (!query) return data.branches;
-    return data.branches.filter((branch) => branch.toLowerCase().includes(query));
+    return data.branches.filter((branch) =>
+      branch.toLowerCase().includes(query),
+    );
   }, [branchSearch, data]);
 
   const executeAction = useCallback(
-    async (payload: { action: GitAction; paths?: string[]; branch?: string; message?: string }) => {
+    async (payload: {
+      action: GitAction;
+      paths?: string[];
+      branch?: string;
+      message?: string;
+    }) => {
       if (!projectId) return;
 
       setActionBusy(true);
@@ -579,10 +619,14 @@ export default function FocusModeGitPanel({
             message: payload.message,
           }),
         });
-        const body = (await res.json()) as Partial<GitActionResponse> & { error?: string };
+        const body = (await res.json()) as Partial<GitActionResponse> & {
+          error?: string;
+        };
 
         if (!res.ok || !body.ok || !body.nextStatus) {
-          throw new Error(body.error || body.stderr || body.stdout || "Git action failed");
+          throw new Error(
+            body.error || body.stderr || body.stdout || "Git action failed",
+          );
         }
 
         setData(body.nextStatus);
@@ -590,7 +634,10 @@ export default function FocusModeGitPanel({
           setCommitMessage("");
           setCommitComposerOpen(false);
         }
-        if (payload.action === "checkout_branch" || payload.action === "create_branch") {
+        if (
+          payload.action === "checkout_branch" ||
+          payload.action === "create_branch"
+        ) {
           setBranchMenuOpen(false);
           setBranchSearch("");
           setNewBranchName("");
@@ -609,11 +656,13 @@ export default function FocusModeGitPanel({
             create_branch: `Created ${payload.branch}`,
             pull: "Pull complete",
             push: "Push complete",
-          }[payload.action] ?? "Git action complete");
+          }[payload.action] ??
+            "Git action complete");
 
         setFeedback({ kind: "success", text: summary });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Git action failed";
+        const message =
+          err instanceof Error ? err.message : "Git action failed";
         setFeedback({ kind: "error", text: message });
       } finally {
         setActionBusy(false);
@@ -623,11 +672,17 @@ export default function FocusModeGitPanel({
   );
 
   const requestAction = useCallback(
-    (payload: { action: GitAction; paths?: string[]; branch?: string; message?: string }) => {
+    (payload: {
+      action: GitAction;
+      paths?: string[];
+      branch?: string;
+      message?: string;
+    }) => {
       if (payload.action === "discard") {
         setConfirmation({
           title: "Discard changes?",
-          message: "This will restore tracked files and remove untracked files for selected paths.",
+          message:
+            "This will restore tracked files and remove untracked files for selected paths.",
           confirmLabel: "Discard",
           ...payload,
         });
@@ -635,13 +690,15 @@ export default function FocusModeGitPanel({
       }
 
       if (
-        (payload.action === "checkout_branch" || payload.action === "create_branch") &&
+        (payload.action === "checkout_branch" ||
+          payload.action === "create_branch") &&
         data &&
         !data.clean
       ) {
         setConfirmation({
           title: "Switch branch with local changes?",
-          message: "Current working tree is dirty. Branch switch may fail or carry changes over.",
+          message:
+            "Current working tree is dirty. Branch switch may fail or carry changes over.",
           confirmLabel: "Switch",
           ...payload,
         });
@@ -759,7 +816,9 @@ export default function FocusModeGitPanel({
         return;
       }
 
-      const activeIndex = visibleRows.findIndex((row) => row.id === activeRowId);
+      const activeIndex = visibleRows.findIndex(
+        (row) => row.id === activeRowId,
+      );
       const moveSelection = (nextIndex: number) => {
         const next = visibleRows[nextIndex];
         if (!next) return;
@@ -810,7 +869,14 @@ export default function FocusModeGitPanel({
           }
           break;
         case "x":
-          if (selectedRow && hasDiscardable(selectedRow.kind === "file" ? [selectedRow.change] : selectedRow.files)) {
+          if (
+            selectedRow &&
+            hasDiscardable(
+              selectedRow.kind === "file"
+                ? [selectedRow.change]
+                : selectedRow.files,
+            )
+          ) {
             event.preventDefault();
             discardRow(selectedRow);
           }
@@ -930,24 +996,34 @@ export default function FocusModeGitPanel({
           }
         }}
         className={`group flex w-full items-start gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors cursor-pointer ${
-          selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
+          selected
+            ? "bg-neutral-800 text-white"
+            : "text-neutral-300 hover:bg-neutral-800/70"
         }`}
         style={{ paddingLeft: `${row.depth * 14 + 8}px` }}
-        title={row.change.originalPath ? `${row.change.originalPath} -> ${row.change.path}` : row.change.label}
+        title={
+          row.change.originalPath
+            ? `${row.change.originalPath} -> ${row.change.path}`
+            : row.change.label
+        }
       >
         <FileCode2 size={13} className="mt-0.5 shrink-0 text-neutral-500" />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <span className="truncate">{row.name}</span>
             <div className="flex items-center gap-2">
-              <span className={`shrink-0 text-[11px] font-semibold ${getStatusClassName(row.change)}`}>
+              <span
+                className={`shrink-0 text-[11px] font-semibold ${getStatusClassName(row.change)}`}
+              >
                 {getStatusText(row.change)}
               </span>
               {renderActionIcons(row, selected)}
             </div>
           </div>
           {row.change.originalPath && (
-            <p className="truncate text-[10px] text-neutral-500">from {row.change.originalPath}</p>
+            <p className="truncate text-[10px] text-neutral-500">
+              from {row.change.originalPath}
+            </p>
           )}
         </div>
       </div>
@@ -961,7 +1037,9 @@ export default function FocusModeGitPanel({
         key={row.id}
         onClick={() => setSelectedRowId(row.id)}
         className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] transition-colors cursor-pointer ${
-          selected ? "bg-neutral-800 text-white" : "text-neutral-300 hover:bg-neutral-800/70"
+          selected
+            ? "bg-neutral-800 text-white"
+            : "text-neutral-300 hover:bg-neutral-800/70"
         }`}
         style={{ paddingLeft: `${row.depth * 14 + 8}px` }}
       >
@@ -998,8 +1076,12 @@ export default function FocusModeGitPanel({
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <GitBranch size={14} className="shrink-0 text-neutral-300" />
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium text-neutral-100">Git</p>
-              <p className="truncate text-[10px] text-neutral-500">{data?.projectName ?? "Active project"}</p>
+              <p className="truncate text-[13px] font-medium text-neutral-100">
+                Git
+              </p>
+              <p className="truncate text-[10px] text-neutral-500">
+                {data?.projectName ?? "Active project"}
+              </p>
             </div>
           </div>
           <button
@@ -1032,7 +1114,9 @@ export default function FocusModeGitPanel({
           )}
 
           {feedback && (
-            <div className={`mb-2 rounded-xl border px-3 py-2 text-xs ${getFeedbackToneClass(feedback.kind)}`}>
+            <div
+              className={`mb-2 rounded-xl border px-3 py-2 text-xs ${getFeedbackToneClass(feedback.kind)}`}
+            >
               {feedback.text}
             </div>
           )}
@@ -1048,20 +1132,30 @@ export default function FocusModeGitPanel({
                       className="flex w-full items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-left text-xs text-neutral-100 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <span className="truncate">
-                        {data.detached ? "Detached HEAD" : data.branch ?? "No branch"}
+                        {data.detached
+                          ? "Detached HEAD"
+                          : (data.branch ?? "No branch")}
                       </span>
-                      <ChevronDown size={14} className="shrink-0 text-neutral-500" />
+                      <ChevronDown
+                        size={14}
+                        className="shrink-0 text-neutral-500"
+                      />
                     </button>
 
                     {branchMenuOpen && data.isRepo && (
                       <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl">
                         <div className="border-b border-neutral-800 p-2">
                           <div className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-2">
-                            <Search size={12} className="shrink-0 text-neutral-500" />
+                            <Search
+                              size={12}
+                              className="shrink-0 text-neutral-500"
+                            />
                             <input
                               ref={branchSearchRef}
                               value={branchSearch}
-                              onChange={(event) => setBranchSearch(event.target.value)}
+                              onChange={(event) =>
+                                setBranchSearch(event.target.value)
+                              }
                               placeholder="Search branches"
                               className="min-w-0 flex-1 bg-transparent text-xs text-neutral-100 outline-none placeholder:text-neutral-600"
                             />
@@ -1071,7 +1165,12 @@ export default function FocusModeGitPanel({
                           {filteredBranches.map((branch) => (
                             <button
                               key={branch}
-                              onClick={() => requestAction({ action: "checkout_branch", branch })}
+                              onClick={() =>
+                                requestAction({
+                                  action: "checkout_branch",
+                                  branch,
+                                })
+                              }
                               className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs ${
                                 branch === data.branch
                                   ? "bg-neutral-800 text-white"
@@ -1079,18 +1178,26 @@ export default function FocusModeGitPanel({
                               }`}
                             >
                               <span className="truncate">{branch}</span>
-                              {branch === data.branch && <span className="text-[10px] uppercase text-sky-300">current</span>}
+                              {branch === data.branch && (
+                                <span className="text-[10px] uppercase text-sky-300">
+                                  current
+                                </span>
+                              )}
                             </button>
                           ))}
                           {filteredBranches.length === 0 && (
-                            <div className="px-3 py-2.5 text-xs text-neutral-500">No matching branch</div>
+                            <div className="px-3 py-2.5 text-xs text-neutral-500">
+                              No matching branch
+                            </div>
                           )}
                         </div>
                         <div className="border-t border-neutral-800 p-2">
                           <div className="flex items-center gap-2">
                             <input
                               value={newBranchName}
-                              onChange={(event) => setNewBranchName(event.target.value)}
+                              onChange={(event) =>
+                                setNewBranchName(event.target.value)
+                              }
                               placeholder="new-branch-name"
                               className="min-w-0 flex-1 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-xs text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700"
                             />
@@ -1110,8 +1217,12 @@ export default function FocusModeGitPanel({
 
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-neutral-500">
                   {data.upstream && <span>{data.upstream}</span>}
-                  {data.ahead > 0 && <span className="text-sky-200">ahead {data.ahead}</span>}
-                  {data.behind > 0 && <span className="text-amber-200">behind {data.behind}</span>}
+                  {data.ahead > 0 && (
+                    <span className="text-sky-200">ahead {data.ahead}</span>
+                  )}
+                  {data.behind > 0 && (
+                    <span className="text-amber-200">behind {data.behind}</span>
+                  )}
                   {data.stashCount > 0 && <span>stash {data.stashCount}</span>}
                 </div>
 
@@ -1119,11 +1230,16 @@ export default function FocusModeGitPanel({
                   <div className="mt-2 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-2 text-[10px] text-neutral-400">
                     <div className="flex items-center gap-2 text-neutral-300">
                       <GitCommitHorizontal size={12} className="shrink-0" />
-                      <span className="font-mono text-neutral-500">{data.lastCommit.hash}</span>
-                      <span className="truncate">{data.lastCommit.subject}</span>
+                      <span className="font-mono text-neutral-500">
+                        {data.lastCommit.hash}
+                      </span>
+                      <span className="truncate">
+                        {data.lastCommit.subject}
+                      </span>
                     </div>
                     <div className="mt-1 truncate">
-                      {data.lastCommit.authorName} · {data.lastCommit.relativeDate}
+                      {data.lastCommit.authorName} ·{" "}
+                      {data.lastCommit.relativeDate}
                     </div>
                   </div>
                 )}
@@ -1147,39 +1263,41 @@ export default function FocusModeGitPanel({
                   </button>
                   <button
                     onClick={() => requestAction({ action: "stage_all" })}
-                    disabled={actionBusy || !data.isRepo || data.changes.length === 0}
+                    disabled={
+                      actionBusy || !data.isRepo || data.changes.length === 0
+                    }
                     className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Stage all
                   </button>
                   <button
                     onClick={() => requestAction({ action: "unstage_all" })}
-                    disabled={actionBusy || !data.isRepo || data.stagedCount === 0}
+                    disabled={
+                      actionBusy || !data.isRepo || data.stagedCount === 0
+                    }
                     className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Unstage all
                   </button>
                 </div>
-
-                <div className="mt-2 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-2 text-[10px] text-neutral-500">
-                  <div className="truncate">{data.directory ?? "No directory"}</div>
-                  <div className="mt-1 truncate">
-                    `j/k` move · `space` stage · `u` unstage · `x` discard · `b` branch · `c` commit · `g` refresh · `p/P` pull/push
-                  </div>
-                  <div className="mt-1 truncate">Updated {formatTimestamp(data.scannedAt)}</div>
-                </div>
               </div>
 
               {!data.available && (
                 <div className="flex gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-2.5 text-xs text-neutral-300">
-                  <AlertCircle size={16} className="mt-0.5 shrink-0 text-neutral-500" />
+                  <AlertCircle
+                    size={16}
+                    className="mt-0.5 shrink-0 text-neutral-500"
+                  />
                   <p>{data.reason ?? "Project directory not configured"}</p>
                 </div>
               )}
 
               {data.available && !data.isRepo && (
                 <div className="flex gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-2.5 text-xs text-neutral-300">
-                  <AlertCircle size={16} className="mt-0.5 shrink-0 text-neutral-500" />
+                  <AlertCircle
+                    size={16}
+                    className="mt-0.5 shrink-0 text-neutral-500"
+                  />
                   <p>{data.reason ?? "Directory is not a git repository"}</p>
                 </div>
               )}
@@ -1198,7 +1316,9 @@ export default function FocusModeGitPanel({
                   </div>
                   <div className="py-1">
                     {visibleRows.map((row) =>
-                      row.kind === "folder" ? renderFolderRow(row) : renderFileRow(row),
+                      row.kind === "folder"
+                        ? renderFolderRow(row)
+                        : renderFileRow(row),
                     )}
                   </div>
                 </div>
@@ -1207,7 +1327,9 @@ export default function FocusModeGitPanel({
               {selectedFileDiff && (
                 <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                   <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
-                    <span className="truncate flex-1 mr-2">{selectedFilePath}</span>
+                    <span className="truncate flex-1 mr-2">
+                      {selectedFilePath}
+                    </span>
                     <button
                       onClick={() => {
                         setSelectedFileDiff(null);
@@ -1230,15 +1352,25 @@ export default function FocusModeGitPanel({
                           let className = "text-neutral-400";
                           if (line.startsWith("+") && !line.startsWith("+++")) {
                             className = "text-emerald-400";
-                          } else if (line.startsWith("-") && !line.startsWith("---")) {
+                          } else if (
+                            line.startsWith("-") &&
+                            !line.startsWith("---")
+                          ) {
                             className = "text-rose-400";
                           } else if (line.startsWith("@@")) {
                             className = "text-sky-400";
-                          } else if (line.startsWith("diff") || line.startsWith("index") || line.startsWith("---") || line.startsWith("+++")) {
+                          } else if (
+                            line.startsWith("diff") ||
+                            line.startsWith("index") ||
+                            line.startsWith("---") ||
+                            line.startsWith("+++")
+                          ) {
                             className = "text-neutral-500";
                           }
                           return (
-                            <div key={i} className={className}>{line || "\u00A0"}</div>
+                            <div key={i} className={className}>
+                              {line || "\u00A0"}
+                            </div>
                           );
                         })}
                       </pre>
@@ -1252,12 +1384,18 @@ export default function FocusModeGitPanel({
                   className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500"
                 >
                   <span>Commit history</span>
-                  {historyOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {historyOpen ? (
+                    <ChevronDown size={12} />
+                  ) : (
+                    <ChevronRight size={12} />
+                  )}
                 </button>
                 {historyOpen && (
                   <div className="max-h-48 overflow-y-auto py-1">
                     {data.recentCommits.length === 0 && (
-                      <div className="px-3 py-2.5 text-xs text-neutral-500">No commit history</div>
+                      <div className="px-3 py-2.5 text-xs text-neutral-500">
+                        No commit history
+                      </div>
                     )}
                     {data.recentCommits.map((commit) => {
                       const selected = selectedCommitHash === commit.hash;
@@ -1277,8 +1415,12 @@ export default function FocusModeGitPanel({
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-[11px] text-neutral-500">{commit.hash}</span>
-                            <span className="truncate text-neutral-100">{commit.subject}</span>
+                            <span className="font-mono text-[11px] text-neutral-500">
+                              {commit.hash}
+                            </span>
+                            <span className="truncate text-neutral-100">
+                              {commit.subject}
+                            </span>
                           </div>
                           <div className="mt-1 text-[10px] text-neutral-500">
                             {commit.authorName} · {commit.relativeDate}
@@ -1293,7 +1435,9 @@ export default function FocusModeGitPanel({
               {selectedCommitHash && (
                 <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                   <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
-                    <span className="truncate flex-1 mr-2 font-mono">{selectedCommitHash} diff</span>
+                    <span className="truncate flex-1 mr-2 font-mono">
+                      {selectedCommitHash} diff
+                    </span>
                     <button
                       onClick={() => {
                         setSelectedCommitHash(null);
@@ -1316,15 +1460,25 @@ export default function FocusModeGitPanel({
                           let className = "text-neutral-400";
                           if (line.startsWith("+") && !line.startsWith("+++")) {
                             className = "text-emerald-400";
-                          } else if (line.startsWith("-") && !line.startsWith("---")) {
+                          } else if (
+                            line.startsWith("-") &&
+                            !line.startsWith("---")
+                          ) {
                             className = "text-rose-400";
                           } else if (line.startsWith("@@")) {
                             className = "text-sky-400";
-                          } else if (line.startsWith("diff") || line.startsWith("index") || line.startsWith("---") || line.startsWith("+++")) {
+                          } else if (
+                            line.startsWith("diff") ||
+                            line.startsWith("index") ||
+                            line.startsWith("---") ||
+                            line.startsWith("+++")
+                          ) {
                             className = "text-neutral-500";
                           }
                           return (
-                            <div key={i} className={className}>{line || "\u00A0"}</div>
+                            <div key={i} className={className}>
+                              {line || "\u00A0"}
+                            </div>
                           );
                         })}
                       </pre>
@@ -1339,17 +1493,30 @@ export default function FocusModeGitPanel({
                   className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500"
                 >
                   <span>Stash list</span>
-                  {stashOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {stashOpen ? (
+                    <ChevronDown size={12} />
+                  ) : (
+                    <ChevronRight size={12} />
+                  )}
                 </button>
                 {stashOpen && (
                   <div className="max-h-40 overflow-y-auto py-1">
                     {data.stashes.length === 0 && (
-                      <div className="px-3 py-2.5 text-xs text-neutral-500">No stashes</div>
+                      <div className="px-3 py-2.5 text-xs text-neutral-500">
+                        No stashes
+                      </div>
                     )}
                     {data.stashes.map((stash) => (
-                      <div key={`${stash.selector}-${stash.subject}`} className="px-3 py-1.5 text-xs text-neutral-300">
-                        <div className="font-mono text-[10px] text-neutral-500">{stash.selector}</div>
-                        <div className="mt-1 text-neutral-100">{stash.subject}</div>
+                      <div
+                        key={`${stash.selector}-${stash.subject}`}
+                        className="px-3 py-1.5 text-xs text-neutral-300"
+                      >
+                        <div className="font-mono text-[10px] text-neutral-500">
+                          {stash.selector}
+                        </div>
+                        <div className="mt-1 text-neutral-100">
+                          {stash.subject}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1377,13 +1544,17 @@ export default function FocusModeGitPanel({
           ) : (
             <>
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-[11px] font-medium text-neutral-200">Commit</p>
+                <p className="text-[11px] font-medium text-neutral-200">
+                  Commit
+                </p>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 text-[10px] text-neutral-500">
                     <input
                       type="checkbox"
                       checked={stageAllBeforeCommit}
-                      onChange={(event) => setStageAllBeforeCommit(event.target.checked)}
+                      onChange={(event) =>
+                        setStageAllBeforeCommit(event.target.checked)
+                      }
                       className="h-3 w-3 rounded border-neutral-700 bg-neutral-900"
                     />
                     Stage all first
@@ -1413,10 +1584,16 @@ export default function FocusModeGitPanel({
                 </div>
                 <button
                   onClick={() => void handleCommit()}
-                  disabled={actionBusy || !commitMessage.trim() || !data?.isRepo}
+                  disabled={
+                    actionBusy || !commitMessage.trim() || !data?.isRepo
+                  }
                   className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[11px] font-medium text-neutral-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {actionBusy ? <LoaderCircle size={11} className="animate-spin" /> : <Plus size={11} />}
+                  {actionBusy ? (
+                    <LoaderCircle size={11} className="animate-spin" />
+                  ) : (
+                    <Plus size={11} />
+                  )}
                   Commit
                 </button>
               </div>
@@ -1427,8 +1604,12 @@ export default function FocusModeGitPanel({
         {confirmation && (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
             <div className="w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl">
-              <h3 className="text-sm font-semibold text-white">{confirmation.title}</h3>
-              <p className="mt-2 text-xs text-neutral-400">{confirmation.message}</p>
+              <h3 className="text-sm font-semibold text-white">
+                {confirmation.title}
+              </h3>
+              <p className="mt-2 text-xs text-neutral-400">
+                {confirmation.message}
+              </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   onClick={() => setConfirmation(null)}
