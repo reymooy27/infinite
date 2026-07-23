@@ -344,40 +344,6 @@ export default function FocusModeLayout({
             <Boxes size={14} />
           </button>
 
-          <div className="relative">
-            <button
-              ref={codingAgentBtnRef}
-              onClick={() => setCodingAgentPickerOpen((v) => !v)}
-              title="Coding Agent"
-              className={`p-1.5 transition-colors cursor-pointer rounded ${
-                codingAgentPickerOpen
-                  ? "text-white bg-neutral-800"
-                  : "text-neutral-500 hover:text-white hover:bg-neutral-800"
-              }`}
-            >
-              <Bot size={14} />
-            </button>
-            {codingAgentPickerOpen && (
-              <div
-                ref={codingAgentRef}
-                className="absolute top-full right-0 mt-1 w-48 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
-              >
-                <div className="px-3 py-2 border-b border-neutral-800 text-xs text-neutral-500 font-medium">
-                  Coding Agent
-                </div>
-                {CODING_AGENT_CHOICES.map((choice) => (
-                  <button
-                    key={choice.agent}
-                    onClick={() => handleCodingAgentChoice(choice.agent)}
-                    className="w-full px-3 py-2 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors cursor-pointer"
-                  >
-                    {choice.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
           <button
             onClick={handleExitFocusMode}
             title="Switch to canvas mode"
@@ -500,15 +466,53 @@ export default function FocusModeLayout({
               )}
             </div>
           ))}
-          <div
-            onClick={() => {
-              handleAddTab();
-              setTabPanelOpen(false);
-            }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors text-neutral-500 hover:bg-neutral-800 hover:text-white border-t border-neutral-800 mt-0.5 pt-2"
-          >
-            <Plus size={12} />
-            <span>New tab</span>
+          <div className="flex items-center gap-1 border-t border-neutral-800 mt-0.5 pt-2">
+            <div
+              onClick={() => {
+                handleAddTab();
+                setTabPanelOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors text-neutral-500 hover:bg-neutral-800 hover:text-white flex-1"
+            >
+              <Plus size={12} />
+              <span>New tab</span>
+            </div>
+            <div className="relative">
+              <button
+                ref={codingAgentBtnRef}
+                onClick={() => setCodingAgentPickerOpen((v) => !v)}
+                title="Coding Agent"
+                className={`p-1.5 transition-colors cursor-pointer rounded ${
+                  codingAgentPickerOpen
+                    ? "text-white bg-neutral-800"
+                    : "text-neutral-500 hover:text-white hover:bg-neutral-800"
+                }`}
+              >
+                <Bot size={12} />
+              </button>
+              {codingAgentPickerOpen && (
+                <div
+                  ref={codingAgentRef}
+                  className="absolute bottom-full right-0 mb-1 w-48 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
+                >
+                  <div className="px-3 py-2 border-b border-neutral-800 text-xs text-neutral-500 font-medium">
+                    Coding Agent
+                  </div>
+                  {CODING_AGENT_CHOICES.map((choice) => (
+                    <button
+                      key={choice.agent}
+                      onClick={() => {
+                        handleCodingAgentChoice(choice.agent);
+                        setTabPanelOpen(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors cursor-pointer"
+                    >
+                      {choice.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
