@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes, X } from "lucide-react";
+import { Bot, RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
@@ -378,14 +378,6 @@ export default function FocusModeLayout({
             )}
           </div>
 
-          <button
-            onClick={() => activeWindowId && handleCloseWindow(activeWindowId)}
-            disabled={!activeWindow}
-            title="Close window"
-            className="p-1.5 text-neutral-500 hover:text-red-400 transition-colors cursor-pointer rounded hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <X size={14} />
-          </button>
           <button
             onClick={handleExitFocusMode}
             title="Switch to canvas mode"
