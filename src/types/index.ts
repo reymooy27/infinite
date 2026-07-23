@@ -1,6 +1,6 @@
 import type React from "react";
 
-export const APP_IDS = ["notes", "ssh", "devBrowser", "fileTransfer"] as const;
+export const APP_IDS = ["notes", "ssh", "devBrowser", "fileTransfer", "codingAgent"] as const;
 export type AppId = (typeof APP_IDS)[number];
 
 export function isAppId(value: unknown): value is AppId {

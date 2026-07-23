@@ -54,6 +54,7 @@ const DEFAULT_DIMENSIONS: Record<AppId, { width: number; height: number }> = {
   ssh: { width: 400, height: 350 },
   devBrowser: { width: 1024, height: 768 },
   fileTransfer: { width: 560, height: 520 },
+  codingAgent: { width: 800, height: 600 },
 };
 
 export const useWindowStore = create<WindowState>((set, get) => ({

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Boxes, GitBranch } from "lucide-react";
+import { Bot, Boxes, GitBranch } from "lucide-react";
 
 import registry from "@/apps/registry";
 import { useDockerStore } from "@/stores/useDockerStore";
@@ -24,6 +24,28 @@ const BROWSER_CHOICES: Array<{
     appId: "devBrowser",
     label: "Dev Web",
     description: "Open dev browser window for local web testing.",
+  },
+];
+
+const CODING_AGENT_CHOICES: Array<{
+  agent: "opencode" | "codex" | "claude";
+  label: string;
+  description: string;
+}> = [
+  {
+    agent: "opencode",
+    label: "OpenCode",
+    description: "OpenCode CLI coding agent.",
+  },
+  {
+    agent: "codex",
+    label: "Codex",
+    description: "OpenAI Codex CLI coding agent.",
+  },
+  {
+    agent: "claude",
+    label: "Claude",
+    description: "Claude Code CLI coding agent.",
   },
 ];
 
@@ -280,6 +302,7 @@ export default function Dock({
   const [showFileTransfer, setShowFileTransfer] = useState(false);
   const [showBrowserPicker, setShowBrowserPicker] = useState(false);
   const [showSshPicker, setShowSshPicker] = useState(false);
+  const [showCodingAgentPicker, setShowCodingAgentPicker] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileTransferRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -460,6 +483,19 @@ export default function Dock({
     setPlacingApp(appId);
   };
 
+  const handleCodingAgentLauncher = () => {
+    setShowWinMenu(false);
+    setShowFileTransfer(false);
+    setShowBrowserPicker(false);
+    setShowSshPicker(false);
+    setShowCodingAgentPicker((v) => !v);
+  };
+
+  const handleCodingAgentChoice = (agent: "opencode" | "codex" | "claude") => {
+    setShowCodingAgentPicker(false);
+    setPlacingApp("codingAgent", { agent });
+  };
+
   const handleSshLauncher = () => {
     setShowWinMenu(false);
     setShowFileTransfer(false);
@@ -515,6 +551,17 @@ export default function Dock({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [showSshPicker]);
+
+  useEffect(() => {
+    if (!showCodingAgentPicker) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowCodingAgentPicker(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [showCodingAgentPicker]);
 
   // Close menus on outside click
   useEffect(() => {
@@ -584,6 +631,59 @@ export default function Dock({
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCodingAgentPicker && (
+        <div className="fixed inset-0 z-[10020] flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close coding agent picker"
+            className="absolute inset-0 bg-black/55"
+            onClick={() => setShowCodingAgentPicker(false)}
+          />
+          <div className="relative z-[10021] w-full max-w-sm rounded-2xl border border-neutral-700 bg-neutral-900/95 p-4 shadow-2xl backdrop-blur-md">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-100">
+                  Open Coding Agent
+                </h2>
+                <p className="mt-1 text-xs text-neutral-400">
+                  Pick agent, then place window on canvas.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCodingAgentPicker(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
+                title="Close"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {CODING_AGENT_CHOICES.map((choice) => (
+                <button
+                  key={choice.agent}
+                  onClick={() => handleCodingAgentChoice(choice.agent)}
+                  className="flex w-full items-start gap-3 rounded-xl border border-neutral-700 bg-neutral-800/70 px-3 py-3 text-left transition-colors cursor-pointer hover:border-blue-500 hover:bg-neutral-800"
+                >
+                  <span className="mt-0.5 text-neutral-200">
+                    <Bot size={16} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-neutral-100">
+                      {choice.label}
+                    </span>
+                    <span className="mt-1 block text-xs text-neutral-400">
+                      {choice.description}
+                    </span>
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -739,7 +839,7 @@ export default function Dock({
           const isPlacing = placingAppId === appId;
           return (
             <div key={appId} className="contents">
-              {index === 1 && (
+              {index === 1 && (<>
                 <button
                   onClick={handleBrowserLauncher}
                   className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
@@ -762,10 +862,27 @@ export default function Dock({
                     />
                   )}
                 </button>
-              )}
+                <button
+                  onClick={handleCodingAgentLauncher}
+                  className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+                    showCodingAgentPicker
+                      ? "bg-neutral-700 text-white"
+                      : "text-neutral-200 hover:bg-neutral-800 hover:text-white"
+                  }`}
+                  title="Coding Agent"
+                >
+                  <span className="text-base leading-none">
+                    {registry.codingAgent.icon}
+                  </span>
+                  {windows.some((w) => w.appId === "codingAgent") && (
+                    <span className="w-1 h-1 rounded-full bg-blue-400" />
+                  )}
+                </button>
+              </>)}
               <button
                 onClick={() => {
                   setShowBrowserPicker(false);
+                  setShowCodingAgentPicker(false);
                   if (appId === "ssh") {
                     handleSshLauncher();
                     return;

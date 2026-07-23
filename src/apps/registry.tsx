@@ -5,12 +5,13 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Copy, Download, FileTerminal, Globe, NotepadText, RefreshCw, Upload } from "lucide-react";
+import { Bot, Copy, Download, FileTerminal, Globe, NotepadText, RefreshCw, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import FileTransferWindow from "@/components/FileTransferModal";
+import CodingAgentWrapper from "./CodingAgent";
 import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
@@ -33,6 +34,7 @@ export const SSHPane = ({
   keyboardHeight,
   refreshNonce,
   enableTouchScroll = false,
+  autoCommand,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -42,6 +44,7 @@ export const SSHPane = ({
   keyboardHeight?: number;
   refreshNonce?: number;
   enableTouchScroll?: boolean;
+  autoCommand?: string;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -920,6 +923,12 @@ export const SSHPane = ({
             if (windowId && tabId) {
               useWindowStore.getState().markTabNavigated(windowId, tabId);
             }
+            // Auto-send command if specified (for coding agents)
+            if (autoCommand && ws.readyState === WebSocket.OPEN) {
+              setTimeout(() => {
+                ws.send(JSON.stringify({ type: "data", data: autoCommand + "\n" }));
+              }, 500);
+            }
           }
           const binaryStr = atob(msg.data);
           const bytes = new Uint8Array(binaryStr.length);
@@ -945,7 +954,7 @@ export const SSHPane = ({
       }
       ws.close();
     };
-  }, [captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
+  }, [autoCommand, captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
 
   const handleCopy = useCallback(async () => {
     const term = termInstanceRef.current;
@@ -1365,6 +1374,17 @@ export const registry: Record<AppId, AppDefinition> = {
     }>,
     defaultWidth: 560,
     defaultHeight: 520,
+  },
+  codingAgent: {
+    id: "codingAgent",
+    title: "Coding Agent",
+    icon: <Bot />,
+    component: CodingAgentWrapper as React.ComponentType<{
+      connectionId?: number;
+      windowId?: string;
+    }>,
+    defaultWidth: 800,
+    defaultHeight: 600,
   },
 };
 
