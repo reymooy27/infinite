@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
@@ -56,6 +56,7 @@ export default function FocusModeLayout({
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [codingAgentPickerOpen, setCodingAgentPickerOpen] = useState(false);
+  const [agentReady, setAgentReady] = useState(true);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyboardRafRef = useRef<number | null>(null);
@@ -118,19 +119,30 @@ export default function FocusModeLayout({
 
   const handleCodingAgentChoice = (agent: string) => {
     setCodingAgentPickerOpen(false);
+    setAgentReady(false);
     const conn = sshConnections[0];
     if (!conn) return;
     // Open a new SSH window with autoCommand
-    const openApp = useWindowStore.getState().openApp;
+    const store = useWindowStore.getState();
     const tabId = getBrowserId("tab-");
-    openApp("ssh", undefined, undefined, {
+    store.openApp("ssh", undefined, undefined, {
       autoCommand: agent,
       connectionId: conn.id,
       title: `${agent} — ${conn.name}`,
       tabs: [{ id: tabId, label: "Tab 1", connectionId: conn.id }],
       activeTabId: tabId,
     });
+    // Switch focus mode to the new window
+    const newWindow = useWindowStore.getState().windows.at(-1);
+    if (newWindow) {
+      setFocusModeWindowId(newWindow.id);
+      store.focusWindow(newWindow.id);
+    }
   };
+
+  const handleAgentReady = useCallback(() => {
+    setAgentReady(true);
+  }, []);
 
   useEffect(() => {
     if (!codingAgentPickerOpen) return;
@@ -491,13 +503,17 @@ export default function FocusModeLayout({
                 keyboardHeight={keyboardHeight}
                 refreshNonce={paneRefreshKey}
                 autoCommand={activeWindow.metadata?.autoCommand as string | undefined}
+                onReady={handleAgentReady}
               />
             ))}
-            {activeWindow.metadata?.autoCommand && (
+            {activeWindow.metadata?.autoCommand && !agentReady && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0a0a]">
                 <Bot className="w-6 h-6 text-neutral-400 animate-pulse mb-3" />
                 <p className="text-sm text-neutral-400">
                   Starting {activeWindow.metadata.autoCommand as string}...
+                </p>
+                <p className="text-xs text-neutral-600 mt-1">
+                  Connecting to server and launching agent
                 </p>
               </div>
             )}
