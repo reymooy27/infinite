@@ -908,6 +908,9 @@ export const SSHPane = ({
             waitingForAgentRef.current = true;
           }
         }, 2000);
+      } else if (cmd && sentAutoCommands.has(commandKey)) {
+        // Already sent in previous mount — agent is already running
+        onReadyRef.current?.();
       } else if (!cmd && onReadyRef.current) {
         // No autoCommand, call onReady immediately on first data
         onReadyRef.current();

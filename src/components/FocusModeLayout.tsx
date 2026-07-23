@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes } from "lucide-react";
+import { Bot, RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes, X } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
@@ -47,6 +47,7 @@ export default function FocusModeLayout({
   const toggleDockerPanel = useDockerStore((s) => s.togglePanel);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const focusWindow = useWindowStore((s) => s.focusWindow);
+  const closeWindow = useWindowStore((s) => s.closeWindow);
 
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -115,6 +116,17 @@ export default function FocusModeLayout({
       focusWindow(activeWindow.id);
     }
     setFocusMode(false);
+  };
+
+  const handleCloseWindow = (windowId: string) => {
+    closeWindow(windowId);
+    const remaining = sshWindows.filter((w) => w.id !== windowId);
+    if (remaining.length > 0) {
+      setFocusModeWindowId(remaining[0].id);
+      focusWindow(remaining[0].id);
+    } else {
+      setFocusMode(false);
+    }
   };
 
   const handleCodingAgentChoice = (agent: string) => {
@@ -367,6 +379,14 @@ export default function FocusModeLayout({
           </div>
 
           <button
+            onClick={() => activeWindowId && handleCloseWindow(activeWindowId)}
+            disabled={!activeWindow}
+            title="Close window"
+            className="p-1.5 text-neutral-500 hover:text-red-400 transition-colors cursor-pointer rounded hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <X size={14} />
+          </button>
+          <button
             onClick={handleExitFocusMode}
             title="Switch to canvas mode"
             className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer rounded hover:bg-neutral-800"
@@ -433,16 +453,28 @@ export default function FocusModeLayout({
                   setFocusModeWindowId(win.id);
                   setTabPanelOpen(false);
                 }}
-                className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors ${
+                className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
                   isSelected
                     ? "bg-neutral-800 text-white"
                     : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
                 }`}
               >
                 <span className="truncate">{getWindowLabel(win.id)}</span>
-                <span className="ml-2 shrink-0 text-[10px] uppercase tracking-[0.18em] text-neutral-500">
-                  Win
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+                    Win
+                  </span>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCloseWindow(win.id);
+                      setTabPanelOpen(false);
+                    }}
+                    className="text-neutral-600 hover:text-red-400 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                  >
+                    ×
+                  </span>
+                </div>
               </div>
             );
           })}
