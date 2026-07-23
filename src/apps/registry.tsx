@@ -873,6 +873,17 @@ export const SSHPane = ({
         });
       }
       setStatus("connected");
+
+      // Auto-send command if specified (for coding agents)
+      // Delay to ensure shell prompt is ready
+      if (autoCommand && !hasSentAutoCommandRef.current) {
+        hasSentAutoCommandRef.current = true;
+        setTimeout(() => {
+          if (isCurrentSocket() && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "data", data: autoCommand + "\n" }));
+          }
+        }, 2000);
+      }
     };
 
     // Send ping every 20s to keep connection alive through proxies/firewalls
@@ -923,15 +934,6 @@ export const SSHPane = ({
             hasAutoNavigatedRef.current = true;
             if (windowId && tabId) {
               useWindowStore.getState().markTabNavigated(windowId, tabId);
-            }
-            // Auto-send command if specified (for coding agents)
-            if (autoCommand && !hasSentAutoCommandRef.current && ws.readyState === WebSocket.OPEN) {
-              hasSentAutoCommandRef.current = true;
-              setTimeout(() => {
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({ type: "data", data: autoCommand + "\n" }));
-                }
-              }, 1000);
             }
           }
           const binaryStr = atob(msg.data);
