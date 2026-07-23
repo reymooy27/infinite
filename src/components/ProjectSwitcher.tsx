@@ -70,7 +70,7 @@ function formatDate(value: string | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleString("en-US", {
-    month: "short",
+    month: "numeric",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
@@ -388,10 +388,10 @@ export default function ProjectSwitcher({
             role="option"
             aria-selected={focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length}
             onClick={() => handleOpenSection("usage")}
-            className={itemClassName(
-              nonActiveProjects.length + SIDEBAR_SECTIONS.length,
-              "w-full border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-neutral-900",
-            )}
+              className={itemClassName(
+                nonActiveProjects.length + SIDEBAR_SECTIONS.length,
+                "block w-full border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-neutral-900",
+              )}
           >
             <div className="flex items-center justify-between gap-2">
               <div className="text-[10px] uppercase tracking-wide text-neutral-500">
@@ -437,7 +437,7 @@ export default function ProjectSwitcher({
                       <div className="min-w-0 truncate text-neutral-300">
                         {item.model}
                       </div>
-                      <div className="shrink-0 text-neutral-500">
+                      <div className="shrink-0 text-neutral-500 whitespace-nowrap">
                         {formatDate(item.timestamp)}
                       </div>
                     </div>
