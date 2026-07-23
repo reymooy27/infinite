@@ -76,7 +76,7 @@ export const SSHPane = ({
   const statusRef = useRef(status);
   const isActiveRef = useRef(isActive);
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
-  const hasSentAutoCommandRef = useRef(false);
+  const sentAutoCommandRef = useRef<string | null>(null);
   const waitingForAgentRef = useRef(false);
 
   useEffect(() => {
@@ -878,8 +878,8 @@ export const SSHPane = ({
 
       // Auto-send command if specified (for coding agents)
       // Delay to ensure shell prompt is ready
-      if (autoCommand && !hasSentAutoCommandRef.current) {
-        hasSentAutoCommandRef.current = true;
+      if (autoCommand && sentAutoCommandRef.current !== autoCommand) {
+        sentAutoCommandRef.current = autoCommand;
         setTimeout(() => {
           if (isCurrentSocket() && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "data", data: autoCommand + "\n" }));
