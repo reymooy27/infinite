@@ -1,8 +1,10 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import { SSHPane } from "./registry";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSSHStore } from "@/stores/useSSHStore";
+import { Loader2 } from "lucide-react";
 
 type AgentType = "opencode" | "codex" | "claude";
 
@@ -29,6 +31,11 @@ export function CodingAgentPane({
 }) {
   const tabId = `coding-agent-${agent}`;
   const sshConnections = useSSHStore((s) => s.connections);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const handleReady = useCallback(() => {
+    setIsLoading(false);
+  }, []);
 
   if (!connectionId && sshConnections.length === 0) {
     return (
@@ -57,7 +64,19 @@ export function CodingAgentPane({
           connectionId={connectionId}
           isActive={true}
           autoCommand={AGENT_COMMANDS[agent]}
+          onReady={handleReady}
         />
+        {isLoading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0a0a]">
+            <Loader2 className="w-6 h-6 text-neutral-400 animate-spin mb-3" />
+            <p className="text-sm text-neutral-400">
+              Starting {AGENT_LABELS[agent]}...
+            </p>
+            <p className="text-xs text-neutral-600 mt-1">
+              Connecting to server and launching agent
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -75,7 +94,10 @@ export default function CodingAgentWrapper({
   const sshConnections = useSSHStore((s) => s.connections);
 
   // Use connectionId from metadata, or fallback to first SSH connection
-  const effectiveConnectionId = connectionId || (win?.metadata?.connectionId as number) || sshConnections[0]?.id;
+  const effectiveConnectionId =
+    connectionId ||
+    (win?.metadata?.connectionId as number) ||
+    sshConnections[0]?.id;
 
   return (
     <CodingAgentPane

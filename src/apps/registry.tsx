@@ -35,6 +35,7 @@ export const SSHPane = ({
   refreshNonce,
   enableTouchScroll = false,
   autoCommand,
+  onReady,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -45,6 +46,7 @@ export const SSHPane = ({
   refreshNonce?: number;
   enableTouchScroll?: boolean;
   autoCommand?: string;
+  onReady?: () => void;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -76,6 +78,7 @@ export const SSHPane = ({
   const isActiveRef = useRef(isActive);
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
   const hasSentAutoCommandRef = useRef(false);
+  const waitingForAgentRef = useRef(false);
 
   useEffect(() => {
     statusRef.current = status;
@@ -881,8 +884,12 @@ export const SSHPane = ({
         setTimeout(() => {
           if (isCurrentSocket() && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "data", data: autoCommand + "\n" }));
+            waitingForAgentRef.current = true;
           }
         }, 2000);
+      } else if (!autoCommand && onReady) {
+        // No autoCommand, call onReady immediately on first data
+        onReady();
       }
     };
 
@@ -922,6 +929,12 @@ export const SSHPane = ({
             captureOsc52Clipboard(decoded);
             captureOsc7Directory(decoded);
             term.write(bytes);
+
+            // Notify ready when agent responds after autoCommand
+            if (waitingForAgentRef.current) {
+              waitingForAgentRef.current = false;
+              setTimeout(() => onReady?.(), 500);
+            }
           }
           return;
         }
@@ -944,6 +957,12 @@ export const SSHPane = ({
           captureOsc52Clipboard(binaryStr);
           captureOsc7Directory(binaryStr);
           term.write(bytes);
+
+          // Notify ready when agent responds after autoCommand
+          if (waitingForAgentRef.current) {
+            waitingForAgentRef.current = false;
+            setTimeout(() => onReady?.(), 500);
+          }
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
         }
@@ -960,7 +979,7 @@ export const SSHPane = ({
       }
       ws.close();
     };
-  }, [autoCommand, captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
+  }, [autoCommand, captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, onReady, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
 
   const handleCopy = useCallback(async () => {
     const term = termInstanceRef.current;
