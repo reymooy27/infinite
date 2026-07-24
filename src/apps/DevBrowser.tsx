@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { buildHttpBaseUrl } from "@/lib/ws";
+import { api } from "@/lib/api";
 
 interface ConsoleEntry {
   level: "log" | "warn" | "error" | "info" | "debug";
@@ -175,10 +176,9 @@ export default function DevBrowser({
   }, [history, historyIndex, storageKey]);
 
   useEffect(() => {
-    fetch("/api/bookmarks")
-      .then((res) => res.json())
+    api.get<unknown[]>("/api/bookmarks")
       .then((data) => {
-        if (Array.isArray(data)) setQuickLinks(data);
+        if (Array.isArray(data)) setQuickLinks(data as Bookmark[]);
       })
       .catch(() => {});
   }, []);
@@ -553,23 +553,18 @@ export default function DevBrowser({
   const togglePin = async () => {
     if (!pinUrl) return;
     if (pinnedBookmark) {
-      await fetch(`/api/bookmarks/${pinnedBookmark.id}`, { method: "DELETE" });
+      await api.delete(`/api/bookmarks/${pinnedBookmark.id}`);
       setQuickLinks((prev) => prev.filter((q) => q.id !== pinnedBookmark.id));
     } else {
-      const res = await fetch("/api/bookmarks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: pinUrl }),
-      });
-      if (res.ok) {
-        const bookmark = await res.json();
+      try {
+        const bookmark = await api.post<Bookmark>("/api/bookmarks", { url: pinUrl });
         setQuickLinks((prev) => [bookmark, ...prev]);
-      }
+      } catch {}
     }
   };
 
   const removeQuickLink = async (id: number) => {
-    await fetch(`/api/bookmarks/${id}`, { method: "DELETE" });
+    await api.delete(`/api/bookmarks/${id}`);
     setQuickLinks((prev) => prev.filter((q) => q.id !== id));
   };
 

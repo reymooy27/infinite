@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { api } from "@/lib/api";
 import type { AppId, WindowData, TerminalTab } from "@/types";
 import { isAppId, normalizeWindow } from "@/types";
 import { canvasTransform } from "@/lib/canvasTransform";
@@ -227,8 +228,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
         return;
       }
       // Fallback: legacy /api/layout
-      const res = await fetch("/api/layout");
-      const data = await res.json();
+      const data = await api.get<{ windows?: WindowData[] }>("/api/layout");
       if (data.windows) {
         const normalized: WindowData[] = data.windows
           .filter((w: WindowData) => isAppId(w.appId))
@@ -254,11 +254,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
         return;
       }
       const { windows } = get();
-      await fetch("/api/layout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ windows }),
-      });
+      await api.post("/api/layout", { windows });
     } catch (err) {
       console.error("Failed to save layout", err);
     }
@@ -266,8 +262,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
 
   loadProjectCanvas: async (projectId) => {
     try {
-      const res = await fetch(`/api/projects/${projectId}/canvas`);
-      const data = await res.json();
+      const data = await api.get<{ windows?: WindowData[]; canvasTransform?: unknown }>(`/api/projects/${projectId}/canvas`);
       if (data.windows) {
         const normalized: WindowData[] = data.windows
           .filter((w: WindowData) => isAppId(w.appId))
@@ -301,11 +296,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       const transform = state
         ? { scale: state.scale, x: state.positionX, y: state.positionY }
         : undefined;
-      await fetch(`/api/projects/${projectId}/canvas`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ windows, canvasTransform: transform }),
-      });
+      await api.post(`/api/projects/${projectId}/canvas`, { windows, canvasTransform: transform });
     } catch (err) {
       console.error("Failed to save project canvas", err);
     }

@@ -1,6 +1,5 @@
-"use client";
-
 import { useState, useEffect, useCallback } from "react";
+import { api } from "@/lib/api";
 
 interface Agent {
   id: string;
@@ -20,17 +19,18 @@ export default function AgentPanel() {
   const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchAgents = useCallback(async () => {
-    const res = await fetch("/api/agents");
-    if (res.ok) setAgents(await res.json());
+    try {
+      const data = await api.get<Agent[]>("/api/agents");
+      setAgents(data);
+    } catch {}
     setInitialLoading(false);
   }, []);
 
   const fetchStatus = useCallback(async () => {
-    const res = await fetch("/api/agents/status");
-    if (res.ok) {
-      const { online } = await res.json();
+    try {
+      const { online } = await api.get<{ online: string[] }>("/api/agents/status");
       setOnlineIds(new Set(online));
-    }
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -45,22 +45,17 @@ export default function AgentPanel() {
     e.preventDefault();
     if (!name.trim()) return;
     setLoading(true);
-    const res = await fetch("/api/agents", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() }),
-    });
-    if (res.ok) {
-      const agent = await res.json();
+    try {
+      const agent = await api.post<Agent>("/api/agents", { name: name.trim() });
       setAgents((prev) => [agent, ...prev]);
       setName("");
       setShowForm(false);
-    }
+    } catch {}
     setLoading(false);
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/agents/${id}`, { method: "DELETE" });
+    await api.delete(`/api/agents/${id}`);
     setAgents((prev) => prev.filter((a) => a.id !== id));
   };
 
@@ -70,7 +65,7 @@ export default function AgentPanel() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "wss://infinite-server.fly.dev";
+  const wsUrl = import.meta.env.VITE_WS_URL || "wss://infinite-server.fly.dev";
 
   return (
     <div className="flex flex-col max-h-[70vh] overflow-hidden">

@@ -1,6 +1,5 @@
-"use client";
-
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import {
   useSettingsStore,
   AVAILABLE_SHORTCUTS,
@@ -125,13 +124,7 @@ export default function SettingsPanel({
     setError("");
 
     try {
-      const res = await fetch("/api/ai-providers");
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load providers");
-      }
-
+      const data = await api.get<typeof providers>("/api/ai-providers");
       setProviders(data);
       setLoaded(true);
     } catch (err) {
@@ -179,22 +172,9 @@ export default function SettingsPanel({
       setError("");
 
       try {
-        const res = await fetch(
-          editingProviderId
-            ? `/api/ai-providers/${editingProviderId}`
-            : "/api/ai-providers",
-          {
-            method: editingProviderId ? "PATCH" : "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, baseUrl }),
-          },
-        );
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to save provider");
-        }
+        const data = editingProviderId
+          ? await api.patch<typeof providers[0]>(`/api/ai-providers/${editingProviderId}`, { name, baseUrl })
+          : await api.post<typeof providers[0]>("/api/ai-providers", { name, baseUrl });
 
         if (editingProviderId) {
           setProviders((prev) =>
@@ -220,13 +200,7 @@ export default function SettingsPanel({
     void (async () => {
       setError("");
       try {
-        const res = await fetch(`/api/ai-providers/${id}`, { method: "DELETE" });
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to delete provider");
-        }
-
+        await api.delete(`/api/ai-providers/${id}`);
         setProviders((prev) => prev.filter((p) => p.id !== id));
         if (editingProviderId === id) resetProviderForm();
         if (expandedProviderId === id) setExpandedProviderId(null);
@@ -259,17 +233,7 @@ export default function SettingsPanel({
       setError("");
 
       try {
-        const res = await fetch(`/api/ai-providers/${providerId}/keys`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ label: addKeyLabel.trim(), apiKey }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to add API key");
-        }
+        const data = await api.post<typeof providers[0]["keys"][0]>(`/api/ai-providers/${providerId}/keys`, { label: addKeyLabel.trim(), apiKey });
 
         setProviders((prev) =>
           prev.map((p) =>
@@ -300,17 +264,7 @@ export default function SettingsPanel({
       setError("");
 
       try {
-        const res = await fetch(`/api/ai-keys/${keyId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ label: editKeyLabel.trim(), apiKey }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to update API key");
-        }
+        const data = await api.patch<typeof providers[0]["keys"][0]>(`/api/ai-keys/${keyId}`, { label: editKeyLabel.trim(), apiKey });
 
         setProviders((prev) =>
           prev.map((p) =>
@@ -332,13 +286,7 @@ export default function SettingsPanel({
     void (async () => {
       setError("");
       try {
-        const res = await fetch(`/api/ai-keys/${keyId}`, { method: "DELETE" });
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to delete API key");
-        }
-
+        await api.delete(`/api/ai-keys/${keyId}`);
         setProviders((prev) =>
           prev.map((p) =>
             p.id === providerId
@@ -370,12 +318,7 @@ export default function SettingsPanel({
       }));
 
       try {
-        const res = await fetch(`/api/ai-keys/${keyId}/test`, { method: "POST" });
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to test API key");
-        }
+        const data = await api.post<{ ok: boolean; provider: string; status: number; message: string; modelCount?: number }>(`/api/ai-keys/${keyId}/test`);
 
         setTestStates((prev) => ({
           ...prev,

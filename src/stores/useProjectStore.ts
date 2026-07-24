@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { api } from "@/lib/api";
 import type { Project } from "@/types";
 
 const RECENT_PROJECTS_KEY = "infinite-recent-projects";
@@ -46,19 +47,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   fetchProjects: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await fetch("/api/projects");
-      const projects: Project[] = await res.json();
+      const projects = await api.get<Project[]>("/api/projects");
 
       if (!Array.isArray(projects) || projects.length === 0) {
-        // No projects yet — create default project (seeds from existing Layout)
-        const createRes = await fetch("/api/projects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "Default" }),
-        });
-        const newProject: Project = await createRes.json();
+        const newProject = await api.post<Project>("/api/projects", { name: "Default" });
         set({ projects: [newProject], activeProjectId: newProject.id, loading: false });
-        // Load canvas for this new project
         const { useWindowStore } = await import("@/stores/useWindowStore");
         await useWindowStore.getState().loadProjectCanvas(newProject.id);
         return;
@@ -86,13 +79,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   createProject: async (name, directory) => {
     try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, ...(directory && { directory }) }),
-      });
-      if (!res.ok) return null;
-      const project: Project = await res.json();
+      const project = await api.post<Project>("/api/projects", { name, ...(directory && { directory }) });
       set((state) => ({ projects: [...state.projects, project] }));
       return project;
     } catch {
@@ -105,8 +92,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (projects.length <= 1) return;
 
     try {
-      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-      if (!res.ok) return;
+      await api.delete(`/api/projects/${id}`);
 
       const remaining = projects.filter((p) => p.id !== id);
       set({ projects: remaining });
@@ -132,15 +118,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       ),
     }));
     try {
-      await fetch(`/api/projects/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, ...(directory !== undefined && { directory }) }),
-      });
+      await api.patch(`/api/projects/${id}`, { name, ...(directory !== undefined && { directory }) });
     } catch {
-      // revert on failure
-      const res = await fetch("/api/projects");
-      const projects: Project[] = await res.json();
+      const projects = await api.get<Project[]>("/api/projects");
       set({ projects });
     }
   },

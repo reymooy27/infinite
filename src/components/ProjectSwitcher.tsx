@@ -1,6 +1,5 @@
-"use client";
-
 import { useEffect, useRef, useState, useCallback } from "react";
+import { api } from "@/lib/api";
 import { normalizeRouterUsageBaseUrl } from "@/lib/routerUsage";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
@@ -143,15 +142,7 @@ export default function ProjectSwitcher({
           period: "today",
           baseUrl: normalizeRouterUsageBaseUrl(routerUsageBaseUrl),
         });
-        const res = await fetch(`/api/router-usage/stats?${query.toString()}`, {
-          cache: "no-store",
-          signal,
-        });
-        const body = await res.json();
-
-        if (!res.ok) {
-          throw new Error(body.error || "Failed to load usage");
-        }
+        const body = await api.get<Record<string, unknown>>(`/api/router-usage/stats?${query.toString()}`);
 
         setUsageStats(body);
       } catch (err) {

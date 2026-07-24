@@ -1,6 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "@/lib/api";
 import {
   AlertCircle,
   ChevronDown,
@@ -607,23 +606,16 @@ export default function FocusModeGitPanel({
       setError("");
 
       try {
-        const res = await fetch(`/api/projects/${projectId}/git/action`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: payload.action,
-            connectionId,
-            directory,
-            paths: payload.paths,
-            branch: payload.branch,
-            message: payload.message,
-          }),
+        const body = await api.post<Partial<GitActionResponse> & { error?: string }>(`/api/projects/${projectId}/git/action`, {
+          action: payload.action,
+          connectionId,
+          directory,
+          paths: payload.paths,
+          branch: payload.branch,
+          message: payload.message,
         });
-        const body = (await res.json()) as Partial<GitActionResponse> & {
-          error?: string;
-        };
 
-        if (!res.ok || !body.ok || !body.nextStatus) {
+        if (!body.ok || !body.nextStatus) {
           throw new Error(
             body.error || body.stderr || body.stdout || "Git action failed",
           );

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { api } from "@/lib/api";
 import type { SSHConnection, CreateConnectionInput } from "@/types";
 
 interface SSHState {
@@ -23,10 +24,8 @@ export const useSSHStore = create<SSHState>((set) => ({
   fetchConnections: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await fetch("/api/connections");
-      if (!res.ok) throw new Error("Failed to fetch connections");
-      const data = await res.json();
-      set({ connections: data.connections ?? data, limit: Infinity, plan: "local", loading: false });
+      const data = await api.get<{ connections?: SSHConnection[]; limit?: number; plan?: string }>("/api/connections");
+      set({ connections: data.connections ?? (data as unknown as SSHConnection[]), limit: data.limit ?? Infinity, plan: data.plan ?? "local", loading: false });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
@@ -35,16 +34,7 @@ export const useSSHStore = create<SSHState>((set) => ({
   createConnection: async (conn) => {
     set({ loading: true, error: null });
     try {
-      const res = await fetch("/api/connections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(conn),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Failed to create connection" }));
-        throw new Error(err.error);
-      }
-      const data = await res.json();
+      const data = await api.post<SSHConnection>("/api/connections", conn);
       set((state) => ({
         connections: [data, ...state.connections],
         loading: false,
@@ -59,16 +49,7 @@ export const useSSHStore = create<SSHState>((set) => ({
   updateConnection: async (id, conn) => {
     set({ loading: true, error: null });
     try {
-      const res = await fetch(`/api/connections/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(conn),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Failed to update connection" }));
-        throw new Error(err.error);
-      }
-      const data = await res.json();
+      const data = await api.patch<SSHConnection>(`/api/connections/${id}`, conn);
       set((state) => ({
         connections: state.connections.map((connection) =>
           connection.id === id ? data : connection
@@ -84,7 +65,7 @@ export const useSSHStore = create<SSHState>((set) => ({
 
   deleteConnection: async (id) => {
     try {
-      await fetch(`/api/connections/${id}`, { method: "DELETE" });
+      await api.delete(`/api/connections/${id}`);
       set((state) => ({
         connections: state.connections.filter((c) => c.id !== id),
       }));

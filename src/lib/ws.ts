@@ -5,7 +5,7 @@ export function buildWsUrl(
   path: string,
   params: Record<string, string | number>,
 ): string {
-  const configured = process.env.NEXT_PUBLIC_WS_URL;
+  const configured = import.meta.env.VITE_WS_URL;
   let base: string;
 
   if (configured) {
@@ -36,7 +36,7 @@ export function buildWsUrl(
 export function buildHttpBaseUrl(): string {
   if (typeof window === "undefined") return "http://localhost:7891";
 
-  const configured = process.env.NEXT_PUBLIC_WS_URL;
+  const configured = import.meta.env.VITE_WS_URL;
   if (configured) {
     if (configured.startsWith("http://") || configured.startsWith("https://")) {
       return configured;

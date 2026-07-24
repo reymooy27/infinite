@@ -1,4 +1,3 @@
-"use client";
 
 import registry from "@/apps/registry";
 import { getBrowserId } from "@/lib/browserId";

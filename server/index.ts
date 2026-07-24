@@ -42,6 +42,16 @@ import {
   unpauseContainer,
 } from "./lib/docker.js";
 import { logger } from "./lib/logger.js";
+import agentsRouter from "./routes/agents.js";
+import bookmarksRouter from "./routes/bookmarks.js";
+import notesRouter from "./routes/notes.js";
+import layoutRouter from "./routes/layout.js";
+import connectionsRouter from "./routes/connections.js";
+import aiProvidersRouter from "./routes/ai-providers.js";
+import aiKeysRouter from "./routes/ai-keys.js";
+import projectsRouter from "./routes/projects.js";
+import devBrowserRouter from "./routes/dev-browser.js";
+import routerUsageRouter from "./routes/router-usage.js";
 
 const LOCAL_USER_ID = "local-user";
 
@@ -88,6 +98,18 @@ const apiLimiter = rateLimit({
   message: { error: "Too many requests, try again later" },
 });
 app.use("/api", apiLimiter);
+
+// Domain routes
+app.use("/api/agents", agentsRouter);
+app.use("/api/bookmarks", bookmarksRouter);
+app.use("/api/notes", notesRouter);
+app.use("/api/layout", layoutRouter);
+app.use("/api/connections", connectionsRouter);
+app.use("/api/ai-providers", aiProvidersRouter);
+app.use("/api/ai-keys", aiKeysRouter);
+app.use("/api/projects", projectsRouter);
+app.use("/api/dev-browser", devBrowserRouter);
+app.use("/api/router-usage", routerUsageRouter);
 
 function resolveConfiguredPublicServerBaseUrl() {
   const configured =

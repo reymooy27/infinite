@@ -1,4 +1,3 @@
-"use client";
 
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 

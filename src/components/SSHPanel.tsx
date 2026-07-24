@@ -1,5 +1,4 @@
-"use client";
-
+import { api } from "@/lib/api";
 import { getBrowserId } from "@/lib/browserId";
 import { useState, useEffect } from "react";
 import { useSSHStore } from "@/stores/useSSHStore";
@@ -29,7 +28,7 @@ export default function SSHPanel() {
 
   useEffect(() => {
     fetchConnections();
-    fetch("/api/agents").then((r) => r.ok ? r.json() : []).then(setAgents).catch(() => {});
+    api.get<{ id: string; name: string }[]>("/api/agents").then(setAgents).catch(() => {});
   }, [fetchConnections]);
 
   const resetForm = () => {

@@ -2,6 +2,7 @@ import { Eye, FileEdit, Plus, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
 
 interface NoteSummary {
   id: string;
@@ -27,8 +28,7 @@ export default function Notes() {
 
   const fetchNotes = useCallback(async () => {
     try {
-      const res = await fetch("/api/notes");
-      const data: NoteSummary[] = await res.json();
+      const data = await api.get<NoteSummary[]>("/api/notes");
       setNotes(data);
       return data;
     } catch (err) {
@@ -39,9 +39,7 @@ export default function Notes() {
 
   const loadNote = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/notes/${id}`);
-      if (!res.ok) return;
-      const note: Note = await res.json();
+      const note = await api.get<Note>(`/api/notes/${id}`);
       setActiveId(note.id);
       setTitle(note.title);
       setContent(note.content);
@@ -73,11 +71,7 @@ export default function Notes() {
       saveTimer.current = setTimeout(async () => {
         setSaving(true);
         try {
-          await fetch(`/api/notes/${activeId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title: newTitle, content: newContent }),
-          });
+          await api.patch(`/api/notes/${activeId}`, { title: newTitle, content: newContent });
           fetchNotes();
         } catch (err) {
           console.error("Failed to save note", err);
@@ -103,13 +97,7 @@ export default function Notes() {
 
   const handleNewNote = async () => {
     try {
-      const res = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) return;
-      const note: Note = await res.json();
+      const note = await api.post<Note>("/api/notes", {});
       await fetchNotes();
       setActiveId(note.id);
       setTitle(note.title);
@@ -123,8 +111,7 @@ export default function Notes() {
   const handleDeleteNote = async () => {
     if (!activeId) return;
     try {
-      const res = await fetch(`/api/notes/${activeId}`, { method: "DELETE" });
-      if (!res.ok) return;
+      await api.delete(`/api/notes/${activeId}`);
       const data = await fetchNotes();
       setActiveId(null);
       setTitle("");

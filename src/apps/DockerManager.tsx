@@ -1,6 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { api } from "@/lib/api";
 import {
   Boxes,
   Play,
@@ -352,12 +351,10 @@ export default function DockerManager({
     setError(null);
     try {
       const [c, i, v, n] = await Promise.all([
-        fetch(`/api/docker/${selectedId}/containers?all=1`).then((r) =>
-          r.json(),
-        ),
-        fetch(`/api/docker/${selectedId}/images`).then((r) => r.json()),
-        fetch(`/api/docker/${selectedId}/volumes`).then((r) => r.json()),
-        fetch(`/api/docker/${selectedId}/networks`).then((r) => r.json()),
+        api.get<{ containers?: unknown[]; error?: string }>(`/api/docker/${selectedId}/containers?all=1`),
+        api.get<{ images?: unknown[]; error?: string }>(`/api/docker/${selectedId}/images`),
+        api.get<{ volumes?: unknown[]; error?: string }>(`/api/docker/${selectedId}/volumes`),
+        api.get<{ networks?: unknown[]; error?: string }>(`/api/docker/${selectedId}/networks`),
       ]);
       if (c.error) throw new Error(c.error);
       if (i.error) throw new Error(i.error);
@@ -488,12 +485,7 @@ export default function DockerManager({
       onConfirm: async () => {
         setConfirm(null);
         try {
-          const res = await fetch(`/api/docker/${selectedId}/prune`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ volumes: false }),
-          });
-          const data = await res.json();
+          const data = await api.post(`/api/docker/${selectedId}/prune`, { volumes: false });
           showToast("prune done");
           setDrawer({
             title: "Prune result",
