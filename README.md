@@ -218,7 +218,7 @@ like:
 ```env
 DATABASE_URL=file:./infinite.db
 ENCRYPTION_SECRET=<paste-your-generated-secret-here>
-NEXT_PUBLIC_WS_URL=
+VITE_WS_URL=
 ALLOWED_ORIGINS=http://localhost:3000
 ```
 
@@ -227,7 +227,7 @@ Variable reference:
 - `DATABASE_URL`: path to the SQLite database file
 - `ENCRYPTION_SECRET`: encrypts saved SSH passwords and private keys
   — **if you lose this, saved credentials cannot be recovered**
-- `NEXT_PUBLIC_WS_URL`: leave empty for local dev; set to your relay server
+- `VITE_WS_URL`: leave empty for local dev; set to your relay server
   URL when the frontend and WS server run on different origins
 - `ALLOWED_ORIGINS`: origins allowed to call the Express/WebSocket server
 
@@ -483,7 +483,7 @@ For local single-host Node.js, see [Manual Install](#manual-install-local-develo
 ### Split Host (frontend and server on different machines)
 
 The frontend and relay server are independent processes and can run on
-separate hosts. Point `NEXT_PUBLIC_WS_URL` at the public URL of the relay
+separate hosts. Point `VITE_WS_URL` at the public URL of the relay
 server. Run the relay server on a host that:
 
 - has a stable public address (or is reachable through Tailscale, Cloudflare
@@ -505,7 +505,7 @@ docker run -d \
   infinite-server
 ```
 
-Set `NEXT_PUBLIC_WS_URL` in the frontend environment to
+Set `VITE_WS_URL` in the frontend environment to
 `wss://relay.example.com`. If the relay host is behind Tailscale, use the
 Tailscale hostname so both ends speak over the tailnet.
 
@@ -545,7 +545,7 @@ Adapt the WebSocket path prefix to whatever `server/index.ts` listens on.
 ### Systemd (single host)
 
 `infinite.service` and `ecosystem.config.cjs` are provided for running
-`next start` and the relay under PM2 or systemd on a single host. Edit
+`vite preview` and the relay under PM2 or systemd on a single host. Edit
 `infinite.service` to match your install path and user before enabling it:
 
 ```bash

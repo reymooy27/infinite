@@ -1,5 +1,5 @@
 [Unit]
-Description=Infinite Project (Next.js + Node.js)
+Description=Infinite Project (Vite + React + Node.js)
 After=network.target
 
 [Service]

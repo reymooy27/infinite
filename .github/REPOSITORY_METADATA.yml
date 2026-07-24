@@ -19,7 +19,7 @@ description: >-
 
 # ---- Topics (up to 20, lowercase, hyphenated) ----
 topics:
-  - nextjs
+  - vite
   - react
   - tailwindcss
   - typescript

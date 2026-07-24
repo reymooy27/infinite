@@ -72,7 +72,7 @@ app.use("/api/projects", projectsRouter);
 app.use("/api/dev-browser", devBrowserRouter);
 app.use("/api/router-usage", routerUsageRouter);
 function resolveConfiguredPublicServerBaseUrl() {
-    const configured = process.env.PUBLIC_SERVER_URL || process.env.NEXT_PUBLIC_WS_URL || "";
+    const configured = process.env.PUBLIC_SERVER_URL || process.env.VITE_WS_URL || "";
     if (!configured)
         return null;
     if (configured.startsWith("http://") || configured.startsWith("https://")) {

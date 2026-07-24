@@ -28,8 +28,7 @@ ENV DATABASE_URL=file:/data/infinite.db
 ENV PORT=7890
 ENV HOSTNAME="0.0.0.0"
 
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
@@ -37,4 +36,4 @@ COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 RUN npm i -g prisma
 
 EXPOSE 7890
-CMD prisma db push && node server.js
+CMD prisma db push && npx vite preview --host 0.0.0.0 --port 7890

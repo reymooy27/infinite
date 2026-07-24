@@ -42,7 +42,7 @@ router.post("/", async (req, res) => {
 
 // GET /api/agents/status
 router.get("/status", async (_req, res) => {
-  const wsUrl = process.env.PUBLIC_SERVER_URL || process.env.NEXT_PUBLIC_WS_URL?.replace("wss://", "https://").replace("ws://", "http://");
+  const wsUrl = process.env.PUBLIC_SERVER_URL || process.env.VITE_WS_URL?.replace("wss://", "https://").replace("ws://", "http://");
   if (!wsUrl) {
     res.json({ online: [] });
     return;

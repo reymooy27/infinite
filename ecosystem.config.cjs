@@ -2,8 +2,8 @@ module.exports = {
   apps: [
     {
       name: "infinite-web",
-      script: "node_modules/.bin/next",
-      args: "start -H 0.0.0.0",
+      script: "node_modules/.bin/vite",
+      args: "preview --host 0.0.0.0",
       cwd: "/home/rey/project/infinite",
       env: {
         NODE_ENV: "production",

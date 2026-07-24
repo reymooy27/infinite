@@ -1,9 +1,19 @@
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTypescript from "eslint-config-next/typescript";
+import js from "@eslint/js";
+import globals from "globals";
 
 const config = [
-  ...nextVitals,
-  ...nextTypescript,
+  { ignores: ["dist/**", ".server-build/**", "node_modules/**"] },
+  js.configs.recommended,
+  {
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+  },
 ];
 
 export default config;

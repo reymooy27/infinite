@@ -56,7 +56,7 @@ Edit `.env` and set:
 DATABASE_URL=postgresql://infinite:infinite@localhost:5432/infinite
 DIRECT_URL=postgresql://infinite:infinite@localhost:5432/infinite
 ENCRYPTION_SECRET=<64-char random hex>
-NEXT_PUBLIC_WS_URL=
+VITE_WS_URL=
 ALLOWED_ORIGINS=http://localhost:3000
 ```
 

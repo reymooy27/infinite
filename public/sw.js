@@ -35,9 +35,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first for static assets (fonts, icons, _next/static)
+  // Cache-first for static assets (fonts, icons, /assets)
   if (
-    url.pathname.startsWith('/_next/static/') ||
+    url.pathname.startsWith('/assets/') ||
     url.pathname.startsWith('/fonts/') ||
     STATIC_ASSETS.includes(url.pathname)
   ) {

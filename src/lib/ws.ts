@@ -1,5 +1,5 @@
 /**
- * Build a WebSocket URL from the configured NEXT_PUBLIC_WS_URL env var.
+ * Build a WebSocket URL from the configured VITE_WS_URL env var.
  */
 export function buildWsUrl(
   path: string,
@@ -30,7 +30,7 @@ export function buildWsUrl(
 }
 
 /**
- * Build an HTTP base URL from the configured NEXT_PUBLIC_WS_URL env var.
+ * Build an HTTP base URL from the configured VITE_WS_URL env var.
  * Used for REST API calls to the WS server (e.g., tunnels).
  */
 export function buildHttpBaseUrl(): string {
