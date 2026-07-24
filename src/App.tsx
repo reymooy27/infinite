@@ -76,6 +76,7 @@ export default function App() {
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (import.meta.env.DEV) return;
       if (windows.length > 0) {
         e.preventDefault();
         return "";
