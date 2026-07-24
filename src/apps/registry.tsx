@@ -298,7 +298,7 @@ export const SSHPane = ({
       connectionId,
       directory: projectDirectory || "",
       windowId: sessionId,
-      replay: "0",
+      replay: "1",
       r: retryKey,
     });
   }, [connectionId, projectDirectory, windowId, tabId, retryKey]);
@@ -418,6 +418,9 @@ export const SSHPane = ({
     const cached = getBuffer(bufferKeyRef.current);
     if (cached && cached.lines.length > 0) {
       viewportOffsetRef.current = clampViewportOffset(cached.scrollOffsetFromBottom);
+      term.write(cached.lines.join("\r\n"), () => {
+        scheduleViewportRestore(cached.scrollOffsetFromBottom);
+      });
     }
     deleteBuffer(bufferKeyRef.current);
 
