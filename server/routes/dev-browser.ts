@@ -168,13 +168,13 @@ function injectProxyScript(html: string, targetOrigin: string, proxyBasePath: st
 const router = Router();
 
 // Match: /api/dev-browser/proxy/:token/* or /api/dev-browser/proxy/:token
-router.all("/proxy/:token/*", handleProxy);
+router.all("/proxy/:token/*splat", handleProxy);
 router.all("/proxy/:token", handleProxy);
 
 function handleProxy(req: Request, res: Response) {
   const token = req.params.token as string;
-  const pathParam = req.params[0];
-  const pathParts = typeof pathParam === "string" ? pathParam.split("/").filter(Boolean) : [];
+  const pathParam = req.params.splat;
+  const pathParts = typeof pathParam === "string" ? pathParam.split("/").filter(Boolean) : Array.isArray(pathParam) ? pathParam.filter(Boolean) : [];
 
   let origin: URL;
   try {
