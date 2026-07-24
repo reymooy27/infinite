@@ -12,15 +12,9 @@ import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
 import {
-  attachAgentProxySession,
-  clearAgentProxySession,
   createSSHSocket,
   createSFTPConnection,
-  detachAgentProxySession,
   ensureLocalTunnel,
-  getAgentProxySession,
-  setAgentProxySessionExpireHandler,
-  setAgentProxySessionHandlers,
 } from "./lib/ssh.js";
 import {
   dockerStats,
@@ -42,7 +36,6 @@ import {
   unpauseContainer,
 } from "./lib/docker.js";
 import { logger } from "./lib/logger.js";
-import agentsRouter from "./routes/agents.js";
 import bookmarksRouter from "./routes/bookmarks.js";
 import notesRouter from "./routes/notes.js";
 import layoutRouter from "./routes/layout.js";
@@ -60,13 +53,13 @@ const server = createServer(app);
 const wss = new WebSocketServer({
   noServer: true,
 });
-const agentRegistry = new Map<string, WebSocket>();
-
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://localhost:7890",
   "http://127.0.0.1:7890",
+  "http://localhost:9871",
+  "http://127.0.0.1:9871",
 ];
 
 const ALLOWED_ORIGINS = (
@@ -100,7 +93,6 @@ const apiLimiter = rateLimit({
 app.use("/api", apiLimiter);
 
 // Domain routes
-app.use("/api/agents", agentsRouter);
 app.use("/api/bookmarks", bookmarksRouter);
 app.use("/api/notes", notesRouter);
 app.use("/api/layout", layoutRouter);
@@ -517,15 +509,6 @@ app.post("/api/docker/:connectionId/prune", async (req, res) => {
 // Per-user active SSH session tracking
 const userSessions = new Map<string, Set<import("ws").WebSocket>>();
 
-app.post("/api/agents/online", (req, res) => {
-  const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
-  const online = ids.filter((id) => {
-    const ws = agentRegistry.get(id);
-    return ws && ws.readyState === 1; // OPEN
-  });
-  res.json({ online });
-});
-
 app.get("/health", async (_req, res) => {
   let dbOk = false;
   try {
@@ -555,7 +538,6 @@ interface ConnectionRow {
   passwordEncrypted: string | null;
   privateKeyEncrypted: string | null;
   userId: string;
-  agentId: string | null;
 }
 
 // Local-only mode: no auth required
@@ -600,7 +582,6 @@ async function loadConnection(connId: number, userId: string) {
     authType: "password" | "key";
     password?: string;
     privateKey?: string;
-    agentId?: string;
   } = {
     id: row.id,
     name: row.name,
@@ -608,7 +589,6 @@ async function loadConnection(connId: number, userId: string) {
     port: row.port,
     username: row.username,
     authType: row.authType as "password" | "key",
-    agentId: row.agentId ?? undefined,
   };
 
   try {
@@ -628,142 +608,10 @@ async function loadConnection(connId: number, userId: string) {
   return connection;
 }
 
-// Proxy SSH traffic between browser WS and agent WS
-// Protocol: agent receives {type:"ssh",sessionId,host,port,username,authType,password?,privateKey?}
-// then raw binary frames are piped both ways tagged with sessionId
-function proxyThroughAgent(
-  browserWs: WebSocket,
-  agentWs: WebSocket,
-  connection: Awaited<ReturnType<typeof loadConnection>>,
-  windowId: string,
-  initialDirectory?: string,
-) {
-  const existing = windowId ? getAgentProxySession(windowId) : undefined;
-  const sessionId =
-    existing?.sessionId ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const session = windowId
-    ? attachAgentProxySession(windowId, connection.agentId!, sessionId, browserWs)
-    : null;
-
-  logger.info(`[Agent] Proxying session ${sessionId} for connection ${connection.id}`, {
-    reused: Boolean(existing),
-    windowId,
-  });
-
-  if (!existing) {
-    agentWs.send(
-      JSON.stringify({
-        type: "ssh",
-        sessionId,
-        host: connection.host,
-        port: connection.port,
-        username: connection.username,
-        authType: connection.authType,
-        password: connection.password,
-        privateKey: connection.privateKey,
-        windowId,
-        initialDirectory,
-      }),
-    );
-  } else {
-    browserWs.send(JSON.stringify({ type: "connected", resumed: true }));
-  }
-
-  // Browser → Agent
-  browserWs.on("message", (data) => {
-    if (agentWs.readyState === WebSocket.OPEN) {
-      // Wrap with sessionId prefix for agent multiplexing
-      if (typeof data === "string") {
-        agentWs.send(JSON.stringify({ type: "data", sessionId, data }));
-      } else {
-        agentWs.send(
-          JSON.stringify({
-            type: "data",
-            sessionId,
-            data: Buffer.from(data as Buffer).toString("base64"),
-            encoding: "base64",
-          }),
-        );
-      }
-    }
-  });
-
-  let onAgentMessage: ((raw: Buffer) => void) | undefined;
-  if (existing?.onAgentMessage) {
-    onAgentMessage = existing.onAgentMessage;
-  } else {
-    onAgentMessage = (raw: Buffer) => {
-      try {
-        const msg = JSON.parse(raw.toString());
-        if (msg.sessionId !== sessionId) return;
-        const targetWs = windowId ? getAgentProxySession(windowId)?.ws : browserWs;
-        if (msg.type === "data") {
-          const payload =
-            msg.encoding === "base64"
-              ? Buffer.from(msg.data, "base64")
-              : msg.data;
-          if (targetWs) targetWs.send(payload);
-        } else if (msg.type === "error" || msg.type === "close") {
-          if (targetWs) {
-            targetWs.send(JSON.stringify({ type: msg.type, message: msg.message }));
-            targetWs.close();
-          }
-          if (windowId) clearAgentProxySession(windowId);
-        } else {
-          if (targetWs) targetWs.send(JSON.stringify(msg));
-        }
-      } catch {}
-    };
-    agentWs.on("message", onAgentMessage);
-  }
-
-  browserWs.on("close", () => {
-    if (windowId) {
-      if (getAgentProxySession(windowId)?.ws !== browserWs) return;
-      detachAgentProxySession(windowId);
-    } else {
-      if (onAgentMessage) agentWs.off("message", onAgentMessage);
-      if (agentWs.readyState === WebSocket.OPEN) {
-        agentWs.send(JSON.stringify({ type: "close", sessionId }));
-      }
-    }
-  });
-
-  if (windowId && session && onAgentMessage) {
-    const onAgentClose = () => {
-      const targetWs = getAgentProxySession(windowId)?.ws;
-      if (targetWs) {
-        targetWs.send(JSON.stringify({ type: "error", message: "Agent disconnected" }));
-        targetWs.close();
-      }
-      agentWs.off("message", onAgentMessage);
-      clearAgentProxySession(windowId);
-    };
-
-    setAgentProxySessionHandlers(windowId, { onAgentClose, onAgentMessage });
-    setAgentProxySessionExpireHandler(windowId, () => {
-      agentWs.off("message", onAgentMessage);
-      if (agentWs.readyState === WebSocket.OPEN) {
-        agentWs.send(JSON.stringify({ type: "close", sessionId }));
-      }
-    });
-
-    if (!existing) agentWs.on("close", onAgentClose);
-    return;
-  }
-
-  agentWs.on("close", () => {
-    if (browserWs.readyState === WebSocket.OPEN) {
-      browserWs.send(JSON.stringify({ type: "error", message: "Agent disconnected" }));
-      browserWs.close();
-    }
-  });
-}
-
 server.on("upgrade", (req: IncomingMessage, socket, head) => {
   const pathname = req.url ? new URL(req.url, "http://localhost").pathname : "";
 
-  if (pathname === "/ws/ssh" || pathname === "/ws/agent" || pathname === "/ws/sftp") {
+  if (pathname === "/ws/ssh" || pathname === "/ws/sftp") {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });
@@ -777,31 +625,6 @@ wss.on("connection", async (ws, req) => {
   const u = new URL(rawUrl, "http://localhost");
   const pathname = u.pathname;
 
-  // Agent registration endpoint
-  if (pathname === "/ws/agent") {
-    const token = u.searchParams.get("token");
-    if (!token) {
-      ws.close(4001, "Missing token");
-      return;
-    }
-    const agent = await prisma.agent
-      .findUnique({ where: { token } })
-      .catch(() => null);
-    if (!agent) {
-      ws.close(4001, "Invalid token");
-      return;
-    }
-    agentRegistry.set(agent.id, ws);
-    logger.info(`[Agent] Connected: ${agent.id} (${agent.name})`);
-    ws.send(JSON.stringify({ type: "connected", agentId: agent.id }));
-    ws.on("close", () => {
-      agentRegistry.delete(agent.id);
-      logger.info(`[Agent] Disconnected: ${agent.id}`);
-    });
-    // Keep alive pings handled by wss pingInterval
-    return;
-  }
-
   // SFTP endpoint — file transfer only, no shell
   if (pathname === "/ws/sftp") {
     const connId = parseInt(u.searchParams.get("connectionId") || "0", 10);
@@ -814,11 +637,6 @@ wss.on("connection", async (ws, req) => {
 
     try {
       const connection = await loadConnection(connId, getUserIdFromSession(req));
-      if (connection.agentId) {
-        ws.send(JSON.stringify({ type: "error", message: "SFTP not supported for agent connections" }));
-        ws.close();
-        return;
-      }
       createSFTPConnection(connection, ws as Parameters<typeof createSFTPConnection>[1]);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load connection";
@@ -856,18 +674,6 @@ wss.on("connection", async (ws, req) => {
 
   try {
     const connection = await loadConnection(connId, userId);
-
-    // If connection has an agentId, proxy through the agent
-    if (connection.agentId) {
-      const agentWs = agentRegistry.get(connection.agentId);
-      if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "error", message: "Agent is offline" }));
-        ws.close();
-        return;
-      }
-      proxyThroughAgent(ws, agentWs, connection, windowId, initialDirectory);
-      return;
-    }
 
     createSSHSocket(
       connection,

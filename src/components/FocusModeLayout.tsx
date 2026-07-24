@@ -1,6 +1,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes } from "lucide-react";
+import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
@@ -16,12 +16,6 @@ import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useDockerStore } from "@/stores/useDockerStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { getSSHMetadata } from "@/types";
-
-const CODING_AGENT_CHOICES = [
-  { agent: "opencode", label: "OpenCode" },
-  { agent: "codex", label: "Codex" },
-  { agent: "claude", label: "Claude" },
-] as const;
 
 interface FocusModeLayoutProps {
   switcherOpen: boolean;
@@ -55,8 +49,6 @@ export default function FocusModeLayout({
   >("terminal");
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
-  const [codingAgentPickerOpen, setCodingAgentPickerOpen] = useState(false);
-  const [agentReady, setAgentReady] = useState(true);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyboardRafRef = useRef<number | null>(null);
@@ -64,8 +56,6 @@ export default function FocusModeLayout({
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
-  const codingAgentRef = useRef<HTMLDivElement>(null);
-  const codingAgentBtnRef = useRef<HTMLButtonElement>(null);
 
   const sshConnections = useSSHStore((s) => s.connections);
 
@@ -127,49 +117,6 @@ export default function FocusModeLayout({
       setFocusMode(false);
     }
   };
-
-  const handleCodingAgentChoice = (agent: string) => {
-    setCodingAgentPickerOpen(false);
-    setAgentReady(false);
-    const conn = sshConnections[0];
-    if (!conn) return;
-    // Open a new SSH window with autoCommand
-    const store = useWindowStore.getState();
-    const tabId = getBrowserId("tab-");
-    store.openApp("ssh", undefined, undefined, {
-      autoCommand: agent,
-      connectionId: conn.id,
-      title: `${agent} — ${conn.name}`,
-      tabs: [{ id: tabId, label: "Tab 1", connectionId: conn.id }],
-      activeTabId: tabId,
-    });
-    // Switch focus mode to the new window
-    const newWindow = useWindowStore.getState().windows.at(-1);
-    if (newWindow) {
-      setFocusModeWindowId(newWindow.id);
-      store.focusWindow(newWindow.id);
-    }
-  };
-
-  const handleAgentReady = useCallback(() => {
-    setAgentReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!codingAgentPickerOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        codingAgentRef.current &&
-        !codingAgentRef.current.contains(e.target as Node) &&
-        codingAgentBtnRef.current &&
-        !codingAgentBtnRef.current.contains(e.target as Node)
-      ) {
-        setCodingAgentPickerOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler, true);
-    return () => document.removeEventListener("mousedown", handler, true);
-  }, [codingAgentPickerOpen]);
 
   const handleAddTab = () => {
     if (!activeWindow) return;
@@ -465,7 +412,7 @@ export default function FocusModeLayout({
               )}
             </div>
           ))}
-          <div className="flex flex-col gap-1 border-t border-neutral-800 mt-0.5 pt-2">
+            <div className="flex flex-col gap-1 border-t border-neutral-800 mt-0.5 pt-2">
             <div
               onClick={() => {
                 handleAddTab();
@@ -475,43 +422,6 @@ export default function FocusModeLayout({
             >
               <Plus size={12} />
               <span>New tab</span>
-            </div>
-            <div className="relative">
-              <button
-                ref={codingAgentBtnRef}
-                onClick={() => setCodingAgentPickerOpen((v) => !v)}
-                title="Coding Agent"
-                className={`flex items-center gap-2 px-3 py-2 rounded text-xs cursor-pointer transition-colors w-full ${
-                  codingAgentPickerOpen
-                    ? "text-white bg-neutral-800"
-                    : "text-neutral-500 hover:text-white hover:bg-neutral-800"
-                }`}
-              >
-                <Bot size={14} />
-                <span>Coding Agent</span>
-              </button>
-              {codingAgentPickerOpen && (
-                <div
-                  ref={codingAgentRef}
-                  className="absolute bottom-full left-0 mb-1 w-48 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
-                >
-                  <div className="px-3 py-2 border-b border-neutral-800 text-xs text-neutral-500 font-medium">
-                    Coding Agent
-                  </div>
-                  {CODING_AGENT_CHOICES.map((choice) => (
-                    <button
-                      key={choice.agent}
-                      onClick={() => {
-                        handleCodingAgentChoice(choice.agent);
-                        setTabPanelOpen(false);
-                      }}
-                      className="w-full px-3 py-2 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors cursor-pointer"
-                    >
-                      {choice.label}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -530,21 +440,8 @@ export default function FocusModeLayout({
                 hasNavigated={tab.hasNavigated}
                 keyboardHeight={keyboardHeight}
                 refreshNonce={paneRefreshKey}
-                autoCommand={tab.id === tabs[0]?.id ? activeWindow.metadata?.autoCommand as string | undefined : undefined}
-                onReady={tab.id === tabs[0]?.id ? handleAgentReady : undefined}
               />
             ))}
-            {activeWindow.metadata?.autoCommand && !agentReady && (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0a0a]">
-                <Bot className="w-6 h-6 text-neutral-400 animate-pulse mb-3" />
-                <p className="text-sm text-neutral-400">
-                  Starting {activeWindow.metadata.autoCommand as string}...
-                </p>
-                <p className="text-xs text-neutral-600 mt-1">
-                  Connecting to server and launching agent
-                </p>
-              </div>
-            )}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-neutral-600">

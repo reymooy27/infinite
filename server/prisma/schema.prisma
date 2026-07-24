@@ -17,7 +17,6 @@ model Connection {
   privateKeyEncrypted String?  @map("private_key_encrypted")
   createdAt           DateTime @default(now()) @map("created_at")
   userId              String   @default("local-user") @map("user_id")
-  agentId             String?  @map("agent_id")
 
   @@map("connections")
 }
@@ -29,16 +28,6 @@ model Layout {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("layouts")
-}
-
-model Agent {
-  id        String   @id @default(cuid())
-  name      String
-  token     String   @unique
-  userId    String   @default("local-user") @map("user_id")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@map("agents")
 }
 
 model Bookmark {

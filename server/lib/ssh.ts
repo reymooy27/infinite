@@ -102,20 +102,6 @@ interface PendingSessionStart {
   cancelled: boolean;
 }
 
-interface AgentProxySession {
-  sessionId: string;
-  agentId: string;
-  ws?: {
-    send: (data: string | Buffer) => void;
-    close: () => void;
-    on: (event: string, cb: (msg: unknown) => void) => void;
-  };
-  cleanupTimer?: ReturnType<typeof setTimeout>;
-  onExpire?: () => void;
-  onAgentClose?: () => void;
-  onAgentMessage?: (raw: Buffer) => void;
-}
-
 interface ActiveTunnel {
   conn: Client;
   server: net.Server;
@@ -124,7 +110,6 @@ interface ActiveTunnel {
 
 const sessions = new Map<string, ActiveSession>();
 const pendingSessionStarts = new Map<string, PendingSessionStart>();
-const agentSessions = new Map<string, AgentProxySession>();
 const tunnels = new Map<string, ActiveTunnel>();
 const SESSION_TIMEOUT = 1000 * 60 * 60 * 8; // 8 hours
 const CHUNK_SIZE = 64 * 1024; // 64KB for file transfer chunks
@@ -1171,81 +1156,6 @@ export function createSSHSocket(
   }
 
   return conn;
-}
-
-export function getAgentProxySession(windowId: string) {
-  return agentSessions.get(windowId);
-}
-
-export function attachAgentProxySession(
-  windowId: string,
-  agentId: string,
-  sessionId: string,
-  ws: {
-    send: (data: string | Buffer) => void;
-    close: () => void;
-    on: (event: string, cb: (msg: unknown) => void) => void;
-  },
-) {
-  const existing = agentSessions.get(windowId);
-  if (existing) {
-    if (existing.cleanupTimer) {
-      clearTimeout(existing.cleanupTimer);
-      existing.cleanupTimer = undefined;
-    }
-    existing.ws = ws;
-    return existing;
-  }
-
-  const session: AgentProxySession = {
-    agentId,
-    sessionId,
-    ws,
-  };
-  agentSessions.set(windowId, session);
-  return session;
-}
-
-export function detachAgentProxySession(windowId: string) {
-  const session = agentSessions.get(windowId);
-  if (!session) return;
-
-  session.ws = undefined;
-  if (session.cleanupTimer) clearTimeout(session.cleanupTimer);
-  session.cleanupTimer = setTimeout(() => {
-    logger.info(`[Agent] Cleaning up idle proxied session ${windowId}`);
-    session.onExpire?.();
-    agentSessions.delete(windowId);
-  }, SESSION_TIMEOUT);
-}
-
-export function clearAgentProxySession(windowId: string) {
-  const session = agentSessions.get(windowId);
-  if (!session) return;
-  if (session.cleanupTimer) clearTimeout(session.cleanupTimer);
-  agentSessions.delete(windowId);
-}
-
-export function setAgentProxySessionExpireHandler(
-  windowId: string,
-  onExpire: () => void,
-) {
-  const session = agentSessions.get(windowId);
-  if (!session) return;
-  session.onExpire = onExpire;
-}
-
-export function setAgentProxySessionHandlers(
-  windowId: string,
-  handlers: {
-    onAgentClose: () => void;
-    onAgentMessage: (raw: Buffer) => void;
-  },
-) {
-  const session = agentSessions.get(windowId);
-  if (!session) return;
-  session.onAgentClose = handlers.onAgentClose;
-  session.onAgentMessage = handlers.onAgentMessage;
 }
 
 export function createSFTPConnection(

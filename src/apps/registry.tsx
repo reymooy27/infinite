@@ -24,9 +24,6 @@ import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 
-// Module-level set persists across component remounts/reconnects
-const sentAutoCommands = new Set<string>();
-
 export const SSHPane = ({
   connectionId,
   windowId,
@@ -36,8 +33,6 @@ export const SSHPane = ({
   keyboardHeight,
   refreshNonce,
   enableTouchScroll = false,
-  autoCommand,
-  onReady,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -47,8 +42,6 @@ export const SSHPane = ({
   keyboardHeight?: number;
   refreshNonce?: number;
   enableTouchScroll?: boolean;
-  autoCommand?: string;
-  onReady?: () => void;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -79,9 +72,6 @@ export const SSHPane = ({
   const statusRef = useRef(status);
   const isActiveRef = useRef(isActive);
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
-  const waitingForAgentRef = useRef(false);
-  const autoCommandRef = useRef(autoCommand);
-  const onReadyRef = useRef(onReady);
 
   useEffect(() => {
     statusRef.current = status;
@@ -91,13 +81,6 @@ export const SSHPane = ({
     isActiveRef.current = isActive;
   }, [isActive]);
 
-  useEffect(() => {
-    autoCommandRef.current = autoCommand;
-  }, [autoCommand]);
-
-  useEffect(() => {
-    onReadyRef.current = onReady;
-  }, [onReady]);
   const viewportOffsetRef = useRef(0);
   const pendingViewportRestoreRef = useRef<number | null>(null);
   const restoreViewportRafRef = useRef<number | null>(null);
@@ -896,25 +879,6 @@ export const SSHPane = ({
       }
       setStatus("connected");
 
-      // Auto-send command if specified (for coding agents)
-      // Delay to ensure shell prompt is ready
-      const commandKey = `${windowId}-${tabId}`;
-      const cmd = autoCommandRef.current;
-      if (cmd && !sentAutoCommands.has(commandKey)) {
-        sentAutoCommands.add(commandKey);
-        setTimeout(() => {
-          if (isCurrentSocket() && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "data", data: cmd + "\n" }));
-            waitingForAgentRef.current = true;
-          }
-        }, 2000);
-      } else if (cmd && sentAutoCommands.has(commandKey)) {
-        // Already sent in previous mount — agent is already running
-        onReadyRef.current?.();
-      } else if (!cmd && onReadyRef.current) {
-        // No autoCommand, call onReady immediately on first data
-        onReadyRef.current();
-      }
     };
 
     // Send ping every 20s to keep connection alive through proxies/firewalls
@@ -953,12 +917,6 @@ export const SSHPane = ({
             captureOsc52Clipboard(decoded);
             captureOsc7Directory(decoded);
             term.write(bytes);
-
-            // Notify ready when agent responds after autoCommand
-            if (waitingForAgentRef.current) {
-              waitingForAgentRef.current = false;
-              setTimeout(() => onReadyRef.current?.(), 500);
-            }
           }
           return;
         }
@@ -981,12 +939,6 @@ export const SSHPane = ({
           captureOsc52Clipboard(binaryStr);
           captureOsc7Directory(binaryStr);
           term.write(bytes);
-
-          // Notify ready when agent responds after autoCommand
-          if (waitingForAgentRef.current) {
-            waitingForAgentRef.current = false;
-            setTimeout(() => onReadyRef.current?.(), 500);
-          }
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
         }
@@ -1290,15 +1242,6 @@ const SSHTerminal = ({
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
   const nextTerminal = getNextSSHTerminalTarget(windows, windowId, activeTabId);
 
-  // Read autoCommand from metadata (for coding agents), only apply to first tab
-  const autoCommand = win?.metadata?.autoCommand as string | undefined;
-  const autoCommandTabId = tabs[0]?.id;
-  const [agentReady, setAgentReady] = useState(!autoCommand);
-
-  const handleAgentReady = useCallback(() => {
-    setAgentReady(true);
-  }, []);
-
   const handleAddTab = () => {
     if (!windowId) return;
     const newTabId = `tab-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1380,23 +1323,8 @@ const SSHTerminal = ({
             isActive={tab.id === activeTabId}
             hasNavigated={tab.hasNavigated}
             refreshNonce={paneRefreshKey}
-            autoCommand={tab.id === autoCommandTabId ? autoCommand : undefined}
-            onReady={tab.id === autoCommandTabId ? handleAgentReady : undefined}
           />
         ))}
-
-        {/* Loader overlay for coding agent */}
-        {autoCommand && !agentReady && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0a0a0a]">
-            <Loader2 className="w-6 h-6 text-neutral-400 animate-spin mb-3" />
-            <p className="text-sm text-neutral-400">
-              Starting {autoCommand}...
-            </p>
-            <p className="text-xs text-neutral-600 mt-1">
-              Connecting to server and launching agent
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );

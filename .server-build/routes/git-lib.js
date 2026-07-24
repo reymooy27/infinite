@@ -103,7 +103,6 @@ async function loadConnection(connectionId) {
             authType: true,
             passwordEncrypted: true,
             privateKeyEncrypted: true,
-            agentId: true,
         },
     });
     if (!row) {
@@ -120,7 +119,6 @@ async function loadConnection(connectionId) {
         port: row.port,
         username: row.username,
         authType: row.authType,
-        agentId: row.agentId ?? undefined,
     };
     if (row.passwordEncrypted) {
         connection.password = decrypt(row.passwordEncrypted, secret);
@@ -236,9 +234,6 @@ export async function createExecutionContext(projectId, requestedDirectory, conn
     }
     if (connectionId) {
         const connection = await loadConnection(connectionId);
-        if (connection.agentId) {
-            throw new GitActionError("Git actions unavailable for agent connections");
-        }
         return {
             project,
             directory,

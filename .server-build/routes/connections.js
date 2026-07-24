@@ -11,7 +11,6 @@ const connectionSelect = {
     port: true,
     username: true,
     authType: true,
-    agentId: true,
     createdAt: true,
 };
 // GET /api/connections
@@ -32,7 +31,7 @@ router.get("/", async (_req, res) => {
 });
 // POST /api/connections
 router.post("/", async (req, res) => {
-    const { name, host, port, username, authType, password, privateKey, agentId } = req.body;
+    const { name, host, port, username, authType, password, privateKey } = req.body;
     if (!name || !host || !username) {
         res.status(400).json({ error: "Missing required fields: name, host, username" });
         return;
@@ -66,7 +65,6 @@ router.post("/", async (req, res) => {
                 authType: authType === "key" ? "key" : "password",
                 passwordEncrypted: password ? encrypt(password, secret) : null,
                 privateKeyEncrypted: privateKey ? encrypt(privateKey, secret) : null,
-                agentId: agentId || null,
                 userId: LOCAL_USER_ID,
             },
             select: connectionSelect,
@@ -96,7 +94,7 @@ router.patch("/:id", async (req, res) => {
             res.status(404).json({ error: "Not found" });
             return;
         }
-        const { name, host, port, username, authType, password, privateKey, agentId } = req.body;
+        const { name, host, port, username, authType, password, privateKey } = req.body;
         if (!name || !host || !username) {
             res.status(400).json({ error: "Missing required fields: name, host, username" });
             return;
@@ -157,7 +155,6 @@ router.patch("/:id", async (req, res) => {
                 authType: normalizedAuthType,
                 passwordEncrypted,
                 privateKeyEncrypted,
-                agentId: agentId || null,
             },
             select: connectionSelect,
         });

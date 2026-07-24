@@ -14,7 +14,6 @@ export interface SSHConnection {
   port: number;
   username: string;
   authType: "password" | "key";
-  agentId?: string | null;
   password?: string;
   privateKey?: string;
   createdAt: string;
@@ -53,7 +52,6 @@ export interface CreateConnectionInput {
   authType?: AuthType;
   password?: string;
   privateKey?: string;
-  agentId?: string;
 }
 
 export interface TerminalTab {

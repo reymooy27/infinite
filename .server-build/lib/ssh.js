@@ -56,7 +56,6 @@ function buildCwdTrackingBootstrap(initialDirectory) {
 }
 const sessions = new Map();
 const pendingSessionStarts = new Map();
-const agentSessions = new Map();
 const tunnels = new Map();
 const SESSION_TIMEOUT = 1000 * 60 * 60 * 8; // 8 hours
 const CHUNK_SIZE = 64 * 1024; // 64KB for file transfer chunks
@@ -883,61 +882,6 @@ export function createSSHSocket(connection, ws, windowId, initialDirectory, repl
         return null;
     }
     return conn;
-}
-export function getAgentProxySession(windowId) {
-    return agentSessions.get(windowId);
-}
-export function attachAgentProxySession(windowId, agentId, sessionId, ws) {
-    const existing = agentSessions.get(windowId);
-    if (existing) {
-        if (existing.cleanupTimer) {
-            clearTimeout(existing.cleanupTimer);
-            existing.cleanupTimer = undefined;
-        }
-        existing.ws = ws;
-        return existing;
-    }
-    const session = {
-        agentId,
-        sessionId,
-        ws,
-    };
-    agentSessions.set(windowId, session);
-    return session;
-}
-export function detachAgentProxySession(windowId) {
-    const session = agentSessions.get(windowId);
-    if (!session)
-        return;
-    session.ws = undefined;
-    if (session.cleanupTimer)
-        clearTimeout(session.cleanupTimer);
-    session.cleanupTimer = setTimeout(() => {
-        logger.info(`[Agent] Cleaning up idle proxied session ${windowId}`);
-        session.onExpire?.();
-        agentSessions.delete(windowId);
-    }, SESSION_TIMEOUT);
-}
-export function clearAgentProxySession(windowId) {
-    const session = agentSessions.get(windowId);
-    if (!session)
-        return;
-    if (session.cleanupTimer)
-        clearTimeout(session.cleanupTimer);
-    agentSessions.delete(windowId);
-}
-export function setAgentProxySessionExpireHandler(windowId, onExpire) {
-    const session = agentSessions.get(windowId);
-    if (!session)
-        return;
-    session.onExpire = onExpire;
-}
-export function setAgentProxySessionHandlers(windowId, handlers) {
-    const session = agentSessions.get(windowId);
-    if (!session)
-        return;
-    session.onAgentClose = handlers.onAgentClose;
-    session.onAgentMessage = handlers.onAgentMessage;
 }
 export function createSFTPConnection(connection, ws) {
     logger.info(`[SFTP] Connecting to ${connection.host}:${connection.port} as ${connection.username}`, {

@@ -91,7 +91,6 @@ type SSHConnectionConfig = {
   authType: "password" | "key";
   password?: string;
   privateKey?: string;
-  agentId?: string;
 };
 
 type GitCommandResult = {
@@ -205,7 +204,6 @@ async function loadConnection(connectionId: number) {
       authType: true,
       passwordEncrypted: true,
       privateKeyEncrypted: true,
-      agentId: true,
     },
   });
 
@@ -225,7 +223,6 @@ async function loadConnection(connectionId: number) {
     port: row.port,
     username: row.username,
     authType: row.authType as "password" | "key",
-    agentId: row.agentId ?? undefined,
   };
 
   if (row.passwordEncrypted) {
@@ -357,9 +354,6 @@ export async function createExecutionContext(projectId: string, requestedDirecto
 
   if (connectionId) {
     const connection = await loadConnection(connectionId);
-    if (connection.agentId) {
-      throw new GitActionError("Git actions unavailable for agent connections");
-    }
 
     return {
       project,
