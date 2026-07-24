@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { logger } from "../lib/logger.js";
 const DEFAULT_ROUTER_USAGE_BASE_URL = "https://api.9router.com";
-const VALID_PERIODS = new Set(["1d", "7d", "30d", "90d"]);
+const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d"]);
 function isRouterUsagePeriod(value) {
     return VALID_PERIODS.has(value);
 }
