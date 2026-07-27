@@ -3,35 +3,22 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    ports:
+      - "9871:80"
+    depends_on:
+      - server
     restart: unless-stopped
-    # Host networking lets the frontend reach host-bound services (9router on
-    # :20128, the backend relay on :7891) directly via 127.0.0.1. The docker
-    # bridge cannot reach the host because the host firewall drops
-    # bridge->host traffic.
-    network_mode: "host"
-    environment:
-      DATABASE_URL: file:/data/infinite.db
-      ENCRYPTION_SECRET: e45ecd03425f98373b8144e9560e4e7b1f3a3caf635dd53eb74433594091db85
-      VITE_WS_URL: ""
-      RELAY_URL: http://127.0.0.1:7891
-      ROUTER_USAGE_BASE_URL: http://127.0.0.1:20128
-    volumes:
-      - sqlite_data:/data
 
   server:
     build:
       context: .
       dockerfile: Dockerfile.server
-    restart: unless-stopped
     ports:
       - "7891:7891"
-    environment:
-      DATABASE_URL: file:/data/infinite.db
-      ENCRYPTION_SECRET: e45ecd03425f98373b8144e9560e4e7b1f3a3caf635dd53eb74433594091db85
-      PORT: "7891"
-      ALLOWED_ORIGINS: http://localhost:7890
+    env_file: .env
     volumes:
-      - sqlite_data:/data
+      - infinite-data:/data
+    restart: unless-stopped
 
 volumes:
-  sqlite_data:
+  infinite-data:

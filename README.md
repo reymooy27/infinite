@@ -28,16 +28,19 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
   Docker toggle
 - Mobile **quick bar** and **shortcut drawer** for terminal/tmux key pads
 - All state persisted in a local SQLite file — no external database required
+- **Docker support** — multi-container setup with nginx frontend + Node.js backend
 
 ## Stack
 
-- Next.js 16
+- Vite 8
 - React 19
 - Tailwind CSS v4
 - Express + WebSocket
 - Prisma + SQLite
 - xterm.js
 - ssh2
+- Zustand (state management)
+- Nginx (production static serving)
 
 ## Features
 
@@ -159,34 +162,102 @@ When many windows are spread across the infinite canvas:
 
 ## Quick Start (Docker — recommended)
 
-The fastest way to try Infinite. Runs the frontend and relay server in one
-command. State lives in a local SQLite file — no separate database container
-is needed:
+The fastest way to run Infinite. Two containers: nginx (frontend) + Node.js
+(server), sharing a SQLite database on a Docker volume.
+
+### Requirements
+
+- Docker 24+
+- Docker Compose v2
+
+### 1. Clone & configure
+
+```bash
+git clone https://github.com/your-user/infinite.git
+cd infinite
+```
+
+Copy the Docker env template and fill in `ENCRYPTION_SECRET`:
+
+```bash
+cp .env.docker .env
+```
+
+Generate the secret (required — encrypts saved SSH credentials):
+
+```bash
+openssl rand -hex 32
+```
+
+Paste the output into `.env` as `ENCRYPTION_SECRET`. The file looks like:
+
+```env
+# Required — used to encrypt SSH passwords & private keys
+ENCRYPTION_SECRET=<paste-here>
+
+# Server
+DATABASE_URL=file:/data/infinite.db
+WS_PORT=7891
+ALLOWED_ORIGINS=http://localhost:9871
+
+# Frontend (build-time, leave empty for local)
+VITE_WS_URL=
+```
+
+> **Do not lose `ENCRYPTION_SECRET`** — saved SSH credentials cannot be
+> recovered without it.
+
+### 2. Build & start
 
 ```bash
 docker compose up -d --build
 ```
 
-Open: <http://localhost:7890>
+Open: <http://localhost:9871>
 
-Ports:
+The server container runs `prisma db push` on first start to create the
+SQLite schema automatically. No manual database setup needed.
 
-- frontend: `http://localhost:7890`
-- relay server: `http://localhost:7891`
-
-Both containers share a single SQLite database file on a Docker volume
-(`sqlite_data`). The schema is created automatically on startup via
-`prisma db push`, so no `.env` file is required for the Docker setup.
-
-Stop the stack:
+### 3. Verify
 
 ```bash
-docker compose down
+# Check containers are running
+docker compose ps
+
+# Check logs
+docker compose logs -f server
+docker compose logs -f frontend
 ```
 
-Wipe the database volume too:
+### Architecture
+
+```
+┌──────────────────┐       ┌──────────────────┐
+│    frontend      │──────▶│     server       │
+│  nginx:alpine    │       │  node:22-alpine  │
+│  :9871           │       │  :7891           │
+└──────────────────┘       └────────┬─────────┘
+                                    │
+                             ┌──────▼───────┐
+                             │  SQLite DB   │
+                             │  /data/      │
+                             │  (volume)    │
+                             └──────────────┘
+```
+
+| Container  | Image          | Port  | Role                                    |
+| ---------- | -------------- | ----- | --------------------------------------- |
+| `frontend` | nginx:alpine   | 9871  | Static files, proxy `/api` & `/ws`      |
+| `server`   | node:22-alpine | 7891  | API, WebSocket, SSH, Docker, Git        |
+| —          | SQLite volume  | —     | Persistent data (`infinite-data`)       |
+
+### Stop & cleanup
 
 ```bash
+# Stop containers (data preserved)
+docker compose down
+
+# Stop and wipe database
 docker compose down -v
 ```
 
@@ -219,7 +290,7 @@ like:
 DATABASE_URL=file:./infinite.db
 ENCRYPTION_SECRET=<paste-your-generated-secret-here>
 VITE_WS_URL=
-ALLOWED_ORIGINS=http://localhost:3000
+ALLOWED_ORIGINS=http://localhost:9871
 ```
 
 Variable reference:
@@ -227,7 +298,7 @@ Variable reference:
 - `DATABASE_URL`: path to the SQLite database file
 - `ENCRYPTION_SECRET`: encrypts saved SSH passwords and private keys
   — **if you lose this, saved credentials cannot be recovered**
-- `VITE_WS_URL`: leave empty for local dev; set to your relay server
+- `VITE_WS_URL`: leave empty for local dev; set to your server
   URL when the frontend and WS server run on different origins
 - `ALLOWED_ORIGINS`: origins allowed to call the Express/WebSocket server
 
@@ -254,9 +325,9 @@ npm run db:push
 npm run dev
 ```
 
-That starts the Next.js frontend on `http://localhost:3000` and the
-Express/WebSocket relay server on `http://localhost:7891`. Open
-`http://localhost:3000`.
+That starts the Vite dev server on `http://localhost:9871` and the
+Express/WebSocket server on `http://localhost:7891`. Open
+`http://localhost:9871`.
 
 ## Build and Lint
 
@@ -267,7 +338,7 @@ npm run lint
 
 ## Database
 
-Main models in [prisma/schema.prisma](/home/rey/project/infinite/prisma/schema.prisma:1):
+Main models in [server/prisma/schema.prisma](/home/rey/project/infinite/server/prisma/schema.prisma:1):
 
 - `Connection`: saved SSH targets and encrypted credentials
 - `Layout`: saved canvas/window state
@@ -366,7 +437,7 @@ With an agent:
 ### When To Use It
 
 Use an agent when the SSH target is reachable from your machine or private
-network, but not reachable from the public relay server.
+network, but not reachable from the public server.
 
 ### Create an Agent
 
@@ -398,7 +469,7 @@ INFINITE_TOKEN=your-token INFINITE_SERVER=ws://localhost:7891 node index.js
 Required environment variables:
 
 - `INFINITE_TOKEN`: generated by the app when you create the agent
-- `INFINITE_SERVER`: WebSocket base URL for the relay server, for example
+- `INFINITE_SERVER`: WebSocket base URL for the server, for example
   `ws://localhost:7891` or `wss://your-domain`
 
 ### Use an Agent for a Connection
@@ -423,7 +494,7 @@ This repo runs two app processes in development:
 - Next.js frontend on `http://localhost:3000`
 - Express/WebSocket server on `http://localhost:7891`
 
-The frontend handles UI and local API routes. The Express server handles:
+The frontend (Vite + nginx) serves static files and proxies API/WS requests to the server. The Express server handles:
 
 - SSH WebSocket sessions
 - localhost tunnels
@@ -446,7 +517,7 @@ npm run db:studio
 
 ## Important Files
 
-- [app/App.tsx](/home/rey/project/infinite/app/App.tsx:1): top-level workspace layout
+- [src/App.tsx](/home/rey/project/infinite/src/App.tsx:1): top-level workspace layout
 - [src/components/Canvas.jsx](/home/rey/project/infinite/src/components/Canvas.jsx:1): infinite canvas wrapper
 - [src/components/WindowFrame.jsx](/home/rey/project/infinite/src/components/WindowFrame.jsx:1): draggable/resizable window shell
 - [src/apps/registry.tsx](/home/rey/project/infinite/src/apps/registry.tsx:1): app registry including SSH terminal wiring
@@ -456,7 +527,7 @@ npm run db:studio
 - [src/components/FocusModeGitPanel.tsx](/home/rey/project/infinite/src/components/FocusModeGitPanel.tsx:1): git status/diff/commit UI
 - [src/components/SettingsPanel.tsx](/home/rey/project/infinite/src/components/SettingsPanel.tsx:1): settings + AI API management
 - [src/components/FileTransferModal.tsx](/home/rey/project/infinite/src/components/FileTransferModal.tsx:1): SFTP transfer UI
-- [server/index.ts](/home/rey/project/infinite/server/index.ts:1): Express + WebSocket relay server
+- [server/index.ts](/home/rey/project/infinite/server/index.ts:1): Express + WebSocket server
 - [server/lib/ssh.ts](/home/rey/project/infinite/server/lib/ssh.ts:1): SSH session handling and agent proxy logic
 - [server/lib/docker.ts](/home/rey/project/infinite/server/lib/docker.ts:1): Docker-over-SSH control
 - [agent/index.js](/home/rey/project/infinite/agent/index.js:1): relay agent process
@@ -467,30 +538,30 @@ Infinite has three components, plus an optional agent:
 
 | Component  | Process                | Default port | Role                                                              |
 | ---------- | ---------------------- | ------------ | ----------------------------------------------------------------- |
-| `frontend` | Next.js 16 (App Router) | `3000` (dev) / `7890` (docker) | UI, API routes, Prisma client                  |
-| `server`   | Express + WebSocket    | `7891`       | SSH sessions, browser control, agent relay, status checks         |
-| `db`       | SQLite file            | n/a          | Persisted state (connections, layouts, notes, projects, agents, bookmarks, AI keys) |
+| `frontend` | Vite (dev) / Nginx (prod) | `9871`   | UI, static files, API/WS proxy                                    |
+| `server`   | Express + WebSocket    | `7891`       | SSH sessions, browser control, agent relay, Docker, Git           |
+| `db`       | SQLite file            | n/a          | Persisted state (connections, layouts, notes, projects, AI keys)  |
 | `agent`    | Standalone Node.js     | outbound WS  | Optional proxy that runs where the SSH target is reachable        |
 
 The `frontend` and `server` can run on the same host or different hosts.
 The `server` is the only component that needs direct network access to
-SSH targets. The `frontend` only talks to the `server` over HTTP and
-WebSocket.
+SSH targets. The `frontend` (nginx) serves static files and proxies
+`/api` and `/ws` to the server automatically.
 
 For local single-host Docker, see [Quick Start](#quick-start-docker--recommended).
 For local single-host Node.js, see [Manual Install](#manual-install-local-development).
 
 ### Split Host (frontend and server on different machines)
 
-The frontend and relay server are independent processes and can run on
-separate hosts. Point `VITE_WS_URL` at the public URL of the relay
-server. Run the relay server on a host that:
+The frontend and server are independent processes and can run on
+separate hosts. Point `VITE_WS_URL` at the public URL of the server.
+Run the server on a host that:
 
 - has a stable public address (or is reachable through Tailscale, Cloudflare
   Tunnel, WireGuard, etc.)
 - can reach the SSH targets you want to expose
 
-Run the relay server on a separate machine (VPS, home lab, etc.) with
+Run the server on a separate machine (VPS, home lab, etc.) with
 `Dockerfile.server`. The example runs on port `7891`:
 
 ```bash
@@ -506,7 +577,7 @@ docker run -d \
 ```
 
 Set `VITE_WS_URL` in the frontend environment to
-`wss://relay.example.com`. If the relay host is behind Tailscale, use the
+`wss://server.example.com`. If the server host is behind Tailscale, use the
 Tailscale hostname so both ends speak over the tailnet.
 
 > Note: in a split-host setup each host gets its own SQLite file unless they
@@ -516,7 +587,7 @@ Tailscale hostname so both ends speak over the tailnet.
 ### Reverse Proxy (nginx example)
 
 A minimal nginx config that fronts the frontend on `443` and proxies
-WebSocket upgrades to the relay on `7891`:
+WebSocket upgrades to the server on `7891`:
 
 ```nginx
 server {
@@ -527,7 +598,7 @@ server {
   ssl_certificate_key /etc/letsencrypt/live/infinite.example.com/privkey.pem;
 
   location / {
-    proxy_pass http://127.0.0.1:7890;
+    proxy_pass http://127.0.0.1:9871;
   }
 
   location /ws/ {
@@ -545,7 +616,7 @@ Adapt the WebSocket path prefix to whatever `server/index.ts` listens on.
 ### Systemd (single host)
 
 `infinite.service` and `ecosystem.config.cjs` are provided for running
-`vite preview` and the relay under PM2 or systemd on a single host. Edit
+`vite preview` and the server under PM2 or systemd on a single host. Edit
 `infinite.service` to match your install path and user before enabling it:
 
 ```bash

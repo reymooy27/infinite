@@ -1,8 +1,13 @@
 node_modules
 **/node_modules
-.next
+dist
 .git
 .env
-.env.local
+.env.*
 server/.env
+server/data
+*.db
 *.log
+.vscode
+.idea
+.DS_Store

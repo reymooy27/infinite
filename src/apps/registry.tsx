@@ -410,7 +410,7 @@ export const SSHPane = ({
     term.open(terminalRef.current);
     term.attachCustomKeyEventHandler((event) => {
       if (!(event instanceof KeyboardEvent)) return true;
-      return forwardReservedTerminalShortcut(event);
+      return !forwardReservedTerminalShortcut(event);
     });
 
     requestAnimationFrame(focusTerminal);
