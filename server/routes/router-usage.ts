@@ -27,8 +27,8 @@ async function proxyRouterUsage(req: Request, res: Response, path: "/api/usage/s
   }
 
   const baseUrl = normalizeRouterUsageBaseUrl(
-    (req.query.baseUrl as string) ||
-      process.env.ROUTER_USAGE_BASE_URL ||
+    process.env.ROUTER_USAGE_BASE_URL ||
+      (req.query.baseUrl as string) ||
       DEFAULT_ROUTER_USAGE_BASE_URL,
   );
 
@@ -47,6 +47,7 @@ async function proxyRouterUsage(req: Request, res: Response, path: "/api/usage/s
   try {
     const apiRes = await fetch(upstream, {
       method: "GET",
+      // @ts-ignore -- cache is supported in Node 22+ but not in all TS RequestInit versions
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
     });

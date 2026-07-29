@@ -4,7 +4,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 COPY patches/ ./patches/
 COPY server/prisma/ ./server/prisma/
-COPY server/prisma.config.ts ./server/prisma.config.ts
+COPY prisma.config.ts ./prisma.config.ts
 ENV DATABASE_URL=file:/data/infinite.db
 RUN npm ci && npm cache clean --force
 

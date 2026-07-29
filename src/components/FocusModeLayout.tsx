@@ -1,8 +1,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes } from "lucide-react";
+import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes, FileCode2 } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
+import FocusModeFileExplorer from "@/components/FocusModeFileExplorer";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
@@ -49,6 +50,7 @@ export default function FocusModeLayout({
   >("terminal");
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
+  const [fileExplorerOpen, setFileExplorerOpen] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyboardRafRef = useRef<number | null>(null);
@@ -331,6 +333,7 @@ export default function FocusModeLayout({
           <button
             onClick={() => {
               setGitPanelOpen((prev) => !prev);
+              setFileExplorerOpen(false);
               setTabPanelOpen(false);
             }}
             disabled={!activeProjectId}
@@ -342,6 +345,22 @@ export default function FocusModeLayout({
             }`}
           >
             <GitBranch size={14} />
+          </button>
+          <button
+            onClick={() => {
+              setFileExplorerOpen((prev) => !prev);
+              setGitPanelOpen(false);
+              setTabPanelOpen(false);
+            }}
+            disabled={!activeProjectId}
+            title={fileExplorerOpen ? "Hide file explorer" : "Show file explorer"}
+            className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
+              fileExplorerOpen
+                ? "bg-neutral-800 text-white border-neutral-700"
+                : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
+            }`}
+          >
+            <FileCode2 size={14} />
           </button>
         </div>
       )}
@@ -487,6 +506,14 @@ export default function FocusModeLayout({
           connectionId={connectionId}
           directory={activeTerminalDirectory}
           onClose={() => setGitPanelOpen(false)}
+        />
+        <FocusModeFileExplorer
+          key={`files:${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}
+          open={fileExplorerOpen && Boolean(activeProjectId)}
+          projectId={activeProjectId}
+          connectionId={connectionId}
+          directory={activeTerminalDirectory}
+          onClose={() => setFileExplorerOpen(false)}
         />
       </div>
     </div>

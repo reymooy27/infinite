@@ -3,8 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "9871:80"
+    # Host networking so nginx can proxy to the server on 127.0.0.1:7891
+    # without being blocked by the host firewall.
+    network_mode: "host"
     depends_on:
       - server
     restart: unless-stopped
@@ -13,9 +14,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.server
-    ports:
-      - "7891:7891"
+    # Host networking lets the server reach host-bound services (9router on
+    # :20128) directly via 127.0.0.1. The docker bridge cannot reach the host
+    # because the host firewall drops bridge->host traffic.
+    network_mode: "host"
     env_file: .env
+    environment:
+      DATABASE_URL: file:/data/infinite.db
     volumes:
       - infinite-data:/data
     restart: unless-stopped

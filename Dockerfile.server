@@ -4,7 +4,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 COPY patches/ ./patches/
 COPY server/prisma/ ./server/prisma/
-COPY server/prisma.config.ts ./server/prisma.config.ts
+COPY prisma.config.ts ./prisma.config.ts
 ENV DATABASE_URL=file:/data/infinite.db
 RUN npm ci && npm cache clean --force
 
@@ -12,9 +12,9 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache tini openssl
 COPY --from=deps /app/node_modules ./node_modules
-COPY .server-build ./server-build
-COPY server/prisma ./server/prisma
-COPY server/prisma.config.ts ./server/prisma.config.ts
+COPY server/ ./server/
+COPY prisma.config.ts ./prisma.config.ts
+RUN npx tsc -p server/tsconfig.build.json --outDir ./server-build
 
 ENV NODE_ENV=production
 ENV DATABASE_URL=file:/data/infinite.db
@@ -22,4 +22,4 @@ ENV WS_PORT=7891
 
 EXPOSE 7891
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["sh", "-c", "npx prisma db push --schema server/prisma/schema.prisma && node server-build/index.js"]
+CMD ["sh", "-c", "npx prisma db push && node server-build/index.js"]

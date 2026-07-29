@@ -13,9 +13,11 @@
     "db:migrate": "prisma migrate dev --schema server/prisma/schema.prisma",
     "db:push": "prisma db push --schema server/prisma/schema.prisma",
     "db:studio": "prisma studio --schema server/prisma/schema.prisma",
-    "postinstall": "patch-package && prisma generate --schema server/prisma/schema.prisma"
+    "postinstall": "patch-package && prisma generate"
   },
   "dependencies": {
+    "@prisma/client": "^7.8.0",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@gsap/react": "^2.1.2",
     "@xterm/addon-clipboard": "^0.2.0",
     "@xterm/addon-fit": "^0.11.0",

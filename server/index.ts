@@ -45,10 +45,12 @@ import aiKeysRouter from "./routes/ai-keys.js";
 import projectsRouter from "./routes/projects.js";
 import devBrowserRouter from "./routes/dev-browser.js";
 import routerUsageRouter from "./routes/router-usage.js";
+import filesRouter from "./routes/files.js";
 
 const LOCAL_USER_ID = "local-user";
 
 const app = express();
+app.set("trust proxy", 1);
 const server = createServer(app);
 const wss = new WebSocketServer({
   noServer: true,
@@ -94,6 +96,7 @@ app.use("/api/connections", connectionsRouter);
 app.use("/api/ai-providers", aiProvidersRouter);
 app.use("/api/ai-keys", aiKeysRouter);
 app.use("/api/projects", projectsRouter);
+app.use("/api/projects", filesRouter);
 app.use("/api/dev-browser", devBrowserRouter);
 app.use("/api/router-usage", routerUsageRouter);
 
