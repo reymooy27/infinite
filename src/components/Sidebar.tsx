@@ -12,8 +12,7 @@ type SidebarPage =
   | "ssh"
   | "usage"
   | "settings"
-  | "settings-terminal"
-  | "settings-api-management";
+  | "settings-terminal";
 
 const ROOT_ITEMS = [
   {
@@ -80,8 +79,7 @@ export default function Sidebar({
     value === "ssh" ||
     value === "usage" ||
     value === "settings" ||
-    value === "settings-terminal" ||
-    value === "settings-api-management";
+    value === "settings-terminal";
 
   // Open to a specific section on external request
   useEffect(() => {
@@ -162,14 +160,11 @@ export default function Sidebar({
             ? "Usage"
             : activePage === "settings"
               ? "Settings"
-              : activePage === "settings-terminal"
-                ? "Terminal"
-                : "API Management";
+              : "Terminal";
 
   const handleBack = () => {
     if (
-      activePage === "settings-terminal" ||
-      activePage === "settings-api-management"
+      activePage === "settings-terminal"
     ) {
       setActivePage("settings");
       return;
@@ -291,20 +286,12 @@ export default function Sidebar({
                 {activePage === "ssh" && <SSHPanel />}
                 {activePage === "usage" && <UsagePanel />}
                 {(activePage === "settings" ||
-                  activePage === "settings-terminal" ||
-                  activePage === "settings-api-management") && (
+                  activePage === "settings-terminal") && (
                   <SettingsPanel
                     currentPage={
-                      activePage === "settings-terminal"
-                        ? "terminal"
-                        : activePage === "settings-api-management"
-                          ? "api-management"
-                          : "root"
+                      activePage === "settings-terminal" ? "terminal" : "root"
                     }
                     onOpenTerminal={() => setActivePage("settings-terminal")}
-                    onOpenApiManagement={() =>
-                      setActivePage("settings-api-management")
-                    }
                   />
                 )}
               </div>

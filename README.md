@@ -15,7 +15,6 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 - **File transfer** (SFTP upload/download) over a saved SSH connection
 - **Docker manager** — control containers/images/volumes on a remote host over SSH
 - **Git view** — status tree, diff viewer, and commit/push/pull/stash per project
-- **AI provider & key management** — encrypted API-key vault with per-key usage
 - **9router usage analytics** — read-only dashboard of AI/LLM traffic
   (requests, tokens, cost, breakdown by model/provider/key/endpoint)
   pulled live from a [9router](https://9router.dev) service
@@ -84,13 +83,6 @@ toggle, or as a slide-in **Docker panel**.
 Per active project: working-tree status (staged / unstaged / untracked), a diff
 viewer, and stage / unstage / discard / commit / branch / push / pull / stash
 actions. Reached via the Focus Mode git toggle.
-
-### AI provider & key management
-
-A vault for AI provider API keys. Add providers (name + base URL) and keys
-(encrypted at rest with `ENCRYPTION_SECRET`); view per-key usage. Managed in
-Settings → API Management. There is no built-in chat UI — it is a key store and
-usage tracker.
 
 ### Usage analytics (9router)
 
@@ -346,8 +338,6 @@ Main models in [server/prisma/schema.prisma](/home/rey/project/infinite/server/p
 - `Project`: project workspace state
 - `Note`: notes
 - `Bookmark`: saved URLs
-- `AIProvider`: AI provider definitions (name, base URL)
-- `AIKey`: encrypted API keys per provider, with usage tracking
 
 For local development this app uses a fixed local user id, so no auth setup
 is currently required.
@@ -400,13 +390,7 @@ Enter Focus Mode (Cmd+Shift+F), then open the git sidebar. For the active
 project you can view the status tree, open a diff, and stage / unstage /
 discard / commit / branch / push / pull / stash.
 
-### 6. Manage AI providers & keys
-
-Open Settings → API Management. Add a provider (name + base URL), then add keys
-(encrypted at rest). Track per-key usage from the Usage panel. There is no
-built-in chat — this is a key vault and usage tracker.
-
-### 7. Projects, notes & bookmarks
+### 6. Projects, notes & bookmarks
 
 - Create and switch **Projects** from the Projects panel or Cmd+Shift+P; each
   project stores its own canvas and working directory.
