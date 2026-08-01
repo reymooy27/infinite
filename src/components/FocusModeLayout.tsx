@@ -51,6 +51,7 @@ export default function FocusModeLayout({
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [fileExplorerOpen, setFileExplorerOpen] = useState(false);
+  const [initialFilePath, setInitialFilePath] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyboardRafRef = useRef<number | null>(null);
@@ -504,6 +505,10 @@ export default function FocusModeLayout({
           projectId={activeProjectId}
           connectionId={connectionId}
           directory={activeTerminalDirectory}
+          onOpenFile={(path) => {
+            setInitialFilePath(path);
+            setFileExplorerOpen(true);
+          }}
           onClose={() => setGitPanelOpen(false)}
         />
         <FocusModeFileExplorer
@@ -512,7 +517,11 @@ export default function FocusModeLayout({
           projectId={activeProjectId}
           connectionId={connectionId}
           directory={activeTerminalDirectory}
-          onClose={() => setFileExplorerOpen(false)}
+          initialPath={initialFilePath}
+          onClose={() => {
+            setFileExplorerOpen(false);
+            setInitialFilePath(null);
+          }}
         />
       </div>
     </div>

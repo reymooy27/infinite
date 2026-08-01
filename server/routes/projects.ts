@@ -6,6 +6,8 @@ import {
   getGitStatus,
   getCommitDiff,
   runGitAction,
+  createExecutionContext,
+  execGitOrThrow,
   type GitAction,
 } from "./git-lib.js";
 
@@ -223,6 +225,38 @@ router.get("/:id/git/diff", async (req, res) => {
       return;
     }
     res.status(500).json({ error: "Failed to fetch diff" });
+  }
+});
+
+// GET /api/projects/:id/git/file-head?path=...&connectionId=...&directory=...
+// Returns { content } — the committed (HEAD) version of a file
+router.get("/:id/git/file-head", async (req, res) => {
+  try {
+    const filePath = (req.query.path as string)?.trim();
+    const directory = (req.query.directory as string)?.trim() || null;
+    const connectionIdParam = req.query.connectionId as string;
+    const connectionId = connectionIdParam ? Number.parseInt(connectionIdParam, 10) : null;
+
+    if (!filePath) {
+      res.status(400).json({ error: "File path is required" });
+      return;
+    }
+
+    const ctx = await createExecutionContext(req.params.id, directory, connectionId);
+
+    try {
+      const content = await execGitOrThrow(ctx, ["show", `HEAD:${filePath}`]);
+      res.json({ content });
+    } catch {
+      // File is untracked — no HEAD version
+      res.json({ content: "" });
+    }
+  } catch (error) {
+    if (error instanceof GitActionError) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: "Failed to fetch HEAD version" });
   }
 });
 

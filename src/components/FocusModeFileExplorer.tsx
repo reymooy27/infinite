@@ -8,6 +8,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  GitCompare,
   LoaderCircle,
   RefreshCw,
   Save,
@@ -15,6 +16,8 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import CodeEditor from "./CodeEditor";
+import DiffViewer from "./DiffViewer";
 
 type FileEntry = {
   name: string;
@@ -42,6 +45,7 @@ interface FocusModeFileExplorerProps {
   projectId: string | null;
   connectionId?: number;
   directory?: string;
+  initialPath?: string | null;
   onClose: () => void;
 }
 
@@ -67,6 +71,7 @@ export default function FocusModeFileExplorer({
   projectId,
   connectionId,
   directory,
+  initialPath,
   onClose,
 }: FocusModeFileExplorerProps) {
   const [currentPath, setCurrentPath] = useState("");
@@ -75,11 +80,13 @@ export default function FocusModeFileExplorer({
   const [editContent, setEditContent] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [diffMode, setDiffMode] = useState(false);
+  const [headContent, setHeadContent] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [treeData, setTreeData] = useState<Record<string, DirState>>({});
   const searchRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const fetchDir = useCallback(
     async (path: string) => {
@@ -121,6 +128,8 @@ export default function FocusModeFileExplorer({
       if (!projectId) return;
       setOpenFile({ path, content: "", loading: true, error: "" });
       setEditContent(null);
+      setDiffMode(false);
+      setHeadContent(null);
 
       try {
         const params = new URLSearchParams({ path });
@@ -171,6 +180,32 @@ export default function FocusModeFileExplorer({
     }
   }, [projectId, connectionId, openFile, editContent]);
 
+  const fetchHeadContent = useCallback(async () => {
+    if (!projectId || !openFile) return;
+    setDiffLoading(true);
+    try {
+      const params = new URLSearchParams({ path: openFile.path });
+      if (connectionId) params.set("connectionId", String(connectionId));
+      const res = await fetch(`/api/projects/${projectId}/git/file-head?${params}`);
+      const body = await res.json();
+      setHeadContent(body.content ?? "");
+    } catch {
+      setHeadContent("");
+    } finally {
+      setDiffLoading(false);
+    }
+  }, [projectId, connectionId, openFile]);
+
+  const toggleDiff = useCallback(() => {
+    if (!diffMode) {
+      setDiffMode(true);
+      fetchHeadContent();
+    } else {
+      setDiffMode(false);
+      setHeadContent(null);
+    }
+  }, [diffMode, fetchHeadContent]);
+
   // Load root directory on open
   useEffect(() => {
     if (!open || !projectId) return;
@@ -178,10 +213,20 @@ export default function FocusModeFileExplorer({
     setDirCache({});
     setOpenFile(null);
     setEditContent(null);
+    setDiffMode(false);
+    setHeadContent(null);
     setExpandedFolders(new Set());
     setTreeData({});
     void fetchDir("");
   }, [open, projectId, fetchDir]);
+
+  // Auto-open initialPath when provided
+  useEffect(() => {
+    if (!open || !projectId || !initialPath) return;
+    void fetchFile(initialPath);
+    // Auto-enable diff mode for files opened from git panel
+    setDiffMode(true);
+  }, [open, projectId, initialPath, fetchFile]);
 
   // Auto-dismiss save feedback
   useEffect(() => {
@@ -451,14 +496,37 @@ export default function FocusModeFileExplorer({
                 <div className="flex-1 flex flex-col min-h-0">
                   <div className="flex items-center justify-between px-3 py-1.5 border-b border-neutral-800 text-[10px] text-neutral-500">
                     <span className="font-mono truncate">{openFile.path}</span>
-                    <span className="shrink-0 ml-2">
-                      {editContent !== null
-                        ? `${editContent.split("\n").length} lines`
-                        : ""}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      {editContent !== null && (
+                        <span>{editContent.split("\n").length} lines</span>
+                      )}
+                      <button
+                        onClick={toggleDiff}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                          diffMode
+                            ? "bg-blue-500/20 text-blue-400"
+                            : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800"
+                        }`}
+                        title="Toggle git diff view"
+                      >
+                        <GitCompare size={11} />
+                        <span>Diff</span>
+                      </button>
+                      {!diffMode && (
+                        <button
+                          onClick={saveFile}
+                          disabled={saving}
+                          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
+                          title="Save (Ctrl+S)"
+                        >
+                          <Save size={11} />
+                          <span>{saving ? "Saving..." : "Save"}</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {saveFeedback && (
+                  {saveFeedback && !diffMode && (
                     <div
                       className={`mx-3 mt-2 rounded-lg border px-2.5 py-1.5 text-[11px] ${
                         saveFeedback === "Saved"
@@ -470,14 +538,27 @@ export default function FocusModeFileExplorer({
                     </div>
                   )}
 
-                  <textarea
-                    ref={editorRef}
-                    value={editContent ?? openFile.content}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    spellCheck={false}
-                    className="flex-1 min-h-0 resize-none bg-transparent p-3 font-mono text-[11px] leading-relaxed text-neutral-200 outline-none"
-                    style={{ tabSize: 2 }}
-                  />
+                  {diffMode ? (
+                    diffLoading ? (
+                      <div className="flex flex-1 items-center justify-center text-neutral-500">
+                        <LoaderCircle size={16} className="animate-spin mr-2" />
+                        <span className="text-xs">Loading diff...</span>
+                      </div>
+                    ) : (
+                      <DiffViewer
+                        path={openFile.path}
+                        original={headContent ?? ""}
+                        modified={editContent ?? openFile.content}
+                      />
+                    )
+                  ) : (
+                    <CodeEditor
+                      path={openFile.path}
+                      value={editContent ?? openFile.content}
+                      onChange={(val) => setEditContent(val)}
+                      onSave={saveFile}
+                    />
+                  )}
                 </div>
               )}
             </div>

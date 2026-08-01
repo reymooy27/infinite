@@ -147,6 +147,7 @@ interface FocusModeGitPanelProps {
   projectId: string | null;
   connectionId?: number;
   directory?: string;
+  onOpenFile?: (path: string) => void;
   onClose: () => void;
 }
 
@@ -368,6 +369,7 @@ export default function FocusModeGitPanel({
   projectId,
   connectionId,
   directory,
+  onOpenFile,
   onClose,
 }: FocusModeGitPanelProps) {
   const [data, setData] = useState<GitStatusPayload | null>(null);
@@ -1322,15 +1324,26 @@ export default function FocusModeGitPanel({
                     <span className="truncate flex-1 mr-2">
                       {selectedFilePath}
                     </span>
-                    <button
-                      onClick={() => {
-                        setSelectedFileDiff(null);
-                        setSelectedFilePath(null);
-                      }}
-                      className="rounded p-1 hover:bg-neutral-800"
-                    >
-                      <X size={12} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {onOpenFile && selectedFilePath && (
+                        <button
+                          onClick={() => onOpenFile(selectedFilePath)}
+                          className="rounded p-1 hover:bg-neutral-800 text-neutral-500 hover:text-neutral-300"
+                          title="Open in editor with diff"
+                        >
+                          <FileCode2 size={12} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setSelectedFileDiff(null);
+                          setSelectedFilePath(null);
+                        }}
+                        className="rounded p-1 hover:bg-neutral-800"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
                   </div>
                   <div className="max-h-[300px] overflow-auto p-2">
                     {diffLoading ? (

@@ -16,9 +16,10 @@
     "postinstall": "patch-package && prisma generate"
   },
   "dependencies": {
-    "@prisma/client": "^7.8.0",
-    "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@gsap/react": "^2.1.2",
+    "@monaco-editor/react": "^4.7.0",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "@xterm/addon-clipboard": "^0.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",
@@ -31,6 +32,7 @@
     "express-rate-limit": "^8.5.2",
     "gsap": "^3.12.0",
     "lucide-react": "^1.14.0",
+    "monaco-editor": "^0.56.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
