@@ -33,6 +33,7 @@ export const SSHPane = ({
   keyboardHeight,
   refreshNonce,
   enableTouchScroll = false,
+  isModalOpen = false,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -42,11 +43,14 @@ export const SSHPane = ({
   keyboardHeight?: number;
   refreshNonce?: number;
   enableTouchScroll?: boolean;
+  isModalOpen?: boolean;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const isModalOpenRef = useRef(isModalOpen);
+  isModalOpenRef.current = isModalOpen;
   const [status, setStatus] = useState<string>("connecting");
   const [retryKey, setRetryKey] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState(false);
@@ -231,6 +235,19 @@ export const SSHPane = ({
 
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
+    // Don't steal focus from inputs/textareas outside the terminal
+    // (e.g. modal forms, sidebar inputs)
+    const active = document.activeElement;
+    if (
+      active &&
+      active !== document.body &&
+      !terminalRef.current?.contains(active) &&
+      (active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        (active as HTMLElement).contentEditable === "true")
+    ) {
+      return;
+    }
     termInstanceRef.current?.focus();
   }, []);
 
@@ -509,7 +526,7 @@ export const SSHPane = ({
           viewportOffsetRef.current = getViewportOffsetFromBottom();
         }
         forceTerminalRepaint();
-        focusTerminal();
+        if (!isModalOpenRef.current) focusTerminal();
       });
     }
   }, [focusTerminal, forceTerminalRepaint, getViewportOffsetFromBottom, isActive]);
@@ -541,7 +558,9 @@ export const SSHPane = ({
       if (pendingViewportRestoreRef.current !== null) {
         scheduleViewportRestore(pendingViewportRestoreRef.current);
       }
-      requestAnimationFrame(() => focusTerminal());
+      requestAnimationFrame(() => {
+        if (!isModalOpenRef.current) focusTerminal();
+      });
     });
   }, [
     focusTerminal,

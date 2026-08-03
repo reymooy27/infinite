@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 
@@ -97,11 +97,15 @@ export default function CodeEditor({
   height = "100%",
 }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<any>(null);
+  const [mounted, setMounted] = useState(false);
   const language = useMemo(() => getLanguage(path), [path]);
 
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
       editorRef.current = editor;
+      monacoRef.current = monaco;
+      setMounted(true);
       monaco.editor.defineTheme("infinite-dark", {
         base: "vs-dark",
         inherit: true,
@@ -135,6 +139,94 @@ export default function CodeEditor({
     [onSave],
   );
 
+  // Long-press to select word on mobile
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const dom = ed.getDomNode();
+    if (!dom) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let selecting = false;
+    let startPos: { x: number; y: number } | null = null;
+
+    const clearTimer = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      startPos = { x: touch.clientX, y: touch.clientY };
+      selecting = false;
+
+      timer = setTimeout(() => {
+        const model = ed.getModel();
+        if (!model || !startPos) return;
+        const target = ed.getTargetAtClientPoint(startPos.x, startPos.y);
+        if (!target?.position) return;
+        const word = model.getWordAtPosition(target.position);
+        if (word) {
+          const { lineNumber } = target.position;
+          ed.setSelection(
+            new (monacoRef.current as any).Selection(lineNumber, word.startColumn, lineNumber, word.endColumn),
+          );
+          selecting = true;
+          // Haptic feedback if available
+          navigator.vibrate?.(30);
+        }
+      }, 400);
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!selecting || e.touches.length !== 1) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      const target = ed.getTargetAtClientPoint(touch.clientX, touch.clientY);
+      if (!target?.position) return;
+      const curSel = ed.getSelection();
+      if (curSel) {
+        ed.setSelection(
+          new (monacoRef.current as any).Selection(
+            curSel.selectionStartLineNumber,
+            curSel.selectionStartColumn,
+            target.position.lineNumber,
+            target.position.column,
+          ),
+        );
+      }
+    };
+
+    const onTouchEnd = () => {
+      clearTimer();
+      selecting = false;
+      startPos = null;
+    };
+
+    // Cancel long-press if finger moves too much before timer
+    const onTouchMoveCancel = (e: TouchEvent) => {
+      if (selecting || !startPos || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dist = Math.hypot(t.clientX - startPos.x, t.clientY - startPos.y);
+      if (dist > 10) clearTimer();
+    };
+
+    dom.addEventListener("touchstart", onTouchStart, { passive: true });
+    dom.addEventListener("touchmove", onTouchMove, { passive: false });
+    dom.addEventListener("touchmove", onTouchMoveCancel, { passive: true });
+    dom.addEventListener("touchend", onTouchEnd, { passive: true });
+    dom.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+    return () => {
+      clearTimer();
+      dom.removeEventListener("touchstart", onTouchStart);
+      dom.removeEventListener("touchmove", onTouchMove);
+      dom.removeEventListener("touchmove", onTouchMoveCancel);
+      dom.removeEventListener("touchend", onTouchEnd);
+      dom.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [mounted]);
+
   const handleChange = useCallback(
     (val: string | undefined) => {
       onChange(val ?? "");
@@ -143,6 +235,7 @@ export default function CodeEditor({
   );
 
   return (
+    <div className="h-full touch-auto select-text">
     <Editor
       height={height}
       language={language}
@@ -162,5 +255,6 @@ export default function CodeEditor({
         </div>
       }
     />
+    </div>
   );
 }

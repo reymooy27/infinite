@@ -146,7 +146,6 @@ router.get("/:id/files", async (req, res) => {
           sftp.readdir(remotePath, (err, list) => {
             if (err) return rejectEntries(err);
             const entries: FileEntry[] = (list || [])
-              .filter((item) => !item.filename.startsWith(".") || relativePath !== "")
               .map((item) => ({
                 name: item.filename,
                 path: relativePath ? `${relativePath}/${item.filename}` : item.filename,
@@ -177,7 +176,6 @@ router.get("/:id/files", async (req, res) => {
       const entries: FileEntry[] = [];
 
       for (const item of items) {
-        if (item.name.startsWith(".")) continue;
         try {
           const itemPath = join(fullPath, item.name);
           const itemStat = await stat(itemPath);

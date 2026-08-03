@@ -1064,7 +1064,7 @@ export default function FocusModeGitPanel({
   if (!open) return null;
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-20 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
+    <aside className="absolute inset-y-0 right-0 z-40 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1607,7 +1607,7 @@ export default function FocusModeGitPanel({
         </div>
 
         {confirmation && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
             <div className="w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl">
               <h3 className="text-sm font-semibold text-white">
                 {confirmation.title}

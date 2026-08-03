@@ -1,37 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  File,
   FileCode2,
-  FileText,
-  Folder,
-  FolderOpen,
   GitCompare,
   LoaderCircle,
-  RefreshCw,
   Save,
-  Search,
   X,
 } from "lucide-react";
-import { api } from "@/lib/api";
 import CodeEditor from "./CodeEditor";
 import DiffViewer from "./DiffViewer";
-
-type FileEntry = {
-  name: string;
-  path: string;
-  isDir: boolean;
-  size: number;
-  mtime: string;
-};
-
-type DirState = {
-  loading: boolean;
-  error: string;
-  entries: FileEntry[];
-};
 
 type FileContent = {
   path: string;
@@ -44,38 +20,17 @@ interface FocusModeFileExplorerProps {
   open: boolean;
   projectId: string | null;
   connectionId?: number;
-  directory?: string;
   initialPath?: string | null;
   onClose: () => void;
-}
-
-function getFileIcon(name: string, isDir: boolean) {
-  if (isDir) return null; // handled separately
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  if (["ts", "tsx", "js", "jsx", "mjs", "cjs"].includes(ext)) return FileCode2;
-  if (["json", "yaml", "yml", "toml", "ini", "env", "conf"].includes(ext)) return FileText;
-  if (["md", "txt", "log", "csv"].includes(ext)) return FileText;
-  if (["html", "css", "scss", "less"].includes(ext)) return FileCode2;
-  if (["py", "rb", "go", "rs", "java", "c", "cpp", "h", "sh", "bash"].includes(ext)) return FileCode2;
-  return File;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function FocusModeFileExplorer({
   open,
   projectId,
   connectionId,
-  directory,
   initialPath,
   onClose,
 }: FocusModeFileExplorerProps) {
-  const [currentPath, setCurrentPath] = useState("");
-  const [dirCache, setDirCache] = useState<Record<string, DirState>>({});
   const [openFile, setOpenFile] = useState<FileContent | null>(null);
   const [editContent, setEditContent] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -83,45 +38,6 @@ export default function FocusModeFileExplorer({
   const [diffMode, setDiffMode] = useState(false);
   const [headContent, setHeadContent] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [treeData, setTreeData] = useState<Record<string, DirState>>({});
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  const fetchDir = useCallback(
-    async (path: string) => {
-      if (!projectId) return;
-      setDirCache((prev) => ({
-        ...prev,
-        [path]: { loading: true, error: "", entries: prev[path]?.entries ?? [] },
-      }));
-
-      try {
-        const params = new URLSearchParams();
-        if (path) params.set("path", path);
-        if (connectionId) params.set("connectionId", String(connectionId));
-        const suffix = params.size > 0 ? `?${params.toString()}` : "";
-        const res = await fetch(`/api/projects/${projectId}/files${suffix}`);
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || "Failed to list directory");
-
-        setDirCache((prev) => ({
-          ...prev,
-          [path]: { loading: false, error: "", entries: body.entries },
-        }));
-      } catch (err) {
-        setDirCache((prev) => ({
-          ...prev,
-          [path]: {
-            loading: false,
-            error: err instanceof Error ? err.message : "Failed to load",
-            entries: prev[path]?.entries ?? [],
-          },
-        }));
-      }
-    },
-    [projectId, connectionId],
-  );
 
   const fetchFile = useCallback(
     async (path: string) => {
@@ -206,25 +122,19 @@ export default function FocusModeFileExplorer({
     }
   }, [diffMode, fetchHeadContent]);
 
-  // Load root directory on open
+  // Reset on open
   useEffect(() => {
     if (!open || !projectId) return;
-    setCurrentPath("");
-    setDirCache({});
     setOpenFile(null);
     setEditContent(null);
     setDiffMode(false);
     setHeadContent(null);
-    setExpandedFolders(new Set());
-    setTreeData({});
-    void fetchDir("");
-  }, [open, projectId, fetchDir]);
+  }, [open, projectId]);
 
-  // Auto-open initialPath when provided
+  // Auto-open initialPath
   useEffect(() => {
     if (!open || !projectId || !initialPath) return;
     void fetchFile(initialPath);
-    // Auto-enable diff mode for files opened from git panel
     setDiffMode(true);
   }, [open, projectId, initialPath, fetchFile]);
 
@@ -234,69 +144,6 @@ export default function FocusModeFileExplorer({
     const t = setTimeout(() => setSaveFeedback(null), 3000);
     return () => clearTimeout(t);
   }, [saveFeedback]);
-
-  const currentDir = dirCache[currentPath];
-
-  const filteredEntries = useMemo(() => {
-    if (!currentDir?.entries) return [];
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return currentDir.entries;
-    return currentDir.entries.filter((e) => e.name.toLowerCase().includes(q));
-  }, [currentDir?.entries, searchQuery]);
-
-  const handleNavigate = (entry: FileEntry) => {
-    if (entry.isDir) {
-      setOpenFile(null);
-      setEditContent(null);
-      setCurrentPath(entry.path);
-      if (!dirCache[entry.path]) void fetchDir(entry.path);
-    } else {
-      void fetchFile(entry.path);
-    }
-  };
-
-  const handleBack = () => {
-    if (openFile) {
-      setOpenFile(null);
-      setEditContent(null);
-      return;
-    }
-    const parts = currentPath.split("/").filter(Boolean);
-    parts.pop();
-    const parentPath = parts.join("/");
-    setCurrentPath(parentPath);
-    if (!dirCache[parentPath]) void fetchDir(parentPath);
-  };
-
-  const handleRefresh = () => {
-    if (openFile) {
-      void fetchFile(openFile.path);
-    } else {
-      setDirCache((prev) => {
-        const next = { ...prev };
-        delete next[currentPath];
-        return next;
-      });
-      void fetchDir(currentPath);
-    }
-  };
-
-  // Tree view helpers
-  const toggleTreeFolder = useCallback(
-    (path: string) => {
-      setExpandedFolders((prev) => {
-        const next = new Set(prev);
-        if (next.has(path)) {
-          next.delete(path);
-        } else {
-          next.add(path);
-          if (!dirCache[path]) void fetchDir(path);
-        }
-        return next;
-      });
-    },
-    [dirCache, fetchDir],
-  );
 
   const isModified = editContent !== null && openFile && editContent !== openFile.content;
 
@@ -312,7 +159,6 @@ export default function FocusModeFileExplorer({
         target?.tagName === "TEXTAREA";
 
       if (isText) {
-        // Cmd/Ctrl+S to save
         if ((e.metaKey || e.ctrlKey) && e.key === "s") {
           e.preventDefault();
           void saveFile();
@@ -320,65 +166,38 @@ export default function FocusModeFileExplorer({
         return;
       }
 
-      switch (e.key) {
-        case "Escape":
-          e.preventDefault();
-          if (openFile) {
-            setOpenFile(null);
-            setEditContent(null);
-          } else {
-            onClose();
-          }
-          break;
-        case "Backspace":
-          e.preventDefault();
-          handleBack();
-          break;
-        case "/":
-          e.preventDefault();
-          searchRef.current?.focus();
-          break;
-        case "r":
-          e.preventDefault();
-          handleRefresh();
-          break;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
       }
     };
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [open, openFile, saveFile, onClose]);
+  }, [open, saveFile, onClose]);
+
+  // Expose openFile on window for tree sidebar to call
+  useEffect(() => {
+    if (!open) return;
+    (window as any).__focusExplorerOpenFile = fetchFile;
+    return () => { delete (window as any).__focusExplorerOpenFile; };
+  }, [open, fetchFile]);
 
   if (!open) return null;
 
-  const pathSegments = currentPath.split("/").filter(Boolean);
-
   return (
-    <aside className="absolute inset-y-0 right-0 z-20 w-full max-w-[28rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
+    <aside className="absolute inset-y-0 right-0 z-40 w-full max-w-[28rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
       <div className="flex h-full flex-col">
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
-          {(openFile || currentPath) && (
-            <button
-              onClick={handleBack}
-              title="Go back"
-              className="rounded p-1.5 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white"
-            >
-              <ArrowLeft size={14} />
-            </button>
-          )}
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {openFile ? (
               <FileCode2 size={14} className="shrink-0 text-neutral-300" />
             ) : (
-              <Folder size={14} className="shrink-0 text-neutral-300" />
+              <FileCode2 size={14} className="shrink-0 text-neutral-600" />
             )}
             <p className="truncate text-[13px] font-medium text-neutral-100">
-              {openFile
-                ? openFile.path.split("/").pop()
-                : pathSegments.length > 0
-                  ? pathSegments[pathSegments.length - 1]
-                  : "Files"}
+              {openFile ? openFile.path.split("/").pop() : "No file open"}
             </p>
             {openFile && isModified && (
               <span className="text-[10px] text-amber-400 shrink-0">modified</span>
@@ -405,231 +224,108 @@ export default function FocusModeFileExplorer({
           )}
 
           <button
-            onClick={handleRefresh}
-            title="Refresh"
-            className="rounded p-1.5 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white"
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
             onClick={onClose}
-            title="Close file explorer"
+            title="Close editor"
             className="rounded p-1.5 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white"
           >
             <X size={14} />
           </button>
         </div>
 
-        {/* Breadcrumb */}
-        {!openFile && pathSegments.length > 0 && (
-          <div className="flex items-center gap-1 border-b border-neutral-800 px-3 py-1.5 text-[10px] text-neutral-500 overflow-x-auto">
-            <button
-              onClick={() => {
-                setCurrentPath("");
-                if (!dirCache[""]) void fetchDir("");
-              }}
-              className="hover:text-neutral-300 shrink-0 cursor-pointer"
-            >
-              root
-            </button>
-            {pathSegments.map((seg, i) => {
-              const segPath = pathSegments.slice(0, i + 1).join("/");
-              return (
-                <span key={segPath} className="flex items-center gap-1 shrink-0">
-                  <span>/</span>
-                  <button
-                    onClick={() => {
-                      setCurrentPath(segPath);
-                      if (!dirCache[segPath]) void fetchDir(segPath);
-                    }}
-                    className="hover:text-neutral-300 cursor-pointer"
-                  >
-                    {seg}
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Search bar */}
-        {!openFile && (
-          <div className="border-b border-neutral-800 px-3 py-2">
-            <div className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5">
-              <Search size={12} className="shrink-0 text-neutral-500" />
-              <input
-                ref={searchRef}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter files..."
-                className="min-w-0 flex-1 bg-transparent text-xs text-neutral-100 outline-none placeholder:text-neutral-600"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="shrink-0 text-neutral-500 hover:text-white"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          {openFile ? (
-            /* File viewer/editor */
-            <div className="flex h-full flex-col">
-              {openFile.loading ? (
-                <div className="flex flex-1 items-center justify-center text-neutral-500">
-                  <LoaderCircle size={16} className="animate-spin mr-2" />
-                  <span className="text-xs">Loading file...</span>
-                </div>
-              ) : openFile.error ? (
-                <div className="p-3">
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-xs text-red-200">
-                    {openFile.error}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col min-h-0">
-                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-neutral-800 text-[10px] text-neutral-500">
-                    <span className="font-mono truncate">{openFile.path}</span>
-                    <div className="flex items-center gap-2 shrink-0 ml-2">
-                      {editContent !== null && (
-                        <span>{editContent.split("\n").length} lines</span>
-                      )}
-                      <button
-                        onClick={toggleDiff}
-                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                          diffMode
-                            ? "bg-blue-500/20 text-blue-400"
-                            : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800"
-                        }`}
-                        title="Toggle git diff view"
-                      >
-                        <GitCompare size={11} />
-                        <span>Diff</span>
-                      </button>
-                      {!diffMode && (
-                        <button
-                          onClick={saveFile}
-                          disabled={saving}
-                          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
-                          title="Save (Ctrl+S)"
-                        >
-                          <Save size={11} />
-                          <span>{saving ? "Saving..." : "Save"}</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {saveFeedback && !diffMode && (
-                    <div
-                      className={`mx-3 mt-2 rounded-lg border px-2.5 py-1.5 text-[11px] ${
-                        saveFeedback === "Saved"
-                          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
-                          : "border-red-500/20 bg-red-500/10 text-red-200"
-                      }`}
-                    >
-                      {saveFeedback}
-                    </div>
-                  )}
-
-                  {diffMode ? (
-                    diffLoading ? (
-                      <div className="flex flex-1 items-center justify-center text-neutral-500">
-                        <LoaderCircle size={16} className="animate-spin mr-2" />
-                        <span className="text-xs">Loading diff...</span>
-                      </div>
-                    ) : (
-                      <DiffViewer
-                        path={openFile.path}
-                        original={headContent ?? ""}
-                        modified={editContent ?? openFile.content}
-                      />
-                    )
-                  ) : (
-                    <CodeEditor
-                      path={openFile.path}
-                      value={editContent ?? openFile.content}
-                      onChange={(val) => setEditContent(val)}
-                      onSave={saveFile}
-                    />
-                  )}
-                </div>
-              )}
+          {!openFile ? (
+            <div className="flex flex-1 flex-col items-center justify-center h-full gap-2 text-neutral-600">
+              <FileCode2 size={32} strokeWidth={1} />
+              <p className="text-xs">Select a file from the tree to edit</p>
+            </div>
+          ) : openFile.loading ? (
+            <div className="flex flex-1 items-center justify-center text-neutral-500 h-full">
+              <LoaderCircle size={16} className="animate-spin mr-2" />
+              <span className="text-xs">Loading file...</span>
+            </div>
+          ) : openFile.error ? (
+            <div className="p-3">
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-xs text-red-200">
+                {openFile.error}
+              </div>
             </div>
           ) : (
-            /* File list */
-            <div className="px-1 py-1">
-              {currentDir?.loading && currentDir.entries.length === 0 && (
-                <div className="flex items-center justify-center py-8 text-neutral-500">
-                  <LoaderCircle size={14} className="animate-spin mr-2" />
-                  <span className="text-xs">Loading...</span>
-                </div>
-              )}
-
-              {currentDir?.error && (
-                <div className="mx-2 my-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-xs text-red-200">
-                  {currentDir.error}
-                </div>
-              )}
-
-              {filteredEntries.map((entry) => {
-                const Icon = entry.isDir
-                  ? null
-                  : getFileIcon(entry.name, entry.isDir);
-                return (
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-neutral-800 text-[10px] text-neutral-500">
+                <span className="font-mono truncate">{openFile.path}</span>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                  {editContent !== null && (
+                    <span>{editContent.split("\n").length} lines</span>
+                  )}
                   <button
-                    key={entry.path}
-                    onClick={() => handleNavigate(entry)}
-                    className="group flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[12px] text-neutral-300 transition-colors hover:bg-neutral-800/70 hover:text-white cursor-pointer"
+                    onClick={toggleDiff}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                      diffMode
+                        ? "bg-blue-500/20 text-blue-400"
+                        : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800"
+                    }`}
+                    title="Toggle git diff view"
                   >
-                    {entry.isDir ? (
-                      <Folder size={14} className="shrink-0 text-sky-400" />
-                    ) : Icon ? (
-                      <Icon
-                        size={14}
-                        className="shrink-0 text-neutral-500"
-                      />
-                    ) : (
-                      <File size={14} className="shrink-0 text-neutral-500" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                    {!entry.isDir && (
-                      <span className="shrink-0 text-[10px] text-neutral-600 group-hover:text-neutral-500">
-                        {formatSize(entry.size)}
-                      </span>
-                    )}
+                    <GitCompare size={11} />
+                    <span>Diff</span>
                   </button>
-                );
-              })}
-
-              {filteredEntries.length === 0 && !currentDir?.loading && !currentDir?.error && (
-                <div className="px-3 py-6 text-center text-xs text-neutral-500">
-                  {searchQuery ? "No matching files" : "Empty directory"}
+                  {!diffMode && (
+                    <button
+                      onClick={saveFile}
+                      disabled={saving}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Save (Ctrl+S)"
+                    >
+                      <Save size={11} />
+                      <span>{saving ? "Saving..." : "Save"}</span>
+                    </button>
+                  )}
                 </div>
+              </div>
+
+              {saveFeedback && !diffMode && (
+                <div
+                  className={`mx-3 mt-2 rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                    saveFeedback === "Saved"
+                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
+                      : "border-red-500/20 bg-red-500/10 text-red-200"
+                  }`}
+                >
+                  {saveFeedback}
+                </div>
+              )}
+
+              {diffMode ? (
+                diffLoading ? (
+                  <div className="flex flex-1 items-center justify-center text-neutral-500">
+                    <LoaderCircle size={16} className="animate-spin mr-2" />
+                    <span className="text-xs">Loading diff...</span>
+                  </div>
+                ) : (
+                  <DiffViewer
+                    path={openFile.path}
+                    original={headContent ?? ""}
+                    modified={editContent ?? openFile.content}
+                  />
+                )
+              ) : (
+                <CodeEditor
+                  path={openFile.path}
+                  value={editContent ?? openFile.content}
+                  onChange={(val) => setEditContent(val)}
+                  onSave={saveFile}
+                />
               )}
             </div>
           )}
         </div>
 
-        {/* Footer with keyboard hints */}
-        {!openFile && (
-          <div className="border-t border-neutral-800 px-3 py-1.5 flex items-center gap-3 text-[9px] text-neutral-600">
-            <span>/ search</span>
-            <span>⌫ back</span>
-            <span>r refresh</span>
-            <span>esc close</span>
-          </div>
-        )}
+        {/* Footer */}
         {openFile && (
           <div className="border-t border-neutral-800 px-3 py-1.5 flex items-center gap-3 text-[9px] text-neutral-600">
             <span>⌘S save</span>
-            <span>esc back</span>
+            <span>esc close</span>
           </div>
         )}
       </div>

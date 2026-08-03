@@ -72,6 +72,12 @@ body {
   touch-action: auto;
 }
 
+.monaco-editor,
+.monaco-editor .overflow-guard,
+.monaco-editor .monaco-scrollable-element {
+  touch-action: auto !important;
+}
+
 .terminal {
   height: 100% !important;
 }

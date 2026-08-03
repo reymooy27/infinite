@@ -1,15 +1,29 @@
-
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, LayoutGrid, Settings, Plus, Terminal, ChevronDown, ChevronUp, GitBranch, Boxes, FileCode2 } from "lucide-react";
+import {
+  RefreshCw,
+  LayoutGrid,
+  Settings,
+  Plus,
+  Terminal,
+  ChevronDown,
+  ChevronUp,
+  GitBranch,
+  Boxes,
+  FileCode2,
+} from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
-import FocusModeFileExplorer from "@/components/FocusModeFileExplorer";
+import FileExplorer from "@/components/FileExplorer";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import TerminalPrevButton from "@/components/TerminalPrevButton";
 import { getBrowserId } from "@/lib/browserId";
-import { getNextSSHTerminalTarget, getPrevSSHTerminalTarget, getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
+import {
+  getNextSSHTerminalTarget,
+  getPrevSSHTerminalTarget,
+  getVisibleSSHWindows,
+} from "@/lib/sshWindowNavigation";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
 import { useWindowStore } from "@/stores/useWindowStore";
@@ -64,9 +78,7 @@ export default function FocusModeLayout({
 
   const sshWindows = getVisibleSSHWindows(windows);
   const activeWindow =
-    sshWindows.find((w) => w.id === focusModeWindowId) ??
-    sshWindows[0] ??
-    null;
+    sshWindows.find((w) => w.id === focusModeWindowId) ?? sshWindows[0] ?? null;
   const activeWindowId = activeWindow?.id ?? null;
 
   useEffect(() => {
@@ -81,13 +93,23 @@ export default function FocusModeLayout({
   const sshMeta = activeWindow ? getSSHMetadata(activeWindow) : null;
   const tabs = sshMeta?.tabs ?? [];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "";
-  const nextTerminal = getNextSSHTerminalTarget(windows, activeWindowId, activeTabId);
-  const prevTerminal = getPrevSSHTerminalTarget(windows, activeWindowId, activeTabId);
+  const nextTerminal = getNextSSHTerminalTarget(
+    windows,
+    activeWindowId,
+    activeTabId,
+  );
+  const prevTerminal = getPrevSSHTerminalTarget(
+    windows,
+    activeWindowId,
+    activeTabId,
+  );
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
-  const connectionId = (activeTab?.connectionId ?? activeWindow?.metadata?.connectionId) as number | undefined;
-  const activeSessionId = activeWindowId && activeTabId ? `${activeWindowId}-${activeTabId}` : "";
-  const activeTerminalDirectory = useTerminalSessionStore(
-    (s) => (activeSessionId ? s.terminalCwds[activeSessionId] : undefined),
+  const connectionId = (activeTab?.connectionId ??
+    activeWindow?.metadata?.connectionId) as number | undefined;
+  const activeSessionId =
+    activeWindowId && activeTabId ? `${activeWindowId}-${activeTabId}` : "";
+  const activeTerminalDirectory = useTerminalSessionStore((s) =>
+    activeSessionId ? s.terminalCwds[activeSessionId] : undefined,
   );
   const getWindowLabel = (windowId: string) => {
     const win = sshWindows.find((item) => item.id === windowId);
@@ -207,9 +229,12 @@ export default function FocusModeLayout({
         const h = rawHeight < 80 ? 0 : rawHeight;
 
         clearTimeout(keyboardTimerRef.current);
-        keyboardTimerRef.current = setTimeout(() => {
-          setKeyboardHeight((prev) => (Math.abs(prev - h) > 2 ? h : prev));
-        }, h === 0 ? 140 : 180);
+        keyboardTimerRef.current = setTimeout(
+          () => {
+            setKeyboardHeight((prev) => (Math.abs(prev - h) > 2 ? h : prev));
+          },
+          h === 0 ? 140 : 180,
+        );
         keyboardRafRef.current = null;
       });
     };
@@ -227,7 +252,10 @@ export default function FocusModeLayout({
   }, []);
 
   return (
-    <div className="flex flex-col h-full w-full" style={{ backgroundColor: bgColor }}>
+    <div
+      className="flex flex-col h-full w-full"
+      style={{ backgroundColor: bgColor }}
+    >
       <div className="flex items-center h-10 shrink-0 bg-neutral-950 border-b border-neutral-800 px-1 gap-1">
         <div className="shrink-0 relative z-[10001]">
           <ProjectSwitcher
@@ -303,7 +331,7 @@ export default function FocusModeLayout({
       </div>
 
       {activeWindow && (
-        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center gap-2">
+        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center justify-end gap-2">
           <button
             ref={tabToggleBtnRef}
             onClick={() => setTabPanelOpen((p) => !p)}
@@ -314,9 +342,14 @@ export default function FocusModeLayout({
             }`}
           >
             <span className="max-w-[8rem] truncate">
-              {tabs.find((t) => t.id === activeTabId)?.title ?? tabs.find((t) => t.id === activeTabId)?.label ?? "Tab"}
+              {tabs.find((t) => t.id === activeTabId)?.title ??
+                tabs.find((t) => t.id === activeTabId)?.label ??
+                "Tab"}
             </span>
-            <ChevronDown size={11} className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`} />
+            <ChevronDown
+              size={11}
+              className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`}
+            />
           </button>
           <TerminalPrevButton
             onClick={handlePrevWindow}
@@ -353,7 +386,9 @@ export default function FocusModeLayout({
               setTabPanelOpen(false);
             }}
             disabled={!activeProjectId}
-            title={fileExplorerOpen ? "Hide file explorer" : "Show file explorer"}
+            title={
+              fileExplorerOpen ? "Hide file explorer" : "Show file explorer"
+            }
             className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
               fileExplorerOpen
                 ? "bg-neutral-800 text-white border-neutral-700"
@@ -366,7 +401,10 @@ export default function FocusModeLayout({
       )}
 
       {tabPanelOpen && (
-        <div ref={tabPanelRef} className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1.5 flex flex-col gap-0.5">
+        <div
+          ref={tabPanelRef}
+          className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1.5 flex flex-col gap-0.5"
+        >
           {sshWindows.map((win) => {
             const isSelected = win.id === activeWindow?.id;
             return (
@@ -431,7 +469,7 @@ export default function FocusModeLayout({
               )}
             </div>
           ))}
-            <div className="flex flex-col gap-1 border-t border-neutral-800 mt-0.5 pt-2">
+          <div className="flex flex-col gap-1 border-t border-neutral-800 mt-0.5 pt-2">
             <div
               onClick={() => {
                 handleAddTab();
@@ -446,59 +484,66 @@ export default function FocusModeLayout({
         </div>
       )}
 
-      <div className="relative flex-1 min-h-0">
-        {activeWindow ? (
-          <>
-            {tabs.map((tab) => (
-              <SSHPane
-                key={tab.id}
-                tabId={tab.id}
-                windowId={activeWindow.id}
-                connectionId={tab.connectionId ?? connectionId}
-                isActive={tab.id === activeTabId}
-                hasNavigated={tab.hasNavigated}
-                keyboardHeight={keyboardHeight}
-                refreshNonce={paneRefreshKey}
-              />
-            ))}
-          </>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full gap-4 text-neutral-600">
-            <Terminal size={48} strokeWidth={1} />
-            <div className="text-center">
-              <p className="text-sm text-neutral-400 mb-1">No terminal open</p>
-              <p className="text-xs text-neutral-600 mb-4">Add an SSH connection to get started</p>
+      <div className="relative flex flex-1 min-h-0">
+        <div className="relative flex-1 min-h-0">
+          {activeWindow ? (
+            <>
+              {tabs.map((tab) => (
+                <SSHPane
+                  key={tab.id}
+                  tabId={tab.id}
+                  windowId={activeWindow.id}
+                  connectionId={tab.connectionId ?? connectionId}
+                  isActive={tab.id === activeTabId}
+                  hasNavigated={tab.hasNavigated}
+                  keyboardHeight={keyboardHeight}
+                  refreshNonce={paneRefreshKey}
+                  isModalOpen={gitPanelOpen || fileExplorerOpen}
+                />
+              ))}
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-neutral-600">
+              <Terminal size={48} strokeWidth={1} />
+              <div className="text-center">
+                <p className="text-sm text-neutral-400 mb-1">
+                  No terminal open
+                </p>
+                <p className="text-xs text-neutral-600 mb-4">
+                  Add an SSH connection to get started
+                </p>
+                <button
+                  onClick={() => onOpenSection("ssh")}
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  Open SSH Manager
+                </button>
+              </div>
+            </div>
+          )}
+          {activeWindow && (
+            <div className="absolute right-2 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-2 md:hidden">
               <button
-                onClick={() => onOpenSection("ssh")}
-                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs rounded-lg transition-colors cursor-pointer"
+                type="button"
+                onClick={() => handlePage("pageup")}
+                title="Page up"
+                aria-label="Page up"
+                className="flex size-9 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800/80 text-white shadow-lg backdrop-blur-sm active:bg-neutral-600"
               >
-                Open SSH Manager
+                <ChevronUp size={18} strokeWidth={3} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePage("pagedown")}
+                title="Page down"
+                aria-label="Page down"
+                className="flex size-9 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800/80 text-white shadow-lg backdrop-blur-sm active:bg-neutral-600"
+              >
+                <ChevronDown size={18} strokeWidth={3} />
               </button>
             </div>
-          </div>
-        )}
-        {activeWindow && (
-          <div className="absolute right-2 top-1/2 z-40 flex -translate-y-1/2 flex-col gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={() => handlePage("pageup")}
-              title="Page up"
-              aria-label="Page up"
-              className="flex size-9 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800/80 text-white shadow-lg backdrop-blur-sm active:bg-neutral-600"
-            >
-              <ChevronUp size={18} strokeWidth={3} />
-            </button>
-            <button
-              type="button"
-              onClick={() => handlePage("pagedown")}
-              title="Page down"
-              aria-label="Page down"
-              className="flex size-9 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800/80 text-white shadow-lg backdrop-blur-sm active:bg-neutral-600"
-            >
-              <ChevronDown size={18} strokeWidth={3} />
-            </button>
-          </div>
-        )}
+          )}
+        </div>
         <FocusModeGitPanel
           key={`${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}
           open={gitPanelOpen && Boolean(activeProjectId)}
@@ -508,10 +553,13 @@ export default function FocusModeLayout({
           onOpenFile={(path) => {
             setInitialFilePath(path);
             setFileExplorerOpen(true);
+            setTimeout(() => {
+              (window as any).__focusExplorerOpenFile?.(path);
+            }, 50);
           }}
           onClose={() => setGitPanelOpen(false)}
         />
-        <FocusModeFileExplorer
+        <FileExplorer
           key={`files:${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}
           open={fileExplorerOpen && Boolean(activeProjectId)}
           projectId={activeProjectId}
