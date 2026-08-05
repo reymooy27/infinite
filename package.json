@@ -13,7 +13,7 @@
     "db:migrate": "prisma migrate dev --schema server/prisma/schema.prisma",
     "db:push": "prisma db push --schema server/prisma/schema.prisma",
     "db:studio": "prisma studio --schema server/prisma/schema.prisma",
-    "postinstall": "patch-package && prisma generate && mkdir -p node_modules/@prisma/client/.prisma && cp -r server/node_modules/.prisma/client node_modules/@prisma/client/.prisma/"
+    "postinstall": "patch-package && prisma generate"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
