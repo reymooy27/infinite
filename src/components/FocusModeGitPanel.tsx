@@ -149,6 +149,8 @@ interface FocusModeGitPanelProps {
   directory?: string;
   onOpenFile?: (path: string) => void;
   onClose: () => void;
+  /** When true, omits the aside positioning/background — for use inside an external wrapper. */
+  embedded?: boolean;
 }
 
 function getStatusText(change: GitChange) {
@@ -371,6 +373,7 @@ export default function FocusModeGitPanel({
   directory,
   onOpenFile,
   onClose,
+  embedded = false,
 }: FocusModeGitPanelProps) {
   const [data, setData] = useState<GitStatusPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1064,7 +1067,10 @@ export default function FocusModeGitPanel({
   if (!open) return null;
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-40 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
+    <aside className={embedded
+      ? "h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
+      : "absolute inset-y-0 right-0 z-40 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
+    }>
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">

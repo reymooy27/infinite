@@ -5,7 +5,16 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Copy, Download, FileTerminal, Globe, Loader2, NotepadText, RefreshCw, Upload } from "lucide-react";
+import {
+  Copy,
+  Download,
+  FileTerminal,
+  Globe,
+  Loader2,
+  NotepadText,
+  RefreshCw,
+  Upload,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
@@ -71,8 +80,9 @@ export const SSHPane = ({
     const project = s.projects.find((p) => p.id === s.activeProjectId);
     return project?.directory;
   });
-  const sessionId = tabId ? `${windowId || ""}-${tabId}` : (windowId || "");
+  const sessionId = tabId ? `${windowId || ""}-${tabId}` : windowId || "";
   const bufferKeyRef = useRef(`${windowId}-${tabId}`);
+  const ctrlWBlockedRef = useRef(false);
   const statusRef = useRef(status);
   const isActiveRef = useRef(isActive);
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
@@ -127,49 +137,55 @@ export const SSHPane = ({
     return Math.min(Math.max(0, offset), term.buffer.active.baseY);
   }, []);
 
-  const restoreViewportOffset = useCallback((offsetFromBottom?: number) => {
-    const term = termInstanceRef.current;
-    if (!term) return;
-    const buffer = term.buffer.active;
-    const offset = clampViewportOffset(
-      typeof offsetFromBottom === "number"
-        ? offsetFromBottom
-        : viewportOffsetRef.current,
-    );
-    const targetLine = offset <= 1 ? buffer.baseY : buffer.baseY - offset;
-    suppressViewportTrackingUntilRef.current = performance.now() + 260;
-    (
-      term as XTerminal & {
-        scrollToLine: (line: number, disableSmoothScroll?: boolean) => void;
+  const restoreViewportOffset = useCallback(
+    (offsetFromBottom?: number) => {
+      const term = termInstanceRef.current;
+      if (!term) return;
+      const buffer = term.buffer.active;
+      const offset = clampViewportOffset(
+        typeof offsetFromBottom === "number"
+          ? offsetFromBottom
+          : viewportOffsetRef.current,
+      );
+      const targetLine = offset <= 1 ? buffer.baseY : buffer.baseY - offset;
+      suppressViewportTrackingUntilRef.current = performance.now() + 260;
+      (
+        term as XTerminal & {
+          scrollToLine: (line: number, disableSmoothScroll?: boolean) => void;
+        }
+      ).scrollToLine(targetLine, true);
+      lastKnownViewportYRef.current = targetLine;
+      viewportOffsetRef.current = offset <= 1 ? 0 : offset;
+    },
+    [clampViewportOffset],
+  );
+
+  const scheduleViewportRestore = useCallback(
+    (offsetFromBottom?: number) => {
+      const offset = clampViewportOffset(
+        typeof offsetFromBottom === "number"
+          ? offsetFromBottom
+          : (pendingViewportRestoreRef.current ?? viewportOffsetRef.current),
+      );
+
+      pendingViewportRestoreRef.current = offset;
+
+      if (restoreViewportRafRef.current !== null) {
+        cancelAnimationFrame(restoreViewportRafRef.current);
       }
-    ).scrollToLine(targetLine, true);
-    lastKnownViewportYRef.current = targetLine;
-    viewportOffsetRef.current = offset <= 1 ? 0 : offset;
-  }, [clampViewportOffset]);
 
-  const scheduleViewportRestore = useCallback((offsetFromBottom?: number) => {
-    const offset = clampViewportOffset(
-      typeof offsetFromBottom === "number"
-        ? offsetFromBottom
-        : pendingViewportRestoreRef.current ?? viewportOffsetRef.current,
-    );
-
-    pendingViewportRestoreRef.current = offset;
-
-    if (restoreViewportRafRef.current !== null) {
-      cancelAnimationFrame(restoreViewportRafRef.current);
-    }
-
-    restoreViewportRafRef.current = requestAnimationFrame(() => {
       restoreViewportRafRef.current = requestAnimationFrame(() => {
-        const pendingOffset =
-          pendingViewportRestoreRef.current ?? viewportOffsetRef.current;
-        restoreViewportOffset(pendingOffset);
-        pendingViewportRestoreRef.current = null;
-        restoreViewportRafRef.current = null;
+        restoreViewportRafRef.current = requestAnimationFrame(() => {
+          const pendingOffset =
+            pendingViewportRestoreRef.current ?? viewportOffsetRef.current;
+          restoreViewportOffset(pendingOffset);
+          pendingViewportRestoreRef.current = null;
+          restoreViewportRafRef.current = null;
+        });
       });
-    });
-  }, [clampViewportOffset, restoreViewportOffset]);
+    },
+    [clampViewportOffset, restoreViewportOffset],
+  );
 
   const snapshotTerminalBuffer = useCallback(() => {
     const term = termInstanceRef.current;
@@ -192,38 +208,41 @@ export const SSHPane = ({
     saveBuffer(bufferKeyRef.current, lines, viewportOffset);
   }, [clampViewportOffset, getViewportOffsetFromBottom]);
 
-  const syncTerminalLayout = useCallback((recreateCanvas = false) => {
-    const term = termInstanceRef.current;
-    const fit = fitRef.current;
-    if (!term || !fit || !isActiveRef.current) return;
-    const fitWithPropose = fit as FitAddon & {
-      proposeDimensions?: () => { cols: number; rows: number } | undefined;
-    };
-    const proposed = fitWithPropose.proposeDimensions?.();
-    if (
-      !recreateCanvas &&
-      proposed &&
-      proposed.cols === term.cols &&
-      proposed.rows === term.rows
-    ) {
-      return;
-    }
-    const viewportOffset = clampViewportOffset(getViewportOffsetFromBottom());
-    viewportOffsetRef.current = viewportOffset;
-    pendingViewportRestoreRef.current = viewportOffset;
-    suppressViewportTrackingUntilRef.current = performance.now() + 320;
+  const syncTerminalLayout = useCallback(
+    (recreateCanvas = false) => {
+      const term = termInstanceRef.current;
+      const fit = fitRef.current;
+      if (!term || !fit || !isActiveRef.current) return;
+      const fitWithPropose = fit as FitAddon & {
+        proposeDimensions?: () => { cols: number; rows: number } | undefined;
+      };
+      const proposed = fitWithPropose.proposeDimensions?.();
+      if (
+        !recreateCanvas &&
+        proposed &&
+        proposed.cols === term.cols &&
+        proposed.rows === term.rows
+      ) {
+        return;
+      }
+      const viewportOffset = clampViewportOffset(getViewportOffsetFromBottom());
+      viewportOffsetRef.current = viewportOffset;
+      pendingViewportRestoreRef.current = viewportOffset;
+      suppressViewportTrackingUntilRef.current = performance.now() + 320;
 
-    fit.fit();
-    if (term.rows > 0) {
-      term.refresh(0, term.rows - 1);
-    }
-    if (recreateCanvas && term.cols > 0 && term.rows > 0) {
-      term.resize(term.cols + 1, term.rows);
-      term.resize(term.cols - 1, term.rows);
-      term.refresh(0, term.rows - 1);
-    }
-    scheduleViewportRestore(viewportOffset);
-  }, [clampViewportOffset, getViewportOffsetFromBottom, scheduleViewportRestore]);
+      fit.fit();
+      if (term.rows > 0) {
+        term.refresh(0, term.rows - 1);
+      }
+      if (recreateCanvas && term.cols > 0 && term.rows > 0) {
+        term.resize(term.cols + 1, term.rows);
+        term.resize(term.cols - 1, term.rows);
+        term.refresh(0, term.rows - 1);
+      }
+      scheduleViewportRestore(viewportOffset);
+    },
+    [clampViewportOffset, getViewportOffsetFromBottom, scheduleViewportRestore],
+  );
 
   const forceTerminalRepaint = useCallback(() => {
     syncTerminalLayout(true);
@@ -251,42 +270,75 @@ export const SSHPane = ({
     termInstanceRef.current?.focus();
   }, []);
 
-  const forwardReservedTerminalShortcut = useCallback((event: KeyboardEvent) => {
-    if (event.type !== "keydown" || !isActiveRef.current || !terminalRef.current) {
-      return false;
-    }
+  const forwardReservedTerminalShortcut = useCallback(
+    (event: KeyboardEvent) => {
+      if (
+        event.type !== "keydown" ||
+        !isActiveRef.current ||
+        !terminalRef.current
+      ) {
+        return false;
+      }
 
-    if (event.defaultPrevented) return true;
+      if (event.defaultPrevented) return true;
 
-    const active = document.activeElement;
-    if (!active || !terminalRef.current.contains(active)) {
-      return false;
-    }
+      const active = document.activeElement;
+      if (!active || !terminalRef.current.contains(active)) {
+        return false;
+      }
 
-    const isCloseShortcut =
-      (event.metaKey || event.ctrlKey) &&
-      !event.altKey &&
-      event.key.toLowerCase() === "w";
-    const isEscape = event.key === "Escape";
+      const isCloseShortcut =
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        event.key.toLowerCase() === "w";
+      const isEscape = event.key === "Escape";
 
-    if (!isCloseShortcut && !isEscape) {
-      return false;
-    }
+      if (!isCloseShortcut && !isEscape) {
+        return false;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "data",
+            data: isCloseShortcut ? "\x17" : "\x1b",
+          }),
+        );
+      }
+
+      return true;
+    },
+    [],
+  );
+
+  // Ctrl+W — handled at window capture level to block browser close-tab.
+  // Runs before xterm's textarea handler (which also calls forwardReservedTerminalShortcut).
+  const handleWindowCtrlW = useCallback((event: KeyboardEvent) => {
+    if (!isActiveRef.current) return;
+    const mod = event.metaKey || event.ctrlKey;
+    if (!mod || event.altKey || event.key.toLowerCase() !== "w") return;
 
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: "data",
-          data: isCloseShortcut ? "\x17" : "\x1b",
-        }),
-      );
-    }
+    // Set flag so beforeunload can also block the close (safety net)
+    ctrlWBlockedRef.current = true;
+    setTimeout(() => {
+      ctrlWBlockedRef.current = false;
+    }, 500);
 
-    return true;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Forward \x17 (Ctrl+W = delete word) to shell
+      wsRef.current.send(JSON.stringify({ type: "data", data: "\x17" }));
+    } else {
+      // Focus terminal; next Ctrl+W will be forwarded
+      termInstanceRef.current?.focus();
+    }
   }, []);
 
   const refreshTerminal = useCallback(() => {
@@ -294,7 +346,8 @@ export const SSHPane = ({
     const ws = wsRef.current;
     if (
       ws &&
-      (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+      (ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING)
     ) {
       ws.close();
     }
@@ -310,7 +363,7 @@ export const SSHPane = ({
 
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
-    const sessionId = tabId ? `${windowId || ""}-${tabId}` : (windowId || "");
+    const sessionId = tabId ? `${windowId || ""}-${tabId}` : windowId || "";
     return buildWsUrl("/ws/ssh", {
       connectionId,
       directory: projectDirectory || "",
@@ -343,8 +396,15 @@ export const SSHPane = ({
       }
       if (!document.hidden) {
         const ws = wsRef.current;
-        const isStale = !ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING;
-        if (isStale || statusRef.current === "disconnected" || statusRef.current === "error") {
+        const isStale =
+          !ws ||
+          ws.readyState === WebSocket.CLOSED ||
+          ws.readyState === WebSocket.CLOSING;
+        if (
+          isStale ||
+          statusRef.current === "disconnected" ||
+          statusRef.current === "error"
+        ) {
           setRetryKey((k) => k + 1);
         }
       }
@@ -355,8 +415,14 @@ export const SSHPane = ({
   }, [snapshotTerminalBuffer]);
 
   useEffect(() => {
-    const handleBeforeUnload = () => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       snapshotTerminalBuffer();
+      // Block close if triggered by Ctrl+W (browser may bypass keydown preventDefault)
+      if (ctrlWBlockedRef.current) {
+        ctrlWBlockedRef.current = false;
+        e.preventDefault();
+        e.returnValue = "";
+      }
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -367,11 +433,12 @@ export const SSHPane = ({
   // when terminal is focused — forward them to the terminal instead
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      handleWindowCtrlW(e);
       forwardReservedTerminalShortcut(e);
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [forwardReservedTerminalShortcut]);
+  }, [handleWindowCtrlW, forwardReservedTerminalShortcut]);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -434,7 +501,9 @@ export const SSHPane = ({
 
     const cached = getBuffer(bufferKeyRef.current);
     if (cached && cached.lines.length > 0) {
-      viewportOffsetRef.current = clampViewportOffset(cached.scrollOffsetFromBottom);
+      viewportOffsetRef.current = clampViewportOffset(
+        cached.scrollOffsetFromBottom,
+      );
       term.write(cached.lines.join("\r\n"), () => {
         scheduleViewportRestore(cached.scrollOffsetFromBottom);
       });
@@ -512,7 +581,20 @@ export const SSHPane = ({
       termInstanceRef.current = null;
       fitRef.current = null;
     };
-  }, [clampViewportOffset, connectionId, focusTerminal, forceTerminalRepaint, forwardReservedTerminalShortcut, getViewportOffsetFromBottom, handleTerminalResize, scheduleViewportRestore, snapshotTerminalBuffer, tabId, terminalFontSize, windowId]);
+  }, [
+    clampViewportOffset,
+    connectionId,
+    focusTerminal,
+    forceTerminalRepaint,
+    forwardReservedTerminalShortcut,
+    getViewportOffsetFromBottom,
+    handleTerminalResize,
+    scheduleViewportRestore,
+    snapshotTerminalBuffer,
+    tabId,
+    terminalFontSize,
+    windowId,
+  ]);
 
   useEffect(() => {
     if (isActive) {
@@ -529,7 +611,12 @@ export const SSHPane = ({
         if (!isModalOpenRef.current) focusTerminal();
       });
     }
-  }, [focusTerminal, forceTerminalRepaint, getViewportOffsetFromBottom, isActive]);
+  }, [
+    focusTerminal,
+    forceTerminalRepaint,
+    getViewportOffsetFromBottom,
+    isActive,
+  ]);
 
   useEffect(() => {
     if (termInstanceRef.current) {
@@ -577,7 +664,8 @@ export const SSHPane = ({
     const ws = wsRef.current;
     if (
       ws &&
-      (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+      (ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING)
     ) {
       ws.close();
     }
@@ -645,11 +733,15 @@ export const SSHPane = ({
         const term = termInstanceRef.current;
         if (!term) return;
         e.preventDefault();
-        const cellHeight = term.element?.querySelector(".xterm-rows > div")?.getBoundingClientRect().height || 16;
+        const cellHeight =
+          term.element
+            ?.querySelector(".xterm-rows > div")
+            ?.getBoundingClientRect().height || 16;
         touchScrollRemainder += (lastPos.y - touch.clientY) / cellHeight;
-        const lines = touchScrollRemainder < 0
-          ? Math.ceil(touchScrollRemainder)
-          : Math.floor(touchScrollRemainder);
+        const lines =
+          touchScrollRemainder < 0
+            ? Math.ceil(touchScrollRemainder)
+            : Math.floor(touchScrollRemainder);
         if (lines !== 0) {
           term.scrollLines(lines);
           touchScrollRemainder -= lines;
@@ -770,7 +862,8 @@ export const SSHPane = ({
     if (!text) return false;
 
     try {
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      if (!navigator.clipboard?.writeText)
+        throw new Error("Clipboard API unavailable");
       await navigator.clipboard.writeText(text);
       return true;
     } catch {}
@@ -807,7 +900,8 @@ export const SSHPane = ({
       if (!chunk) return;
 
       const source = `${osc52CarryRef.current}${chunk}`;
-      const osc52Pattern = /\u001b]52;[^;]*;([A-Za-z0-9+/=]*)(?:\u0007|\u001b\\)/g;
+      const osc52Pattern =
+        /\u001b]52;[^;]*;([A-Za-z0-9+/=]*)(?:\u0007|\u001b\\)/g;
       let match: RegExpExecArray | null = null;
 
       while ((match = osc52Pattern.exec(source))) {
@@ -839,7 +933,8 @@ export const SSHPane = ({
       if (!chunk || !sessionId) return;
 
       const source = `${osc7CarryRef.current}${chunk}`;
-      const osc7Pattern = /\u001b]7;file:\/\/[^/\u0007\u001b]*([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g;
+      const osc7Pattern =
+        /\u001b]7;file:\/\/[^/\u0007\u001b]*([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g;
       let match: RegExpExecArray | null = null;
 
       while ((match = osc7Pattern.exec(source))) {
@@ -900,7 +995,6 @@ export const SSHPane = ({
         });
       }
       setStatus("connected");
-
     };
 
     // Send ping every 20s to keep connection alive through proxies/firewalls
@@ -977,7 +1071,16 @@ export const SSHPane = ({
       }
       ws.close();
     };
-  }, [captureOsc52Clipboard, captureOsc7Directory, focusTerminal, forceTerminalRepaint, snapshotTerminalBuffer, tabId, windowId, wsUrl]);
+  }, [
+    captureOsc52Clipboard,
+    captureOsc7Directory,
+    focusTerminal,
+    forceTerminalRepaint,
+    snapshotTerminalBuffer,
+    tabId,
+    windowId,
+    wsUrl,
+  ]);
 
   const handleCopy = useCallback(async () => {
     const term = termInstanceRef.current;
@@ -1002,7 +1105,8 @@ export const SSHPane = ({
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
     try {
-      if (!navigator.clipboard?.readText) throw new Error("Clipboard read unavailable");
+      if (!navigator.clipboard?.readText)
+        throw new Error("Clipboard read unavailable");
       const text = await navigator.clipboard.readText();
       if (!text) return;
       wsRef.current.send(JSON.stringify({ type: "data", data: text }));
@@ -1036,14 +1140,14 @@ export const SSHPane = ({
         inset: 0,
         paddingBottom: mobileBottomInset ? `${mobileBottomInset}px` : undefined,
       }}
-      className={`px-2 bg-[#0a0a0a] ${
+      className={`bg-[#0a0a0a] ${
         isMobile
-          ? "pt-2"
+          ? ""
           : showTerminalShortcuts
             ? showTmuxShortcuts
-              ? "pt-2 pb-28"
-              : "pt-2 pb-16"
-            : "py-2"
+              ? "pb-28"
+              : "pb-16"
+            : ""
       }`}
     >
       <div
@@ -1060,7 +1164,9 @@ export const SSHPane = ({
       {status === "connected" && isMobile && showTerminalShortcuts && (
         <div
           className="absolute left-1 right-1 z-30"
-          style={{ bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem" }}
+          style={{
+            bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
+          }}
         >
           <QuickBar
             onSend={sendShortcut}
@@ -1074,9 +1180,18 @@ export const SSHPane = ({
           />
         </div>
       )}
-      {status === "connected" && isMobile && showTerminalShortcuts && drawerOpen && (
-        <ShortcutDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSend={sendShortcut} onTmux={sendTmux} anchorRef={terminalRef} />
-      )}
+      {status === "connected" &&
+        isMobile &&
+        showTerminalShortcuts &&
+        drawerOpen && (
+          <ShortcutDrawer
+            open={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            onSend={sendShortcut}
+            onTmux={sendTmux}
+            anchorRef={terminalRef}
+          />
+        )}
 
       {/* Desktop UI */}
       {status === "connected" && !isMobile && showTerminalShortcuts && (
@@ -1208,7 +1323,7 @@ export const SSHPane = ({
               <Download size={12} />
             </button>
           </div>
-           {showTmuxShortcuts && tmuxButtons}
+          {showTmuxShortcuts && tmuxButtons}
         </div>
       )}
       {status !== "connected" && (
@@ -1259,7 +1374,9 @@ const SSHTerminal = ({
   const focusWindow = useWindowStore((s) => s.focusWindow);
 
   const sshMeta = win ? getSSHMetadata(win) : null;
-  const tabs = sshMeta?.tabs ?? [{ id: "default", label: "Tab 1", connectionId }];
+  const tabs = sshMeta?.tabs ?? [
+    { id: "default", label: "Tab 1", connectionId },
+  ];
   const activeTabId = sshMeta?.activeTabId ?? tabs[0]?.id ?? "default";
   const [paneRefreshKey, setPaneRefreshKey] = useState(0);
   const nextTerminal = getNextSSHTerminalTarget(windows, windowId, activeTabId);
@@ -1302,7 +1419,9 @@ const SSHTerminal = ({
                 : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
             }`}
           >
-            <span className="max-w-[6rem] truncate">{tab.title ?? tab.label}</span>
+            <span className="max-w-[6rem] truncate">
+              {tab.title ?? tab.label}
+            </span>
             {tabs.length > 1 && (
               <span
                 onClick={(e) => handleCloseTab(e, tab.id)}

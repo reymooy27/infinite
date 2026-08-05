@@ -87,6 +87,15 @@ body {
   height: 0 !important;
 }
 
+.xterm .xterm-viewport {
+  overflow: hidden !important;
+  width: 100% !important;
+}
+
+.xterm .xterm-screen {
+  width: 100% !important;
+}
+
 .xterm .xterm-selection div {
   background-color: rgba(161, 161, 170, 0.22) !important;
 }

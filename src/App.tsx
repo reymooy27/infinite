@@ -4,8 +4,9 @@ import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
 import DockerPanel from "@/components/DockerPanel";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import FocusModeLayout from "@/components/FocusModeLayout";
+import GitPanel from "@/components/GitPanel";
+import CodeEditorPanel from "@/components/CodeEditorPanel";
 import NavigationBlockModal from "@/components/NavigationBlockModal";
 import NavigationIndicator from "@/components/NavigationIndicator";
 import Sidebar from "@/components/Sidebar";
@@ -30,7 +31,6 @@ export default function App() {
   const focusMode = useSettingsStore((s) => s.focusMode);
   const focusModeWindowId = useSettingsStore((s) => s.focusModeWindowId);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const savedTransformRef = useRef<{ x: number; y: number; scale: number } | null>(null);
@@ -267,31 +267,17 @@ export default function App() {
             onOpenChange={setSwitcherOpen}
             onOpenSection={(section) => setPendingSection(section)}
           />
-          <Dock
-            gitOpen={gitPanelOpen}
-            gitDisabled={!activeProjectId}
-            onToggleGit={() => setGitPanelOpen((open) => !open)}
+          <Dock />
+          <GitPanel
+            projectId={activeProjectId}
+            connectionId={gitConnectionId}
+            directory={gitDirectory}
           />
-          {gitPanelOpen && activeProjectId && (
-            <div className="fixed inset-0 z-[10040]">
-              <button
-                type="button"
-                aria-label="Close Git panel"
-                className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-                onClick={() => setGitPanelOpen(false)}
-              />
-              <div className="relative h-full">
-                <FocusModeGitPanel
-                  key={`${activeProjectId}:${gitConnectionId ?? "none"}:${gitDirectory ?? ""}`}
-                  open
-                  projectId={activeProjectId}
-                  connectionId={gitConnectionId}
-                  directory={gitDirectory}
-                  onClose={() => setGitPanelOpen(false)}
-                />
-              </div>
-            </div>
-          )}
+          <CodeEditorPanel
+            projectId={activeProjectId}
+            connectionId={gitConnectionId}
+            directory={gitDirectory}
+          />
         </>
       )}
       <DockerPanel />

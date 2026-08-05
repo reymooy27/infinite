@@ -29,6 +29,8 @@ import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useDockerStore } from "@/stores/useDockerStore";
+import { useGitStore } from "@/stores/useGitStore";
+import { useCodeEditorStore } from "@/stores/useCodeEditorStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { getSSHMetadata } from "@/types";
 
@@ -53,6 +55,10 @@ export default function FocusModeLayout({
   const bgColor = useSettingsStore((s) => s.bgColor);
   const dockerOpen = useDockerStore((s) => s.open);
   const toggleDockerPanel = useDockerStore((s) => s.togglePanel);
+  const gitPanelOpen = useGitStore((s) => s.open);
+  const toggleGitPanel = useGitStore((s) => s.togglePanel);
+  const codeEditorOpen = useCodeEditorStore((s) => s.open);
+  const toggleCodeEditorPanel = useCodeEditorStore((s) => s.togglePanel);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const focusWindow = useWindowStore((s) => s.focusWindow);
   const closeWindow = useWindowStore((s) => s.closeWindow);
@@ -63,7 +69,6 @@ export default function FocusModeLayout({
     "terminal",
   );
   const [tabPanelOpen, setTabPanelOpen] = useState(false);
-  const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [fileExplorerOpen, setFileExplorerOpen] = useState(false);
   const [initialFilePath, setInitialFilePath] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -253,10 +258,10 @@ export default function FocusModeLayout({
 
   return (
     <div
-      className="flex flex-col h-full w-full"
+      className="relative flex flex-col h-full w-full"
       style={{ backgroundColor: bgColor }}
     >
-      <div className="flex items-center h-10 shrink-0 bg-neutral-950 border-b border-neutral-800 px-1 gap-1">
+      <div className="flex items-center h-8 shrink-0 bg-neutral-950 border-b border-neutral-800 px-1 gap-1">
         <div className="shrink-0 relative z-[10001]">
           <ProjectSwitcher
             embedded
@@ -273,7 +278,7 @@ export default function FocusModeLayout({
             onClick={() => setPaneRefreshKey((k) => k + 1)}
             disabled={!activeWindow}
             title="Refresh terminal"
-            className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800"
+            className="px-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800"
           >
             <RefreshCw size={14} />
           </button>
@@ -286,7 +291,7 @@ export default function FocusModeLayout({
                 setSettingsOpen((prev) => !prev);
               }}
               title="Terminal settings"
-              className={`p-1.5 transition-colors cursor-pointer rounded ${
+              className={`px-1.5 transition-colors cursor-pointer rounded ${
                 settingsOpen
                   ? "text-white bg-neutral-800"
                   : "text-neutral-500 hover:text-white hover:bg-neutral-800"
@@ -311,7 +316,7 @@ export default function FocusModeLayout({
           <button
             onClick={toggleDockerPanel}
             title="Docker Manager"
-            className={`p-1.5 transition-colors cursor-pointer rounded ${
+            className={`px-1.5 transition-colors cursor-pointer rounded ${
               dockerOpen
                 ? "text-white bg-neutral-800"
                 : "text-neutral-500 hover:text-white hover:bg-neutral-800"
@@ -323,7 +328,7 @@ export default function FocusModeLayout({
           <button
             onClick={handleExitFocusMode}
             title="Switch to canvas mode"
-            className="p-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer rounded hover:bg-neutral-800"
+            className="px-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer rounded hover:bg-neutral-800"
           >
             <LayoutGrid size={14} />
           </button>
@@ -332,25 +337,118 @@ export default function FocusModeLayout({
 
       {activeWindow && (
         <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center justify-end gap-2">
-          <button
-            ref={tabToggleBtnRef}
-            onClick={() => setTabPanelOpen((p) => !p)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border ${
-              tabPanelOpen
-                ? "bg-neutral-800 text-white border-neutral-700"
-                : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
-            }`}
-          >
-            <span className="max-w-[8rem] truncate">
-              {tabs.find((t) => t.id === activeTabId)?.title ??
-                tabs.find((t) => t.id === activeTabId)?.label ??
-                "Tab"}
-            </span>
-            <ChevronDown
-              size={11}
-              className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`}
-            />
-          </button>
+          <div className="relative">
+            <button
+              ref={tabToggleBtnRef}
+              onClick={() => setTabPanelOpen((p) => !p)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border ${
+                tabPanelOpen
+                  ? "bg-neutral-800 text-white border-neutral-700"
+                  : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
+              }`}
+            >
+              <span className="max-w-[8rem] truncate">
+                {tabs.find((t) => t.id === activeTabId)?.title ??
+                  tabs.find((t) => t.id === activeTabId)?.label ??
+                  "Tab"}
+              </span>
+              <ChevronDown
+                size={11}
+                className={`shrink-0 transition-transform ${tabPanelOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {tabPanelOpen && (
+              <div
+                ref={tabPanelRef}
+                className="absolute top-full left-0 mt-1 z-[10000] w-64 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-y-auto"
+                style={{ maxHeight: "min(480px, calc(100vh - 60px))" }}
+              >
+                <div className="px-2 py-1.5 flex flex-col gap-0.5">
+                  {sshWindows.map((win) => {
+                    const isSelected = win.id === activeWindow?.id;
+                    return (
+                      <div
+                        key={win.id}
+                        onClick={() => {
+                          setFocusModeWindowId(win.id);
+                          setTabPanelOpen(false);
+                        }}
+                        className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
+                          isSelected
+                            ? "bg-neutral-800 text-white"
+                            : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                        }`}
+                      >
+                        <span className="truncate">
+                          {getWindowLabel(win.id)}
+                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+                            Win
+                          </span>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCloseWindow(win.id);
+                              setTabPanelOpen(false);
+                            }}
+                            className="text-neutral-600 hover:text-red-400 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            ×
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {sshWindows.length > 0 && tabs.length > 0 && (
+                    <div className="border-t border-neutral-800 mt-0.5 pt-2" />
+                  )}
+                  {tabs.map((tab) => (
+                    <div
+                      key={tab.id}
+                      onClick={() => {
+                        if (activeWindow)
+                          setActiveTerminalTab(activeWindow.id, tab.id);
+                        setTabPanelOpen(false);
+                      }}
+                      className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
+                        tab.id === activeTabId
+                          ? "bg-neutral-800 text-white"
+                          : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                      }`}
+                    >
+                      <span className="truncate">
+                        {tab.title ?? tab.label}
+                      </span>
+                      {tabs.length > 1 && (
+                        <span
+                          onClick={(e) => {
+                            handleCloseTab(e, tab.id);
+                            setTabPanelOpen(false);
+                          }}
+                          className="ml-2 shrink-0 text-neutral-600 hover:text-white transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                        >
+                          ×
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex flex-col gap-1 border-t border-neutral-800 mt-0.5 pt-2">
+                    <div
+                      onClick={() => {
+                        handleAddTab();
+                        setTabPanelOpen(false);
+                      }}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors text-neutral-500 hover:bg-neutral-800 hover:text-white"
+                    >
+                      <Plus size={12} />
+                      <span>New tab</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <TerminalPrevButton
             onClick={handlePrevWindow}
             disabled={!prevTerminal}
@@ -365,7 +463,7 @@ export default function FocusModeLayout({
           />
           <button
             onClick={() => {
-              setGitPanelOpen((prev) => !prev);
+              toggleGitPanel();
               setFileExplorerOpen(false);
               setTabPanelOpen(false);
             }}
@@ -382,7 +480,7 @@ export default function FocusModeLayout({
           <button
             onClick={() => {
               setFileExplorerOpen((prev) => !prev);
-              setGitPanelOpen(false);
+              useGitStore.getState().closePanel();
               setTabPanelOpen(false);
             }}
             disabled={!activeProjectId}
@@ -397,90 +495,6 @@ export default function FocusModeLayout({
           >
             <FileCode2 size={14} />
           </button>
-        </div>
-      )}
-
-      {tabPanelOpen && (
-        <div
-          ref={tabPanelRef}
-          className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1.5 flex flex-col gap-0.5"
-        >
-          {sshWindows.map((win) => {
-            const isSelected = win.id === activeWindow?.id;
-            return (
-              <div
-                key={win.id}
-                onClick={() => {
-                  setFocusModeWindowId(win.id);
-                  setTabPanelOpen(false);
-                }}
-                className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
-                  isSelected
-                    ? "bg-neutral-800 text-white"
-                    : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
-                }`}
-              >
-                <span className="truncate">{getWindowLabel(win.id)}</span>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
-                    Win
-                  </span>
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCloseWindow(win.id);
-                      setTabPanelOpen(false);
-                    }}
-                    className="text-neutral-600 hover:text-red-400 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
-                  >
-                    ×
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-          {sshWindows.length > 0 && tabs.length > 0 && (
-            <div className="border-t border-neutral-800 mt-0.5 pt-2" />
-          )}
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              onClick={() => {
-                if (activeWindow) setActiveTerminalTab(activeWindow.id, tab.id);
-                setTabPanelOpen(false);
-              }}
-              className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
-                tab.id === activeTabId
-                  ? "bg-neutral-800 text-white"
-                  : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
-              }`}
-            >
-              <span className="truncate">{tab.title ?? tab.label}</span>
-              {tabs.length > 1 && (
-                <span
-                  onClick={(e) => {
-                    handleCloseTab(e, tab.id);
-                    setTabPanelOpen(false);
-                  }}
-                  className="ml-2 shrink-0 text-neutral-600 hover:text-white transition-colors sm:opacity-0 sm:group-hover:opacity-100"
-                >
-                  ×
-                </span>
-              )}
-            </div>
-          ))}
-          <div className="flex flex-col gap-1 border-t border-neutral-800 mt-0.5 pt-2">
-            <div
-              onClick={() => {
-                handleAddTab();
-                setTabPanelOpen(false);
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded text-xs cursor-pointer transition-colors text-neutral-500 hover:bg-neutral-800 hover:text-white"
-            >
-              <Plus size={12} />
-              <span>New tab</span>
-            </div>
-          </div>
         </div>
       )}
 
@@ -557,7 +571,7 @@ export default function FocusModeLayout({
               (window as any).__focusExplorerOpenFile?.(path);
             }, 50);
           }}
-          onClose={() => setGitPanelOpen(false)}
+          onClose={() => useGitStore.getState().closePanel()}
         />
         <FileExplorer
           key={`files:${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}

@@ -48,6 +48,8 @@ interface FileExplorerProps {
   directory?: string;
   initialPath?: string | null;
   onClose: () => void;
+  /** When true, omits the aside positioning/background — for use inside an external wrapper. */
+  embedded?: boolean;
 }
 
 // --- Helpers ---
@@ -186,6 +188,7 @@ export default function FileExplorer({
   connectionId,
   initialPath,
   onClose,
+  embedded = false,
 }: FileExplorerProps) {
   // Tree state
   const [dirCache, setDirCache] = useState<Record<string, DirState>>({});
@@ -490,7 +493,10 @@ export default function FileExplorer({
   if (!open) return null;
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-40 flex w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl">
+    <aside className={embedded
+      ? "flex h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
+      : "absolute inset-y-0 right-0 z-40 flex w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
+    }>
       {/* --- Tree Panel (left) --- */}
       <div
         className={`flex h-full w-60 shrink-0 flex-col border-r border-neutral-800 ${

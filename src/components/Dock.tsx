@@ -1,10 +1,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Boxes, GitBranch } from "lucide-react";
+import { Boxes, GitBranch, FileCode2 } from "lucide-react";
 
 import registry from "@/apps/registry";
 import { useDockerStore } from "@/stores/useDockerStore";
+import { useGitStore } from "@/stores/useGitStore";
+import { useCodeEditorStore } from "@/stores/useCodeEditorStore";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useWindowStore } from "@/stores/useWindowStore";
@@ -247,17 +249,7 @@ function FTConnectionList({
   );
 }
 
-interface DockProps {
-  gitOpen: boolean;
-  gitDisabled: boolean;
-  onToggleGit: () => void;
-}
-
-export default function Dock({
-  gitOpen,
-  gitDisabled,
-  onToggleGit,
-}: DockProps) {
+export default function Dock() {
   const windows = useWindowStore((s) => s.windows);
   const placingAppId = useWindowStore((s) => s.placingAppId);
   const setPlacingApp = useWindowStore((s) => s.setPlacingApp);
@@ -345,6 +337,10 @@ export default function Dock({
   const sshConnections = useSSHStore((s) => s.connections);
   const dockerOpen = useDockerStore((s) => s.open);
   const toggleDockerPanel = useDockerStore((s) => s.togglePanel);
+  const gitOpen = useGitStore((s) => s.open);
+  const toggleGitPanel = useGitStore((s) => s.togglePanel);
+  const codeEditorOpen = useCodeEditorStore((s) => s.open);
+  const toggleCodeEditorPanel = useCodeEditorStore((s) => s.togglePanel);
   const fetchConnections = useSSHStore((s) => s.fetchConnections);
 
   useEffect(() => {
@@ -891,12 +887,24 @@ export default function Dock({
           <Boxes size={16} />
         </button>
 
+        {/* Code editor toggle */}
+        <button
+          onClick={toggleCodeEditorPanel}
+          title="Code Editor"
+          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+            codeEditorOpen
+              ? "bg-blue-600 text-white"
+              : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+          }`}
+        >
+          <FileCode2 size={16} />
+        </button>
+
         {/* Git manager toggle */}
         <button
-          onClick={onToggleGit}
-          disabled={gitDisabled}
+          onClick={toggleGitPanel}
           title="Git"
-          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group disabled:opacity-30 disabled:cursor-not-allowed ${
+          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
             gitOpen
               ? "bg-blue-600 text-white"
               : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
