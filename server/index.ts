@@ -654,6 +654,9 @@ wss.on("connection", async (ws, req) => {
   const windowId = u.searchParams.get("windowId") || "";
   const initialDirectory = u.searchParams.get("directory") || undefined;
   const replayOnAttach = u.searchParams.get("replay") !== "0";
+  const useTmux = u.searchParams.get("useTmux") === "1";
+  const projectId = u.searchParams.get("projectId") || "";
+  const tabId = u.searchParams.get("tabId") || "";
 
   logger.info(
     `[WS] SSH connection, connectionId: ${connId}, userId: ${userId}`,
@@ -674,6 +677,9 @@ wss.on("connection", async (ws, req) => {
       windowId,
       initialDirectory,
       replayOnAttach,
+      useTmux,
+      projectId,
+      tabId,
     );
   } catch (err) {
     const message =

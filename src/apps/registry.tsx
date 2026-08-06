@@ -74,14 +74,16 @@ export const SSHPane = ({
   );
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
+  const autoTmux = useSettingsStore((s) => s.autoTmux);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const setTerminalCwd = useTerminalSessionStore((s) => s.setTerminalCwd);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projectDirectory = useProjectStore((s) => {
     const project = s.projects.find((p) => p.id === s.activeProjectId);
     return project?.directory;
   });
-  const sessionId = tabId ? `${windowId || ""}-${tabId}` : windowId || "";
-  const bufferKeyRef = useRef(`${windowId}-${tabId}`);
+  const sessionId = [windowId || "", tabId, activeProjectId].filter(Boolean).join("-");
+  const bufferKeyRef = useRef(sessionId);
   const ctrlWBlockedRef = useRef(false);
   const statusRef = useRef(status);
   const isActiveRef = useRef(isActive);
@@ -117,8 +119,8 @@ export const SSHPane = ({
   }, []);
 
   useEffect(() => {
-    bufferKeyRef.current = `${windowId}-${tabId}`;
-  }, [windowId, tabId]);
+    bufferKeyRef.current = sessionId;
+  }, [sessionId]);
 
   const getViewportOffsetFromBottom = useCallback(() => {
     const term = termInstanceRef.current;
@@ -363,15 +365,17 @@ export const SSHPane = ({
 
   const wsUrl = useMemo(() => {
     if (!connectionId) return null;
-    const sessionId = tabId ? `${windowId || ""}-${tabId}` : windowId || "";
     return buildWsUrl("/ws/ssh", {
       connectionId,
       directory: projectDirectory || "",
       windowId: sessionId,
+      projectId: activeProjectId || "",
+      tabId,
       replay: "1",
+      useTmux: autoTmux ? "1" : "0",
       r: retryKey,
     });
-  }, [connectionId, projectDirectory, windowId, tabId, retryKey]);
+  }, [autoTmux, connectionId, projectDirectory, sessionId, activeProjectId, tabId, retryKey]);
 
   useEffect(() => {
     const handleScrollEvent = (e: Event) => {

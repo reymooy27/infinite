@@ -55,8 +55,34 @@ function buildBootstrapClearCommand(initialDirectory?: string) {
   return "if [ \"${__infinite_bootstrap_clear:-0}\" = \"1\" ]; then printf '\\033[H\\033[2J\\033[3J'; unset __infinite_bootstrap_clear; fi";
 }
 
-function buildCwdTrackingBootstrap(initialDirectory?: string) {
+function buildTmuxAutoAttachCommand(sessionName: string, initialDirectory?: string) {
+  const dirArg = initialDirectory ? ` -c ${quoteShellArg(initialDirectory)}` : "";
+  // No exec: allows CWD-tracking bootstrap to run after tmux attach/new.
+  // When the user detaches (prefix+d) the outer shell resumes with hooks active.
+  return [
+    `if command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then`,
+    `  tmux has-session -t ${quoteShellArg(sessionName)} 2>/dev/null &&`,
+    `    tmux attach-session -t ${quoteShellArg(sessionName)} ||`,
+    `    tmux new-session -s ${quoteShellArg(sessionName)}${dirArg}`,
+    `fi`,
+  ].join("\n");
+}
+
+function buildCwdTrackingBootstrap(
+  initialDirectory?: string,
+  opts?: { useTmux?: boolean; connectionId?: number; projectId?: string; tabId?: string },
+) {
+  const tmuxSessionName =
+    opts?.useTmux && opts?.connectionId
+      ? `inf-${opts.connectionId}${opts.projectId ? `-${opts.projectId}` : ""}${opts.tabId ? `-${opts.tabId}` : ""}`
+      : undefined;
+  const tmuxCmd = tmuxSessionName
+    ? buildTmuxAutoAttachCommand(tmuxSessionName, initialDirectory)
+    : "";
+
   const commands = [
+    // tmux runs FIRST; after attach/new-session exits, the outer shell resumes with the rest of the bootstrap
+    tmuxCmd,
     buildInitialDirectoryCommand(initialDirectory),
     "__infinite_emit_cwd() { printf '\\033]7;file://%s%s\\007' \"${HOSTNAME:-localhost}\" \"$PWD\"; }",
     "if [ -n \"${ZSH_VERSION-}\" ]; then",
@@ -922,6 +948,9 @@ export function createSSHSocket(
   windowId?: string,
   initialDirectory?: string,
   replayOnAttach = true,
+  useTmux = false,
+  projectId?: string,
+  tabId?: string,
 ) {
   if (windowId && sessions.has(windowId)) {
     const session = sessions.get(windowId)!;
@@ -934,9 +963,6 @@ export function createSSHSocket(
 
     // Send connected status immediately
     ws.send(JSON.stringify({ type: "connected" }));
-    if (replayOnAttach) {
-      replayRecentOutput(session);
-    }
     attachSessionSocket(session, ws, () => {
       if (sessions.get(windowId) !== session) return;
       logger.info(`[SSH] WebSocket closed for session ${windowId}, detaching...`);
@@ -948,6 +974,10 @@ export function createSSHSocket(
         sessions.delete(windowId);
       }, SESSION_TIMEOUT);
     });
+    // Replay after attach so session.ws points to the new socket
+    if (replayOnAttach) {
+      replayRecentOutput(session);
+    }
 
     return;
   }
@@ -1045,7 +1075,7 @@ export function createSSHSocket(
 
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
 
-      stream.write(buildCwdTrackingBootstrap(initialDirectory));
+      stream.write(buildCwdTrackingBootstrap(initialDirectory, { useTmux, connectionId: connection.id, projectId, tabId }));
 
       stream.on("data", (data: Buffer) => {
         appendRecentOutput(currentSession, data);

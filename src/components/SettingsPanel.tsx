@@ -61,6 +61,8 @@ export default function SettingsPanel({
   const setShowTerminalShortcuts = useSettingsStore(
     (s) => s.setShowTerminalShortcuts,
   );
+  const autoTmux = useSettingsStore((s) => s.autoTmux);
+  const setAutoTmux = useSettingsStore((s) => s.setAutoTmux);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
   const bgColor = useSettingsStore((s) => s.bgColor);
@@ -238,6 +240,12 @@ export default function SettingsPanel({
         description="Show or hide on-screen terminal shortcut buttons for control keys, arrows, and enter/tab actions."
         checked={showTerminalShortcuts}
         onChange={setShowTerminalShortcuts}
+      />
+      <ToggleRow
+        title="Auto tmux session"
+        description="Automatically attach to a persistent tmux session when opening an SSH terminal."
+        checked={autoTmux}
+        onChange={setAutoTmux}
       />
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
         <h3 className="text-[13px] font-medium text-neutral-100">

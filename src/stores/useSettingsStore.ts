@@ -54,6 +54,7 @@ const DEFAULT_QUICK_BAR: QuickBarSlot[] = [
 interface SettingsState {
   showTerminalShortcuts: boolean;
   showTmuxShortcuts: boolean;
+  autoTmux: boolean;
   terminalFontSize: number;
   bgColor: string;
   quickBarSlots: QuickBarSlot[];
@@ -62,6 +63,7 @@ interface SettingsState {
   focusModeWindowId: string | null;
   setShowTerminalShortcuts: (value: boolean) => void;
   setShowTmuxShortcuts: (value: boolean) => void;
+  setAutoTmux: (value: boolean) => void;
   setTerminalFontSize: (value: number) => void;
   setBgColor: (color: string) => void;
   setQuickBarSlots: (slots: QuickBarSlot[]) => void;
@@ -75,6 +77,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       showTerminalShortcuts: true,
       showTmuxShortcuts: true,
+      autoTmux: true,
       terminalFontSize: 13,
       bgColor: "#171717",
       quickBarSlots: DEFAULT_QUICK_BAR,
@@ -84,6 +87,7 @@ export const useSettingsStore = create<SettingsState>()(
       setShowTerminalShortcuts: (value) =>
         set({ showTerminalShortcuts: value }),
       setShowTmuxShortcuts: (value) => set({ showTmuxShortcuts: value }),
+      setAutoTmux: (value) => set({ autoTmux: value }),
       setTerminalFontSize: (value) => set({ terminalFontSize: value }),
       setBgColor: (color) => set({ bgColor: color }),
       setQuickBarSlots: (slots) => set({ quickBarSlots: slots }),
