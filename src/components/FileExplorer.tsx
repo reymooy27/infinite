@@ -41,6 +41,25 @@ type FileContent = {
   error: string;
 };
 
+
+const STORAGE_KEY = (projectId: string) => `file-explorer-state:${projectId}`;
+
+function loadState(projectId: string) {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY(projectId));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveState(projectId: string, state: any) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY(projectId), JSON.stringify(state));
+  } catch {}
+}
+
 interface FileExplorerProps {
   open: boolean;
   projectId: string | null;
@@ -110,9 +129,10 @@ function TreeNode({
       ? sortEntries(childState.entries)
       : [];
     const filteredChildren = searchQuery
-      ? sortedChildren.filter((c) =>
-          c.name.toLowerCase().includes(searchQuery),
-        )
+      ? sortedChildren.filter((c) => {
+          const fullPath = c.path ? c.path.toLowerCase() : c.name.toLowerCase();
+          return fullPath.includes(searchQuery);
+        })
       : sortedChildren;
 
     return (
@@ -191,10 +211,16 @@ export default function FileExplorer({
   embedded = false,
 }: FileExplorerProps) {
   // Tree state
-  const [dirCache, setDirCache] = useState<Record<string, DirState>>({});
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set(),
-  );
+  const [dirCache, setDirCache] = useState<Record<string, DirState>>(() => {
+    if (!projectId) return {};
+    const s = loadState(projectId);
+    return (s?.dirCache as Record<string, DirState>) ?? {};
+  });
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
+    if (!projectId) return new Set();
+    const s = loadState(projectId);
+    return new Set(s?.expandedFolders ?? []);
+  });
   const [filterText, setFilterText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [treeCollapsed, setTreeCollapsed] = useState(() =>
@@ -204,8 +230,16 @@ export default function FileExplorer({
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Editor state
-  const [openFile, setOpenFile] = useState<FileContent | null>(null);
-  const [editContent, setEditContent] = useState<string | null>(null);
+  const [openFile, setOpenFile] = useState<FileContent | null>(() => {
+    if (!projectId) return null;
+    const s = loadState(projectId);
+    return s?.openFile ?? null;
+  });
+  const [editContent, setEditContent] = useState<string | null>(() => {
+    if (!projectId) return null;
+    const s = loadState(projectId);
+    return s?.editContent ?? null;
+  });
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [diffMode, setDiffMode] = useState(false);
@@ -368,16 +402,46 @@ export default function FileExplorer({
 
   // --- Effects ---
 
+
+  // Persist state
+  useEffect(() => {
+    if (!projectId || !open) return;
+    saveState(projectId, {
+      openFile,
+      editContent,
+      expandedFolders: Array.from(expandedFolders),
+      dirCache,
+    });
+  }, [open, openFile, editContent, expandedFolders, dirCache, projectId]);
+
   // Reset on open
   useEffect(() => {
     if (!open || !projectId) return;
-    setDirCache({});
-    setExpandedFolders(new Set());
-    setOpenFile(null);
-    setEditContent(null);
-    setDiffMode(false);
-    setHeadContent(null);
-    void fetchDir("");
+    // Restore dari sessionStorage jika ada; jika tidak, reset
+    const s = loadState(projectId);
+    if (s) {
+      setDirCache(s.dirCache ?? {});
+      setExpandedFolders(new Set(s.expandedFolders ?? []));
+      if (s.openFile) {
+        setOpenFile(s.openFile);
+        setEditContent(s.editContent ?? s.openFile.content);
+        void fetchFile(s.openFile.path);
+      } else {
+        setOpenFile(null);
+        setEditContent(null);
+        setDiffMode(false);
+        setHeadContent(null);
+        void fetchDir("");
+      }
+    } else {
+      setDirCache({});
+      setExpandedFolders(new Set());
+      setOpenFile(null);
+      setEditContent(null);
+      setDiffMode(false);
+      setHeadContent(null);
+      void fetchDir("");
+    }
   }, [open, projectId, fetchDir]);
 
   // Auto-open initialPath
@@ -436,14 +500,36 @@ export default function FileExplorer({
 
   // --- Derived state ---
 
+  // Flatten cached entries recursively (only folders already loaded into dirCache)
+  const flattenCachedEntries = useCallback((): FileEntry[] => {
+    const result: FileEntry[] = [];
+    const seen = new Set<string>();
+    const walk = (entries: FileEntry[]) => {
+      for (const entry of entries) {
+        if (seen.has(entry.path)) continue;
+        seen.add(entry.path);
+        result.push(entry);
+        if (entry.isDir) {
+          const child = dirCache[entry.path];
+          if (child?.entries) walk(child.entries);
+        }
+      }
+    };
+    if (dirCache[""]?.entries) walk(dirCache[""].entries);
+    return result;
+  }, [dirCache]);
+
   const rootEntries = dirCache[""]?.entries
     ? sortEntries(dirCache[""].entries)
     : [];
-  const filteredRoot = searchQuery
-    ? rootEntries.filter((e) =>
-        e.name.toLowerCase().includes(searchQuery),
-      )
-    : rootEntries;
+
+  // When filtering, flatten all cached entries; otherwise show root tree as-is
+  const filteredFlat = searchQuery
+    ? flattenCachedEntries().filter((e) => {
+        const fullPath = e.path ? e.path.toLowerCase() : e.name.toLowerCase();
+        return fullPath.includes(searchQuery);
+      })
+    : null;
 
   const isModified =
     editContent !== null &&
@@ -574,25 +660,63 @@ export default function FileExplorer({
             </div>
           )}
 
-          {filteredRoot.map((entry) => (
-            <TreeNode
-              key={entry.path}
-              entry={entry}
-              depth={0}
-              dirCache={dirCache}
-              expandedFolders={expandedFolders}
-              activeFilePath={openFile?.path ?? null}
-              searchQuery={searchQuery}
-              onToggleFolder={toggleFolder}
-              onFileSelect={handleFileSelect}
-            />
-          ))}
+          {filteredFlat ? (
+            filteredFlat.length === 0 ? (
+              <div className="px-3 py-6 text-center text-xs text-neutral-500">
+                No matching files
+              </div>
+            ) : (
+              filteredFlat.map((entry) => {
+                const Icon = entry.isDir ? Folder : getFileIcon(entry.name);
+                const isActive = !entry.isDir && entry.path === openFile?.path;
+                return (
+                  <button
+                    key={entry.path}
+                    onClick={() =>
+                      entry.isDir
+                        ? toggleFolder(entry.path)
+                        : handleFileSelect(entry.path)
+                    }
+                    className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[12px] transition-colors cursor-pointer ${
+                      isActive
+                        ? "bg-neutral-800 text-white"
+                        : "text-neutral-300 hover:bg-neutral-800/70 hover:text-white"
+                    }`}
+                    style={{ paddingLeft: 8, paddingRight: 8 }}
+                    title={entry.path}
+                  >
+                    {entry.isDir ? (
+                      <Folder size={14} className="shrink-0 text-sky-400" />
+                    ) : (
+                      <Icon size={14} className="shrink-0 text-neutral-500" />
+                    )}
+                    <span className="min-w-0 truncate font-mono">{entry.path}</span>
+                    </button>
+                  );
+              })
+            )
+          ) : (
+            rootEntries.map((entry) => (
+              <TreeNode
+                key={entry.path}
+                entry={entry}
+                depth={0}
+                dirCache={dirCache}
+                expandedFolders={expandedFolders}
+                activeFilePath={openFile?.path ?? null}
+                searchQuery={searchQuery}
+                onToggleFolder={toggleFolder}
+                onFileSelect={handleFileSelect}
+              />
+            ))
+          )}
 
-          {filteredRoot.length === 0 &&
+          {filteredFlat === null &&
+            rootEntries.length === 0 &&
             !dirCache[""]?.loading &&
             !dirCache[""]?.error && (
               <div className="px-3 py-6 text-center text-xs text-neutral-500">
-                {filterText ? "No matching files" : "Empty project"}
+                Empty project
               </div>
             )}
         </div>
