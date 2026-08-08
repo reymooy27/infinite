@@ -15,6 +15,9 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 - **File transfer** (SFTP upload/download) over a saved SSH connection
 - **Docker manager** — control containers/images/volumes on a remote host over SSH
 - **Git view** — status tree, diff viewer, and commit/push/pull/stash per project
+- **Code editor** — VS Code-like Monaco editor (syntax highlight, autocomplete,
+  multi-cursor) with save, git diff overlay, and recursive file filter across
+  expanded subfolders
 - **9router usage analytics** — read-only dashboard of AI/LLM traffic
   (requests, tokens, cost, breakdown by model/provider/key/endpoint)
   pulled live from a [9router](https://9router.dev) service
@@ -25,6 +28,9 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
   shortcut buttons, and a configurable mobile quick bar
 - **Focus mode** — distraction-free layout with the terminal, git sidebar, and
   Docker toggle
+- **tmux support** — auto-attach a persistent tmux session on SSH connect, plus
+  on-screen tmux keypad (next/prev window, new, split vertical/horizontal,
+  zoom, kill) configurable via Settings
 - Mobile **quick bar** and **shortcut drawer** for terminal/tmux key pads
 - All state persisted in a local SQLite file — no external database required
 - **Docker support** — multi-container setup with nginx frontend + Node.js backend
@@ -84,6 +90,21 @@ Per active project: working-tree status (staged / unstaged / untracked), a diff
 viewer, and stage / unstage / discard / commit / branch / push / pull / stash
 actions. Reached via the Focus Mode git toggle.
 
+### Code editor
+
+A Monaco-based editor for the active project's directory:
+
+- **Syntax highlighting**, autocomplete, multi-cursor, and standard Monaco
+  keybindings
+- **Save** (`⌘S` / `Ctrl+S`) writes back to the remote host over SSH/SFTP
+- **Git diff overlay** — toggle a side-by-side diff against `HEAD` to review
+  unsaved changes
+- **Recursive file filter** — the tree's search box matches file paths inside
+  any already-expanded subfolder; when a query is active, matches render as a
+  flat list with the full path
+- **Persistent session** — open file, unsaved content, expanded folders, and
+  cached directory listings survive reloads
+
 ### Usage analytics (9router)
 
 A read-only dashboard of AI/LLM API traffic. Infinite does not store
@@ -125,6 +146,13 @@ mobile UX:
   enter/tab)
 - **quick bar buttons** — pick which terminal and tmux shortcuts
   (up to 9) show in the mobile quick bar
+- **auto tmux session** — automatically attach to a persistent tmux
+  session when opening an SSH terminal so reconnecting doesn't lose
+  running processes
+
+The mobile **Shortcut drawer** adds a dedicated **Tmux** tab with a full
+keypad: next/prev window, new window, split vertical/horizontal, zoom
+pane, kill pane.
 
 ### Canvas navigation aids
 
