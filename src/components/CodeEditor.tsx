@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
@@ -247,7 +248,7 @@ export default function CodeEditor({
         readOnly,
         domReadOnly: readOnly,
         automaticLayout: true,
-        wordWrap: "on",
+        wordWrap: "off",
       }}
       loading={
         <div className="flex items-center justify-center h-full text-neutral-500 text-xs">

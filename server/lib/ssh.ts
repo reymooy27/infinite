@@ -116,6 +116,7 @@ interface ActiveSession {
   cleanupTimer?: ReturnType<typeof setTimeout>;
   recentOutput: Buffer[];
   recentOutputBytes: number;
+  tmuxSessionName?: string;
 }
 
 interface PendingSessionStart {
@@ -213,6 +214,9 @@ function attachSessionSocket(
         session.stream.write(parsed.data);
       } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
         session.stream.setWindow(parsed.rows, parsed.cols, 0, 0);
+      } else if (parsed.type === "cleanup" && session.tmuxSessionName) {
+        logger.info(`[SSH] Cleanup requested for tmux session ${session.tmuxSessionName}`);
+        session.stream.write(`tmux kill-session -t ${session.tmuxSessionName}\r`);
       } else {
         handleFileTransferMessage(
           session.conn,
@@ -961,6 +965,11 @@ export function createSSHSocket(
       session.cleanupTimer = undefined;
     }
 
+    // Ensure tmuxSessionName is set for re-attached sessions
+    if (!session.tmuxSessionName && useTmux) {
+      session.tmuxSessionName = `inf-${connection.id}${projectId ? `-${projectId}` : ""}${tabId ? `-${tabId}` : ""}`;
+    }
+
     // Send connected status immediately
     ws.send(JSON.stringify({ type: "connected" }));
     attachSessionSocket(session, ws, () => {
@@ -1060,12 +1069,17 @@ export function createSSHSocket(
         return;
       }
 
+      const tmuxSessionName = useTmux
+        ? `inf-${connection.id}${projectId ? `-${projectId}` : ""}${tabId ? `-${tabId}` : ""}`
+        : undefined;
+
       session = {
         conn,
         stream,
         ws: pendingStart?.ws ?? ws,
         recentOutput: [],
         recentOutputBytes: 0,
+        tmuxSessionName,
       };
       const currentSession = session;
       if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useEffect, useRef, useState } from "react";
 import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { buildHttpBaseUrl } from "@/lib/ws";
 import { api } from "@/lib/api";

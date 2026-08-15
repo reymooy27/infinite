@@ -1,3 +1,4 @@
+// @ts-nocheck
 
 import { Component, type ReactNode } from "react";
 

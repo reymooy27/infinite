@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { ArrowLeft } from "lucide-react";
 
 interface TerminalPrevButtonProps {

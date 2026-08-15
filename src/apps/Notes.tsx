@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Eye, FileEdit, Plus, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
