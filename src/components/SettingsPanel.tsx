@@ -1,10 +1,11 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useSettingsStore,
   AVAILABLE_SHORTCUTS,
   AVAILABLE_TMUX_SHORTCUTS,
 } from "@/stores/useSettingsStore";
+import { enablePush, disablePush, isPushEnabled } from "@/lib/push";
 import { DEFAULT_ROUTER_USAGE_BASE_URL, normalizeRouterUsageBaseUrl } from "@/lib/routerUsage";
 
 interface SettingsPanelProps {
@@ -72,6 +73,25 @@ export default function SettingsPanel({
   const setQuickBarSlots = useSettingsStore((s) => s.setQuickBarSlots);
   const routerUsageBaseUrl = useSettingsStore((s) => s.routerUsageBaseUrl);
   const setRouterUsageBaseUrl = useSettingsStore((s) => s.setRouterUsageBaseUrl);
+
+  // Push state lives in the browser (permission + SW subscription), not the store.
+  const [pushOn, setPushOn] = useState(false);
+  const [pushError, setPushError] = useState("");
+  useEffect(() => {
+    void isPushEnabled().then(setPushOn);
+  }, []);
+
+  const togglePush = async (next: boolean) => {
+    setPushError("");
+    if (!next) {
+      await disablePush();
+      setPushOn(false);
+      return;
+    }
+    const result = await enablePush();
+    if (result.ok) setPushOn(true);
+    else setPushError(result.reason);
+  };
 
   if (currentPage === "root") {
     return (
@@ -248,6 +268,19 @@ export default function SettingsPanel({
         checked={autoTmux}
         onChange={setAutoTmux}
       />
+      <div>
+        <ToggleRow
+          title="Push notifications"
+          description="Get an OS notification when Claude Code finishes, even with this tab closed. Needs HTTPS or localhost."
+          checked={pushOn}
+          onChange={(v) => void togglePush(v)}
+        />
+        {pushError && (
+          <p role="alert" className="mt-1 px-3 text-[11px] text-red-400">
+            {pushError}
+          </p>
+        )}
+      </div>
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
         <h3 className="text-[13px] font-medium text-neutral-100">
           Quick bar buttons
