@@ -180,6 +180,72 @@ When many windows are spread across the infinite canvas:
 - **Quick bar** and **shortcut drawer** surface copy/paste and terminal/tmux/nav
   key pads for touch devices.
 
+### Notifications
+
+Two independent paths, and you may want both:
+
+**Terminal bell — works out of the box.** Claude Code rings the bell (`\x07`)
+when it finishes a turn. Infinite forwards that to an OS notification whenever
+the tab is in the background. Nothing to configure; just allow notifications
+when the browser asks. Only works while a tab is still open.
+
+**Web push — survives a closed tab.** Needs a one-time setup on the server plus
+a Stop hook in your own Claude Code config.
+
+1. Generate a VAPID keypair and a shared token:
+
+   ```bash
+   npx web-push generate-vapid-keys
+   openssl rand -hex 32          # for PUSH_TOKEN
+   ```
+
+2. Put them in the server `.env` and restart:
+
+   ```env
+   VAPID_PUBLIC_KEY=<public key>
+   VAPID_PRIVATE_KEY=<private key>
+   VAPID_SUBJECT=mailto:you@example.com
+   PUSH_TOKEN=<the hex token>
+   ```
+
+   Without `VAPID_*` the push routes stay up but report `enabled: false`, and the
+   toggle in Settings reports the missing key instead of failing silently.
+
+3. Open **Settings → Push notifications** and turn it on. This needs a secure
+   context: `https://` or `localhost`. On plain HTTP over a LAN IP the browser
+   does not expose `PushManager` at all.
+
+4. Add a Stop hook to `~/.claude/settings.json` **on the machine where you run
+   `claude`** — that is the SSH remote, not your laptop, so the URL has to be
+   reachable from there:
+
+   ```json
+   {
+     "hooks": {
+       "Stop": [
+         {
+           "hooks": [
+             {
+               "type": "command",
+               "command": "jq -c '{title: (\"Claude Code — \" + (.cwd | split(\"/\") | last)), body: ((.last_assistant_message // \"Turn finished\")[0:300])}' | curl -sS -m 5 -X POST http://localhost:7891/api/push/notify -H 'Authorization: Bearer <PUSH_TOKEN>' -H 'Content-Type: application/json' -d @-"
+             }
+           ]
+         }
+       ]
+     }
+   }
+   ```
+
+   Claude Code pipes the hook a JSON object on stdin; `jq` turns it into the
+   notification payload. `.cwd` becomes the project name (last path segment) and
+   `.last_assistant_message` — the final assistant text of the turn — becomes the
+   body, so you see *what* was done, not just *that* something finished. The
+   `// "Turn finished"` fallback covers Claude Code versions that don't send that
+   field. Requires `jq` on the remote.
+
+Both paths use the notification tag `claude-code`, so if a tab happens to be
+open you get one notification, not two.
+
 ## Quick Start (Docker — recommended)
 
 The fastest way to run Infinite. Two containers: nginx (frontend) + Node.js
@@ -321,6 +387,8 @@ Variable reference:
 - `VITE_WS_URL`: leave empty for local dev; set to your server
   URL when the frontend and WS server run on different origins
 - `ALLOWED_ORIGINS`: origins allowed to call the Express/WebSocket server
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` / `PUSH_TOKEN`:
+  optional, only for web push — see [Notifications](#notifications)
 
 ### 2. Set up the database
 
