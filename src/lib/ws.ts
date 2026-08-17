@@ -16,8 +16,11 @@ export function buildWsUrl(
       base = `${proto}//${configured.replace(/^https?:\/\//, "")}`;
     }
   } else if (typeof window !== "undefined") {
+    // Same-origin: nginx (prod) and vite (dev) both proxy /ws to the backend.
+    // Pointing at :7891 directly would break under HTTPS — that port is plain
+    // HTTP, so wss:// to it never completes the TLS handshake.
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    base = `${proto}//${window.location.hostname}:7891`;
+    base = `${proto}//${window.location.host}`;
   } else {
     base = "ws://localhost:7891";
   }
@@ -46,5 +49,5 @@ export function buildHttpBaseUrl(): string {
     }
     return `${window.location.protocol}//${configured.replace(/^https?:\/\//, "")}`;
   }
-  return `${window.location.protocol}//${window.location.hostname}:7891`;
+  return `${window.location.protocol}//${window.location.host}`;
 }
