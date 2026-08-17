@@ -1,5 +1,8 @@
 generator client {
   provider = "prisma-client-js"
+  // Runtime entry is .server-build/index.js at the repo root, so it resolves
+  // @prisma/client from the root node_modules — generate there, not into server/.
+  output   = "../../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -48,6 +51,17 @@ model Note {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("notes")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userId    String   @default("local-user") @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("push_subscriptions")
 }
 
 model Project {
