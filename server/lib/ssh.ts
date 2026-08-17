@@ -61,9 +61,18 @@ function buildTmuxAutoAttachCommand(sessionName: string, initialDirectory?: stri
   // When the user detaches (prefix+d) the outer shell resumes with hooks active.
   return [
     `if command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then`,
-    `  tmux has-session -t ${quoteShellArg(sessionName)} 2>/dev/null &&`,
-    `    tmux attach-session -t ${quoteShellArg(sessionName)} ||`,
-    `    tmux new-session -s ${quoteShellArg(sessionName)}${dirArg}`,
+    // Create detached first: set-option needs a running server, and starting one
+    // with a bare `set-option -g` fails ("server exited unexpectedly").
+    `  tmux has-session -t ${quoteShellArg(sessionName)} 2>/dev/null ||`,
+    `    tmux new-session -d -s ${quoteShellArg(sessionName)}${dirArg}`,
+    // set-titles defaults to off, which swallows the OSC 0/2 title escape and
+    // leaves xterm.js's onTitleChange silent — that title is what names the tab
+    // and the bell notification. set-titles-string defaults to a decorated
+    // "#S:#I:#W - "#T"" form; #T alone passes the pane title through verbatim.
+    // Scoped to this session (no -g) so the user's global tmux config is untouched.
+    `  tmux set-option -t ${quoteShellArg(sessionName)} set-titles on 2>/dev/null`,
+    `  tmux set-option -t ${quoteShellArg(sessionName)} set-titles-string '#T' 2>/dev/null`,
+    `  tmux attach-session -t ${quoteShellArg(sessionName)}`,
     `fi`,
   ].join("\n");
 }
