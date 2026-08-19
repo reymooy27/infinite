@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import type { AppId, WindowData, TerminalTab } from "@/types";
 import { isAppId, normalizeWindow } from "@/types";
 import { canvasTransform } from "@/lib/canvasTransform";
+import { triggerTerminalCleanup, triggerTerminalTabCleanup } from "@/lib/terminalCleanup";
 
 interface WindowState {
   windows: WindowData[];
@@ -115,6 +116,15 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   },
 
   closeWindow: (id) => {
+    const state = get();
+    const window = state.windows.find((w) => w.id === id);
+    if (window?.appId === "ssh" && window.metadata?.tabs) {
+      for (const tab of window.metadata.tabs as TerminalTab[]) {
+        triggerTerminalTabCleanup(id, tab.id);
+      }
+    } else {
+      triggerTerminalCleanup(id);
+    }
     set((state) => ({
       windows: state.windows.filter((w) => w.id !== id),
     }));
@@ -314,6 +324,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   },
 
   closeTerminalTab: (windowId, tabId) => {
+    triggerTerminalTabCleanup(windowId, tabId);
     set((state) => ({
       windows: state.windows.map((w) => {
         if (w.id !== windowId || w.appId !== "ssh") return w;

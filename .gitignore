@@ -38,3 +38,5 @@ server/node_modules/
 .next/
 profiles/
 graphify-out/
+
+.omo/

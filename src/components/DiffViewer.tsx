@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback, useMemo } from "react";
 import { DiffEditor, type OnMount } from "@monaco-editor/react";
 

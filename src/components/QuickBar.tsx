@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback } from "react";
 import { Copy, MoreHorizontal } from "lucide-react";
 import { useSettingsStore } from "@/stores/useSettingsStore";

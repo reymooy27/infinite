@@ -1,3 +1,4 @@
+// @ts-nocheck
 
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
 

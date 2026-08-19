@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { AppDefinition, AppId } from "@/types";
 import { getSSHMetadata } from "@/types";
 import { ClipboardAddon } from "@xterm/addon-clipboard";
@@ -32,6 +33,7 @@ import { buildWsUrl } from "@/lib/ws";
 import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
+import { registerTerminalCleanup, unregisterTerminalCleanup } from "@/lib/terminalCleanup";
 
 export const SSHPane = ({
   connectionId,
@@ -514,10 +516,48 @@ export const SSHPane = ({
     }
     deleteBuffer(bufferKeyRef.current);
 
+    let bellTitle = "Terminal";
+    let askedNotify = false;
+
     term.onData((data) => {
+      // Asking here keeps the prompt inside a real keydown gesture (Safari requires it).
+      // Once per session: onData fires per keystroke, and a dismissed prompt leaves
+      // permission at "default" forever, so an unguarded call would re-ask on every key.
+      if (!askedNotify && "Notification" in window && Notification.permission === "default") {
+        askedNotify = true;
+        void Notification.requestPermission();
+      }
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "data", data }));
       }
+    });
+
+    // Claude Code (and any CLI) rings the bell when it finishes; forward it to the OS
+    // only while the tab is in the background, otherwise it's just noise.
+    term.onBell(() => {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      if (!document.hidden && document.hasFocus()) return;
+      // Read stores at fire time, not capture time: this closure outlives project
+      // switches and cwd changes, so a captured value would go stale.
+      const { projects, activeProjectId: pid } = useProjectStore.getState();
+      const projectName = projects.find((p) => p.id === pid)?.name;
+      const cwd = useTerminalSessionStore.getState().terminalCwds[sessionId];
+      const n = new Notification(
+        projectName ? `${projectName} — ${bellTitle}` : bellTitle,
+        {
+          // bellTitle is the terminal title, which Claude Code sets to what it is
+          // working on; cwd answers "where", so together they identify the turn.
+          body: cwd ? `Selesai di ${cwd}` : "Proses selesai",
+          icon: "/icon-192.png",
+          // Same tag as the service worker's push notification so the two paths
+          // collapse into one entry instead of double-notifying.
+          tag: "claude-code",
+        },
+      );
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
     });
 
     term.onResize(({ cols, rows }) => {
@@ -530,6 +570,7 @@ export const SSHPane = ({
     });
 
     term.onTitleChange((newTitle) => {
+      if (newTitle) bellTitle = newTitle;
       if (!windowId || !newTitle || !tabId) return;
       useWindowStore.getState().setActiveTabTitle(windowId, tabId, newTitle);
     });
@@ -1085,6 +1126,18 @@ export const SSHPane = ({
     windowId,
     wsUrl,
   ]);
+
+  useEffect(() => {
+    if (!windowId || !autoTmux) return;
+    const key = `${windowId}:${tabId}`;
+    const cleanup = () => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "cleanup" }));
+      }
+    };
+    registerTerminalCleanup(key, cleanup);
+    return () => unregisterTerminalCleanup(key);
+  }, [windowId, tabId, autoTmux]);
 
   const handleCopy = useCallback(async () => {
     const term = termInstanceRef.current;

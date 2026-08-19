@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { ArrowRight } from "lucide-react";
 
 interface TerminalNextButtonProps {

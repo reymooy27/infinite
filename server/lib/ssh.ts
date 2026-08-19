@@ -61,9 +61,18 @@ function buildTmuxAutoAttachCommand(sessionName: string, initialDirectory?: stri
   // When the user detaches (prefix+d) the outer shell resumes with hooks active.
   return [
     `if command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then`,
-    `  tmux has-session -t ${quoteShellArg(sessionName)} 2>/dev/null &&`,
-    `    tmux attach-session -t ${quoteShellArg(sessionName)} ||`,
-    `    tmux new-session -s ${quoteShellArg(sessionName)}${dirArg}`,
+    // Create detached first: set-option needs a running server, and starting one
+    // with a bare `set-option -g` fails ("server exited unexpectedly").
+    `  tmux has-session -t ${quoteShellArg(sessionName)} 2>/dev/null ||`,
+    `    tmux new-session -d -s ${quoteShellArg(sessionName)}${dirArg}`,
+    // set-titles defaults to off, which swallows the OSC 0/2 title escape and
+    // leaves xterm.js's onTitleChange silent — that title is what names the tab
+    // and the bell notification. set-titles-string defaults to a decorated
+    // "#S:#I:#W - "#T"" form; #T alone passes the pane title through verbatim.
+    // Scoped to this session (no -g) so the user's global tmux config is untouched.
+    `  tmux set-option -t ${quoteShellArg(sessionName)} set-titles on 2>/dev/null`,
+    `  tmux set-option -t ${quoteShellArg(sessionName)} set-titles-string '#T' 2>/dev/null`,
+    `  tmux attach-session -t ${quoteShellArg(sessionName)}`,
     `fi`,
   ].join("\n");
 }
@@ -116,6 +125,7 @@ interface ActiveSession {
   cleanupTimer?: ReturnType<typeof setTimeout>;
   recentOutput: Buffer[];
   recentOutputBytes: number;
+  tmuxSessionName?: string;
 }
 
 interface PendingSessionStart {
@@ -213,6 +223,9 @@ function attachSessionSocket(
         session.stream.write(parsed.data);
       } else if (parsed.type === "resize" && parsed.cols && parsed.rows) {
         session.stream.setWindow(parsed.rows, parsed.cols, 0, 0);
+      } else if (parsed.type === "cleanup" && session.tmuxSessionName) {
+        logger.info(`[SSH] Cleanup requested for tmux session ${session.tmuxSessionName}`);
+        session.stream.write(`tmux kill-session -t ${session.tmuxSessionName}\r`);
       } else {
         handleFileTransferMessage(
           session.conn,
@@ -961,6 +974,11 @@ export function createSSHSocket(
       session.cleanupTimer = undefined;
     }
 
+    // Ensure tmuxSessionName is set for re-attached sessions
+    if (!session.tmuxSessionName && useTmux) {
+      session.tmuxSessionName = `inf-${connection.id}${projectId ? `-${projectId}` : ""}${tabId ? `-${tabId}` : ""}`;
+    }
+
     // Send connected status immediately
     ws.send(JSON.stringify({ type: "connected" }));
     attachSessionSocket(session, ws, () => {
@@ -1060,12 +1078,17 @@ export function createSSHSocket(
         return;
       }
 
+      const tmuxSessionName = useTmux
+        ? `inf-${connection.id}${projectId ? `-${projectId}` : ""}${tabId ? `-${tabId}` : ""}`
+        : undefined;
+
       session = {
         conn,
         stream,
         ws: pendingStart?.ws ?? ws,
         recentOutput: [],
         recentOutputBytes: 0,
+        tmuxSessionName,
       };
       const currentSession = session;
       if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {
