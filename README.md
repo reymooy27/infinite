@@ -154,6 +154,67 @@ The mobile **Shortcut drawer** adds a dedicated **Tmux** tab with a full
 keypad: next/prev window, new window, split vertical/horizontal, zoom
 pane, kill pane.
 
+### Recommended tmux config
+
+For the best experience with Infinite's tmux integration, add this to
+`~/.tmux.conf` on the remote host:
+
+```tmux
+# Enable mouse (scroll, select panes, resize)
+set -g mouse on
+
+# Start windows/panes at 1 (easier for keypad)
+set -g base-index 1
+setw -g pane-base-index 1
+
+# Renumber windows when one is closed
+set -g renumber-windows on
+
+# Increase history limit
+set -g history-limit 50000
+
+# Faster escape sequence (helps with vim/nvim)
+set -sg escape-time 10
+
+# Better prefix (Ctrl-a instead of Ctrl-b)
+unbind C-b
+set -g prefix C-a
+bind C-a send-prefix
+
+# Split bindings that match Infinite's keypad
+bind | split-window -h -c "#{pane_current_path}"
+bind - split-window -v -c "#{pane_current_path}"
+
+# Pane navigation (vim-style)
+bind h select-pane -L
+bind j select-pane -D
+bind k select-pane -U
+bind l select-pane -R
+
+# Reload config
+bind r source-file ~/.tmux.conf \; display "Config reloaded"
+```
+
+**Why these settings matter for Infinite:**
+
+| Setting | Purpose |
+|---------|---------|
+| `mouse on` | Touch scroll/selection works in xterm.js |
+| `base-index 1` | Window numbers match keypad (1-9) |
+| `renumber-windows on` | No gaps after killing windows |
+| `escape-time 10` | No delay when pressing Escape in vim |
+| `split -c "#{pane_current_path}"` | New panes open in same directory |
+
+The on-screen tmux keypad in Infinite sends these default bindings:
+- `Ctrl-a n` / `Ctrl-a p` — next/prev window
+- `Ctrl-a c` — new window
+- `Ctrl-a |` — split horizontal
+- `Ctrl-a -` — split vertical
+- `Ctrl-a z` — zoom pane
+- `Ctrl-a x` — kill pane
+
+If you change the prefix in tmux, update **Settings → Terminal → Quick bar buttons** accordingly.
+
 ### Canvas navigation aids
 
 When many windows are spread across the infinite canvas:
