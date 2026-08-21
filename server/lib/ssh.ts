@@ -45,36 +45,36 @@ function quoteShellArg(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+// APC string the terminal never renders — marks the end of the injected bootstrap.
+// The server withholds all PTY output until it sees this, then forwards only what
+// follows, so bootstrap commands never reach the browser (see gate in stream.on("data")).
+const BOOTSTRAP_SENTINEL = "\x1b_INFBOOT\x1b\\";
+// Never stay blank: if the sentinel is somehow missed, open the gate anyway.
+const BOOTSTRAP_GATE_TIMEOUT_MS = 4000;
+// Tags bootstrap lines so each shell's own history filter drops them. Uses `: TAG`
+// (a no-op arg) not `# TAG` — zsh raises a parse error on `#` inside a pasted compound line.
+const HISTORY_TAG = "__INFBOOT_HIST__";
+
 function buildInitialDirectoryCommand(initialDirectory?: string) {
   if (!initialDirectory) return "";
-  return `if cd -- ${quoteShellArg(initialDirectory)}; then __infinite_bootstrap_clear=1; else __infinite_bootstrap_clear=0; fi`;
-}
-
-function buildBootstrapClearCommand(initialDirectory?: string) {
-  if (!initialDirectory) return "";
-  return "if [ \"${__infinite_bootstrap_clear:-0}\" = \"1\" ]; then printf '\\033[H\\033[2J\\033[3J'; unset __infinite_bootstrap_clear; fi";
+  return `cd -- ${quoteShellArg(initialDirectory)} 2>/dev/null`;
 }
 
 function buildTmuxAutoAttachCommand(sessionName: string, initialDirectory?: string) {
   const dirArg = initialDirectory ? ` -c ${quoteShellArg(initialDirectory)}` : "";
-  // No exec: allows CWD-tracking bootstrap to run after tmux attach/new.
-  // When the user detaches (prefix+d) the outer shell resumes with hooks active.
-  return [
-    `if command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then`,
-    // Create detached first: set-option needs a running server, and starting one
-    // with a bare `set-option -g` fails ("server exited unexpectedly").
-    `  tmux has-session -t ${quoteShellArg(sessionName)} 2>/dev/null ||`,
-    `    tmux new-session -d -s ${quoteShellArg(sessionName)}${dirArg}`,
-    // set-titles defaults to off, which swallows the OSC 0/2 title escape and
-    // leaves xterm.js's onTitleChange silent — that title is what names the tab
-    // and the bell notification. set-titles-string defaults to a decorated
-    // "#S:#I:#W - "#T"" form; #T alone passes the pane title through verbatim.
-    // Scoped to this session (no -g) so the user's global tmux config is untouched.
-    `  tmux set-option -t ${quoteShellArg(sessionName)} set-titles on 2>/dev/null`,
-    `  tmux set-option -t ${quoteShellArg(sessionName)} set-titles-string '#T' 2>/dev/null`,
-    `  tmux attach-session -t ${quoteShellArg(sessionName)}`,
-    `fi`,
-  ].join("\n");
+  const n = quoteShellArg(sessionName);
+  // Single physical line: shares the final bootstrap line with the sentinel so the
+  // command echo lands *before* the sentinel (and is gated away), and a later detach
+  // resumes mid-line without emitting a fresh prompt. set-titles scoped to this session
+  // (no -g) keeps the user's global tmux config untouched; #T passes the pane title
+  // through verbatim for tab naming and the bell notification.
+  return (
+    `if command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then ` +
+    `tmux has-session -t ${n} 2>/dev/null || tmux new-session -d -s ${n}${dirArg}; ` +
+    `tmux set-option -t ${n} set-titles on 2>/dev/null; ` +
+    `tmux set-option -t ${n} set-titles-string '#T' 2>/dev/null; ` +
+    `tmux attach-session -t ${n}; fi; `
+  );
 }
 
 function buildCwdTrackingBootstrap(
@@ -89,26 +89,30 @@ function buildCwdTrackingBootstrap(
     ? buildTmuxAutoAttachCommand(tmuxSessionName, initialDirectory)
     : "";
 
+  // History guard ON — one tagged line per shell. bash: disable history recording.
+  // zsh (ignores `set +o history`): append our tag to HISTORY_IGNORE and push a
+  // throwaway history stack with `fc -p` so the bootstrap body isn't recorded.
+  const histOn =
+    `if [ -n "${"${ZSH_VERSION-}"}" ]; then HISTORY_IGNORE="${"${HISTORY_IGNORE:+$HISTORY_IGNORE|}"}*${HISTORY_TAG}*"; fc -p /dev/null 2>/dev/null; ` +
+    `elif [ -n "${"${BASH_VERSION-}"}" ]; then set +o history; fi; : ${HISTORY_TAG}`;
+
+  // History guard OFF — restore each shell. bash: drop the leaked `set +o history`
+  // entry, then re-enable. zsh: pop the throwaway stack. Shares the final line with
+  // the sentinel + tmux so all of it is gated / echo-free.
+  const histOff =
+    `if [ -n "${"${ZSH_VERSION-}"}" ]; then fc -P 2>/dev/null; ` +
+    `elif [ -n "${"${BASH_VERSION-}"}" ]; then history -d ${"$(history 1 | awk '{print $1}')"} 2>/dev/null; set -o history; fi; : ${HISTORY_TAG}`;
+
   const commands = [
-    // tmux runs FIRST; after attach/new-session exits, the outer shell resumes with the rest of the bootstrap
-    tmuxCmd,
+    histOn,
     buildInitialDirectoryCommand(initialDirectory),
     "__infinite_emit_cwd() { printf '\\033]7;file://%s%s\\007' \"${HOSTNAME:-localhost}\" \"$PWD\"; }",
-    "if [ -n \"${ZSH_VERSION-}\" ]; then",
-    "  autoload -Uz add-zsh-hook >/dev/null 2>&1 || true",
-    "  if command -v add-zsh-hook >/dev/null 2>&1; then",
-    "    add-zsh-hook precmd __infinite_emit_cwd",
-    "  else",
-    "    precmd_functions+=(__infinite_emit_cwd)",
-    "  fi",
-    "elif [ -n \"${BASH_VERSION-}\" ]; then",
-    "  case \";${PROMPT_COMMAND-};\" in",
-    "    *\";__infinite_emit_cwd;\"*) ;;",
-    "    *) PROMPT_COMMAND=\"__infinite_emit_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;;",
-    "  esac",
-    "fi",
+    // Single-line hook install: zsh's line editor mangles multi-line if/then/fi pasted as one write.
+    "if [ -n \"${ZSH_VERSION-}\" ]; then autoload -Uz add-zsh-hook 2>/dev/null; add-zsh-hook precmd __infinite_emit_cwd 2>/dev/null || precmd_functions+=(__infinite_emit_cwd); elif [ -n \"${BASH_VERSION-}\" ]; then case \";${PROMPT_COMMAND-};\" in *\";__infinite_emit_cwd;\"*) ;; *) PROMPT_COMMAND=\"__infinite_emit_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;; esac; fi",
     "__infinite_emit_cwd",
-    buildBootstrapClearCommand(initialDirectory),
+    // Final physical line: sentinel opens the output gate, THEN tmux attaches (what the
+    // user should see), THEN history is restored on detach.
+    `printf '${"\\033_INFBOOT\\033\\\\"}'; ${tmuxCmd}${histOff}`,
   ].filter(Boolean);
 
   return `${commands.join("\n")}\r`;
@@ -126,6 +130,10 @@ interface ActiveSession {
   recentOutput: Buffer[];
   recentOutputBytes: number;
   tmuxSessionName?: string;
+  // Output gate: withhold PTY bytes from the browser until the bootstrap sentinel
+  // is seen, so injected bootstrap commands never render. Undefined once the gate is open.
+  gateBuffer?: Buffer;
+  gateTimer?: ReturnType<typeof setTimeout>;
 }
 
 interface PendingSessionStart {
@@ -181,6 +189,38 @@ function cleanupDownload(downloadId: string) {
   if (!download) return;
   activeDownloads.delete(downloadId);
   download.cleanup();
+}
+
+function openGate(session: ActiveSession) {
+  if (session.gateTimer) {
+    clearTimeout(session.gateTimer);
+    session.gateTimer = undefined;
+  }
+  const pending = session.gateBuffer;
+  session.gateBuffer = undefined;
+  if (pending && pending.length > 0) {
+    appendRecentOutput(session, pending);
+    safeSocketSend(session.ws, pending);
+  }
+}
+
+// Returns the bytes that should reach the browser. While the gate is closed,
+// buffers everything and looks for the bootstrap sentinel; once seen, drops the
+// sentinel and everything before it (the injected bootstrap) and opens the gate,
+// returning only the trailing bytes. Returns null while still withholding.
+function gateOutput(session: ActiveSession, data: Buffer): Buffer | null {
+  if (session.gateBuffer === undefined) return data; // gate already open
+  session.gateBuffer = Buffer.concat([session.gateBuffer, data]);
+  const sentinel = Buffer.from(BOOTSTRAP_SENTINEL, "binary");
+  const idx = session.gateBuffer.indexOf(sentinel);
+  if (idx === -1) return null;
+  const after = session.gateBuffer.subarray(idx + sentinel.length);
+  session.gateBuffer = undefined;
+  if (session.gateTimer) {
+    clearTimeout(session.gateTimer);
+    session.gateTimer = undefined;
+  }
+  return after.length > 0 ? Buffer.from(after) : null;
 }
 
 function appendRecentOutput(session: ActiveSession, data: Buffer) {
@@ -1089,6 +1129,7 @@ export function createSSHSocket(
         recentOutput: [],
         recentOutputBytes: 0,
         tmuxSessionName,
+        gateBuffer: Buffer.alloc(0),
       };
       const currentSession = session;
       if (windowId && pendingSessionStarts.get(windowId) === pendingStart) {
@@ -1098,15 +1139,22 @@ export function createSSHSocket(
 
       logger.info(`[SSH] Shell stream opened for connection ${connection.id}`);
 
+      // Fallback: never leave the terminal blank if the sentinel is missed.
+      currentSession.gateTimer = setTimeout(() => openGate(currentSession), BOOTSTRAP_GATE_TIMEOUT_MS);
+
       stream.write(buildCwdTrackingBootstrap(initialDirectory, { useTmux, connectionId: connection.id, projectId, tabId }));
 
       stream.on("data", (data: Buffer) => {
-        appendRecentOutput(currentSession, data);
-        safeSocketSend(currentSession.ws, data);
+        const out = gateOutput(currentSession, data);
+        if (!out) return;
+        appendRecentOutput(currentSession, out);
+        safeSocketSend(currentSession.ws, out);
       });
       stream.stderr.on("data", (data: Buffer) => {
-        appendRecentOutput(currentSession, data);
-        safeSocketSend(currentSession.ws, data);
+        const out = gateOutput(currentSession, data);
+        if (!out) return;
+        appendRecentOutput(currentSession, out);
+        safeSocketSend(currentSession.ws, out);
       });
 
       attachSessionSocket(currentSession, currentSession.ws!, () => {
