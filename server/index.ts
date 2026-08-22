@@ -35,6 +35,7 @@ import {
   stopContainer,
   unpauseContainer,
 } from "./lib/docker.js";
+import { getSysStats, killProcess } from "./lib/sysmon.js";
 import { logger } from "./lib/logger.js";
 import bookmarksRouter from "./routes/bookmarks.js";
 import notesRouter from "./routes/notes.js";
@@ -497,6 +498,46 @@ app.post("/api/docker/:connectionId/prune", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to prune";
     res.status(500).json({ error: message });
+  }
+});
+
+// ---------------- System Monitor API (btop-style) ----------------
+app.get("/api/sysmon/:connectionId/stats", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  if (!connectionId) {
+    res.status(400).json({ error: "Missing connectionId" });
+    return;
+  }
+  try {
+    const stats = await withConnection(req, connectionId, (connection) =>
+      getSysStats(connection, {
+        sort: req.query.sort === "mem" ? "mem" : "cpu",
+      }),
+    );
+    res.json(stats);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to read stats";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/sysmon/:connectionId/kill", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  const pid = parseInt(String(req.body?.pid || "0"), 10);
+  const signal = req.body?.signal === "KILL" ? "KILL" : "TERM";
+  if (!connectionId || !pid) {
+    res.status(400).json({ error: "Missing connectionId or pid" });
+    return;
+  }
+  try {
+    const result = await withConnection(req, connectionId, (connection) =>
+      killProcess(connection, pid, signal),
+    );
+    if (result.ok) res.json(result);
+    else res.status(400).json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to kill process";
+    res.status(500).json({ ok: false, message });
   }
 });
 

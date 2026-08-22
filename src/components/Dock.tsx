@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Boxes, GitBranch, FileCode2 } from "lucide-react";
+import { Boxes, GitBranch, FileCode2, Activity } from "lucide-react";
 
 import registry from "@/apps/registry";
 import { useDockerStore } from "@/stores/useDockerStore";
+import { useSysMonStore } from "@/stores/useSysMonStore";
 import { useGitStore } from "@/stores/useGitStore";
 import { useCodeEditorStore } from "@/stores/useCodeEditorStore";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
@@ -338,6 +339,8 @@ export default function Dock() {
   const sshConnections = useSSHStore((s) => s.connections);
   const dockerOpen = useDockerStore((s) => s.open);
   const toggleDockerPanel = useDockerStore((s) => s.togglePanel);
+  const sysMonOpen = useSysMonStore((s) => s.open);
+  const toggleSysMonPanel = useSysMonStore((s) => s.togglePanel);
   const gitOpen = useGitStore((s) => s.open);
   const toggleGitPanel = useGitStore((s) => s.togglePanel);
   const codeEditorOpen = useCodeEditorStore((s) => s.open);
@@ -886,6 +889,19 @@ export default function Dock() {
           }`}
         >
           <Boxes size={16} />
+        </button>
+
+        {/* System monitor toggle */}
+        <button
+          onClick={toggleSysMonPanel}
+          title="System Monitor"
+          className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors cursor-pointer group ${
+            sysMonOpen
+              ? "bg-blue-600 text-white"
+              : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+          }`}
+        >
+          <Activity size={16} />
         </button>
 
         {/* Code editor toggle */}

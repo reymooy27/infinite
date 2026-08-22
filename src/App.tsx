@@ -4,6 +4,7 @@ import registry from "@/apps/registry";
 import Canvas from "@/components/Canvas";
 import Dock from "@/components/Dock";
 import DockerPanel from "@/components/DockerPanel";
+import SysMonPanel from "@/components/SysMonPanel";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import FocusModeLayout from "@/components/FocusModeLayout";
 import GitPanel from "@/components/GitPanel";
@@ -282,6 +283,7 @@ export default function App() {
         </>
       )}
       <DockerPanel />
+      <SysMonPanel />
       <Sidebar
         openSection={pendingSection}
         onOpenSectionConsumed={() => setPendingSection(null)}

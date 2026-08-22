@@ -14,6 +14,9 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
 - **Dev browser** (tunnels a localhost port on an SSH host)
 - **File transfer** (SFTP upload/download) over a saved SSH connection
 - **Docker manager** — control containers/images/volumes on a remote host over SSH
+- **System monitor** — btop-style live CPU/memory/swap/network/disk gauges,
+  a sortable process table (by CPU or memory, with real RSS in MB/GB), and a
+  listening-ports table — kill any process or free a stuck port over SSH
 - **Git view** — status tree, diff viewer, and commit/push/pull/stash per project
 - **Code editor** — VS Code-like Monaco editor (syntax highlight, autocomplete,
   multi-cursor) with save, git diff overlay, and recursive file filter across
@@ -83,6 +86,25 @@ images, volumes, and networks, plus logs and inspect — executed **over SSH**
 against a saved connection. Live **`docker stats`** (CPU % / memory) stream
 alongside each container. Open it from the Dock, the Focus Mode Docker
 toggle, or as a slide-in **Docker panel**.
+
+### System monitor
+
+A btop-style live view of a remote host, over SSH. All metrics are gathered in
+a **single SSH round-trip** — `/proc` is sampled twice around a short sleep so
+CPU% and network rates are true deltas, not cumulative counters.
+
+- **CPU** — total plus per-core meters, with 1/5/15-min load average
+- **Memory & swap** — used/total meters
+- **Network** — live rx/tx throughput
+- **Disks** — usage per mount point
+- **Processes** — top 20, sortable by **CPU** or **memory** (real RSS shown in
+  MB/GB, sort runs server-side so the memory list is accurate). Kill any
+  process with a graceful **SIGTERM** or a forced **SIGKILL (-9)**.
+- **Listening ports** — every TCP/UDP listener (`ss`, falling back to
+  `netstat`) with its owning process; kill a process to free a stuck port.
+
+Open it from the Dock, the Focus Mode monitor toggle, or as a slide-in panel.
+Process/port ownership for other users' sockets requires privileges on the host.
 
 ### Git view
 
@@ -237,7 +259,7 @@ When many windows are spread across the infinite canvas:
 ### Focus mode & mobile UX
 
 - **Focus mode** (Cmd+Shift+F) hides the canvas and shows a single terminal plus
-  the git sidebar and Docker toggle.
+  the git sidebar and the Docker / system-monitor toggles.
 - **Quick bar** and **shortcut drawer** surface copy/paste and terminal/tmux/nav
   key pads for touch devices.
 

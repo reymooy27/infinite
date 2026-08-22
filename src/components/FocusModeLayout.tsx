@@ -10,6 +10,7 @@ import {
   ChevronUp,
   GitBranch,
   Boxes,
+  Activity,
   FileCode2,
 } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
@@ -30,6 +31,7 @@ import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useDockerStore } from "@/stores/useDockerStore";
+import { useSysMonStore } from "@/stores/useSysMonStore";
 import { useGitStore } from "@/stores/useGitStore";
 import { useCodeEditorStore } from "@/stores/useCodeEditorStore";
 import { useSSHStore } from "@/stores/useSSHStore";
@@ -56,6 +58,8 @@ export default function FocusModeLayout({
   const bgColor = useSettingsStore((s) => s.bgColor);
   const dockerOpen = useDockerStore((s) => s.open);
   const toggleDockerPanel = useDockerStore((s) => s.togglePanel);
+  const sysMonOpen = useSysMonStore((s) => s.open);
+  const toggleSysMonPanel = useSysMonStore((s) => s.togglePanel);
   const gitPanelOpen = useGitStore((s) => s.open);
   const toggleGitPanel = useGitStore((s) => s.togglePanel);
   const codeEditorOpen = useCodeEditorStore((s) => s.open);
@@ -324,6 +328,18 @@ export default function FocusModeLayout({
             }`}
           >
             <Boxes size={14} />
+          </button>
+
+          <button
+            onClick={toggleSysMonPanel}
+            title="System Monitor"
+            className={`px-1.5 transition-colors cursor-pointer rounded ${
+              sysMonOpen
+                ? "text-white bg-neutral-800"
+                : "text-neutral-500 hover:text-white hover:bg-neutral-800"
+            }`}
+          >
+            <Activity size={14} />
           </button>
 
           <button
