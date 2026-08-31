@@ -87,6 +87,7 @@ export const SSHPane = ({
   const sessionId = [windowId || "", tabId, activeProjectId].filter(Boolean).join("-");
   const bufferKeyRef = useRef(sessionId);
   const ctrlWBlockedRef = useRef(false);
+  const keyboardLockedRef = useRef(false);
   const statusRef = useRef(status);
   const isActiveRef = useRef(isActive);
   const hasAutoNavigatedRef = useRef(hasNavigated ?? false);
@@ -273,6 +274,25 @@ export const SSHPane = ({
     }
     termInstanceRef.current?.focus();
   }, []);
+
+  // Ctrl+W is a browser-reserved shortcut; the only way to intercept it is
+  // the Keyboard Lock API, which only captures reserved keys in fullscreen.
+  // Chromium-only + needs a user gesture, so we trigger from a terminal click.
+  const lockKeyboard = useCallback(async () => {
+    if (keyboardLockedRef.current) return;
+    if (isMobile) return;
+    const kb = (navigator as any).keyboard;
+    if (!kb?.lock) return; // ponytail: Chromium-only; other browsers keep native Ctrl+W
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+      await kb.lock(["KeyW"]);
+      keyboardLockedRef.current = true;
+    } catch {
+      /* denied or unsupported — fall back to native behavior */
+    }
+  }, [isMobile]);
 
   const forwardReservedTerminalShortcut = useCallback(
     (event: KeyboardEvent) => {
@@ -653,7 +673,10 @@ export const SSHPane = ({
           viewportOffsetRef.current = getViewportOffsetFromBottom();
         }
         forceTerminalRepaint();
-        if (!isModalOpenRef.current) focusTerminal();
+        // On mobile, don't steal focus when a tab becomes active (e.g. next/prev
+        // navigation) — that pops the on-screen keyboard. Let the user tap the
+        // terminal to focus. Desktop keeps auto-focus.
+        if (!isModalOpenRef.current && !isMobile) focusTerminal();
       });
     }
   }, [
@@ -661,6 +684,7 @@ export const SSHPane = ({
     forceTerminalRepaint,
     getViewportOffsetFromBottom,
     isActive,
+    isMobile,
   ]);
 
   useEffect(() => {
@@ -1036,7 +1060,8 @@ export const SSHPane = ({
         );
         requestAnimationFrame(() => {
           forceTerminalRepaint();
-          focusTerminal();
+          // Skip auto-focus on mobile so reconnect/refresh doesn't pop the keyboard.
+          if (!isMobile) focusTerminal();
         });
       }
       setStatus("connected");
@@ -1121,6 +1146,7 @@ export const SSHPane = ({
     captureOsc7Directory,
     focusTerminal,
     forceTerminalRepaint,
+    isMobile,
     snapshotTerminalBuffer,
     tabId,
     windowId,
@@ -1209,6 +1235,7 @@ export const SSHPane = ({
     >
       <div
         ref={terminalRef}
+        onMouseDown={lockKeyboard}
         className="w-full h-full"
         style={
           enableTouchScroll && isMobile

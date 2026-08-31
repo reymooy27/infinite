@@ -5,6 +5,7 @@ import { Client } from "ssh2";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
 import { logger } from "../lib/logger.js";
+import { runSSHCommand } from "../lib/ssh.js";
 
 const LOCAL_USER_ID = "local-user";
 const MAX_FILE_SIZE = 512 * 1024; // 512KB
@@ -64,6 +65,44 @@ function resolvePath(baseDir: string, requestedPath: string): string {
   const resolved = resolve(baseDir, requestedPath);
   if (!resolved.startsWith(baseDir)) throw new Error("Path traversal not allowed");
   return resolved;
+}
+
+const SEARCH_IGNORE_DIRS = new Set([
+  "node_modules", ".git", "dist", "build", ".next", ".cache",
+  ".venv", "venv", "__pycache__", "vendor", "target",
+]);
+const SEARCH_MAX_RESULTS = 500;
+
+function quoteShellArg(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// Recursively walk the local tree collecting entries whose relative path matches
+// the (already lowercased) query. Skips heavy vendored dirs and caps results.
+async function searchLocal(baseDir: string, query: string): Promise<FileEntry[]> {
+  const results: FileEntry[] = [];
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    if (results.length >= SEARCH_MAX_RESULTS) return;
+    let items;
+    try {
+      items = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      if (results.length >= SEARCH_MAX_RESULTS) return;
+      const relPath = rel ? `${rel}/${item.name}` : item.name;
+      const isDir = item.isDirectory();
+      if (relPath.toLowerCase().includes(query)) {
+        results.push({ name: item.name, path: relPath, isDir, size: 0, mtime: "" });
+      }
+      if (isDir && !SEARCH_IGNORE_DIRS.has(item.name)) {
+        await walk(join(dir, item.name), relPath);
+      }
+    }
+  };
+  await walk(baseDir, "");
+  return results;
 }
 
 async function isBinaryFile(filePath: string): Promise<boolean> {
@@ -348,6 +387,68 @@ router.put("/:id/files/write", async (req, res) => {
       return;
     }
     logger.error("[Files] Write failed", { error: message });
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /api/projects/:id/files/search?q=...&connectionId=...
+// Walks the FULL tree (not just fetched folders) so matches in unopened
+// subfolders are found.
+router.get("/:id/files/search", async (req, res) => {
+  try {
+    const project = await loadProject(req.params.id);
+    const rawQuery = ((req.query.q as string) || "").trim();
+    const connectionIdParam = req.query.connectionId as string;
+    const connectionId = connectionIdParam ? parseInt(connectionIdParam, 10) : null;
+    const baseDir = project.directory;
+
+    if (!baseDir) {
+      res.status(400).json({ error: "Project directory not configured" });
+      return;
+    }
+    if (rawQuery.length < 2) {
+      res.json({ query: rawQuery, entries: [] });
+      return;
+    }
+    const query = rawQuery.toLowerCase();
+
+    if (connectionId) {
+      const connection = await loadConnection(connectionId);
+      // Prune heavy dirs, match names case-insensitively, emit paths relative to baseDir.
+      const prune = [...SEARCH_IGNORE_DIRS]
+        .map((d) => `-name ${quoteShellArg(d)}`)
+        .join(" -o ");
+      const cmd =
+        `cd ${quoteShellArg(baseDir)} && ` +
+        `find . \\( ${prune} \\) -prune -o -iname ${quoteShellArg(`*${rawQuery}*`)} -print 2>/dev/null | head -n ${SEARCH_MAX_RESULTS}`;
+
+      const stdout = await runSSHCommand(connection, cmd, { timeoutMs: 20000 })
+        .then((r) => r.stdout);
+
+      const entries: FileEntry[] = stdout
+        .split("\n")
+        .map((l) => l.replace(/^\.\//, "").trim())
+        .filter(Boolean)
+        .map((path) => ({
+          name: path.split("/").pop() || path,
+          path,
+          isDir: false, // find -print doesn't distinguish cheaply; tree resolves on open
+          size: 0,
+          mtime: "",
+        }));
+
+      res.json({ query: rawQuery, entries });
+    } else {
+      const entries = await searchLocal(baseDir, query);
+      res.json({ query: rawQuery, entries });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Search failed";
+    if (message === "Project not found") {
+      res.status(404).json({ error: message });
+      return;
+    }
+    logger.error("[Files] Search failed", { error: message });
     res.status(500).json({ error: message });
   }
 });

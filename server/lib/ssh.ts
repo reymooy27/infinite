@@ -237,11 +237,22 @@ function appendRecentOutput(session: ActiveSession, data: Buffer) {
   }
 }
 
+// Terminal capability queries — Device Attributes (final byte `c`) and Device
+// Status Report (final byte `n`) — make xterm.js auto-reply. On the live stream the
+// querying program consumes that reply; on replay it hits a bare shell prompt and is
+// echoed as literal junk (e.g. `1;2c0;276;0c`). The original query was already
+// answered live, so drop these from replayed output only.
+const TERMINAL_QUERY_RE = /\x1b\[[>=?]?[0-9;]*[cn]/g;
+
+export function stripTerminalQueries(buf: Buffer): Buffer {
+  // latin1 keeps bytes 1:1 (query bytes are ASCII; UTF-8 continuation bytes 0x80–0xBF
+  // never collide with them), so this is safe over multibyte output.
+  return Buffer.from(buf.toString("binary").replace(TERMINAL_QUERY_RE, ""), "binary");
+}
+
 function replayRecentOutput(session: ActiveSession) {
   if (!session.ws || session.recentOutput.length === 0) return;
-  for (const chunk of session.recentOutput) {
-    session.ws.send(chunk);
-  }
+  session.ws.send(stripTerminalQueries(Buffer.concat(session.recentOutput)));
 }
 
 function attachSessionSocket(
