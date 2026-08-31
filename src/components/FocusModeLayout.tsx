@@ -212,6 +212,10 @@ export default function FocusModeLayout({
     },
     KeyB: toggleDockerPanel, // docker
     KeyM: toggleSysMonPanel, // system monitor
+    KeyK: () => {
+      if (!activeWindow) return;
+      setPaneRefreshKey((k) => k + 1);
+    },
     // Ctrl+Shift+T is browser-reserved (reopen closed tab) and can't be
     // intercepted; Enter is free everywhere.
     Enter: handleAddTab, // new terminal tab
@@ -323,7 +327,7 @@ export default function FocusModeLayout({
           <button
             onClick={() => setPaneRefreshKey((k) => k + 1)}
             disabled={!activeWindow}
-            title="Refresh terminal"
+            title="Refresh terminal (Ctrl+Shift+K)"
             className="px-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800"
           >
             <RefreshCw size={14} />
