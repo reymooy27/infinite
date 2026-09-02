@@ -61,6 +61,7 @@ export type GitStatusPayload = {
   clean: boolean;
   changes: GitChange[];
   scannedAt: string;
+  remoteUrl: string | null;
 };
 
 export type GitAction =
@@ -153,6 +154,7 @@ function createBasePayload(projectId: string, projectName: string, directory: st
     clean: true,
     changes: [],
     scannedAt: new Date().toISOString(),
+    remoteUrl: null,
   };
 }
 
@@ -541,12 +543,13 @@ export async function getGitStatus(options: {
     payload.repoRoot = await execGitOrThrow(ctx, ["rev-parse", "--show-toplevel"]);
     payload.isRepo = true;
 
-    const [statusOutput, branchesOutput, lastCommitOutput, recentCommitsOutput, stashOutput] = await Promise.all([
+    const [statusOutput, branchesOutput, lastCommitOutput, recentCommitsOutput, stashOutput, remoteUrlOutput] = await Promise.all([
       execGitOrThrow(ctx, ["status", "--short", "--branch", "--untracked-files=all"]),
       execGitOrThrow(ctx, ["branch", "--format=%(refname:short)"]).catch(() => ""),
       execGitOrThrow(ctx, ["log", "-1", "--pretty=format:%h%x09%s%x09%cr%x09%an"]).catch(() => ""),
       execGitOrThrow(ctx, ["log", "-12", "--pretty=format:%h%x09%s%x09%cr%x09%an"]).catch(() => ""),
       execGitOrThrow(ctx, ["stash", "list", "--format=%gd%x09%gs"]).catch(() => ""),
+      execGitOrThrow(ctx, ["remote", "get-url", "origin"]).catch(() => ""),
     ]);
 
     parseChanges(statusOutput, payload);
@@ -555,6 +558,7 @@ export async function getGitStatus(options: {
     payload.recentCommits = parseRecentCommits(recentCommitsOutput);
     payload.stashes = parseStashes(stashOutput);
     payload.stashCount = parseStashCount(stashOutput);
+    payload.remoteUrl = remoteUrlOutput.trim() || null;
     payload.scannedAt = new Date().toISOString();
     return payload;
   } catch (error) {

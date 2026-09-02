@@ -72,6 +72,7 @@ type GitStatusPayload = {
   clean: boolean;
   changes: GitChange[];
   scannedAt: string;
+  remoteUrl: string | null;
 };
 
 type GitAction =
@@ -347,6 +348,15 @@ function formatTimestamp(value: string) {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
+  if (!url) return null;
+  const sshMatch = url.match(/git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/);
+  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
+  const httpsMatch = url.match(/https?:\/\/github\.com\/([^/]+)\/(.+?)(?:\.git)?(?:\/|$)/);
+  if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
+  return null;
 }
 
 function getFeedbackToneClass(kind: "success" | "error") {
@@ -1244,6 +1254,45 @@ export default function FocusModeGitPanel({
                     </div>
                   </div>
                 )}
+
+                {data.remoteUrl && (() => {
+                  const gh = parseGitHubUrl(data.remoteUrl);
+                  if (!gh) return null;
+                  return (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <a
+                        href={`https://github.com/${gh.owner}/${gh.repo}/tree/${data.branch}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800"
+                        title="Open branch on GitHub"
+                      >
+                        <GitBranch size={12} />
+                        Branch
+                      </a>
+                      <a
+                        href={`https://github.com/${gh.owner}/${gh.repo}/commits/${data.branch}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800"
+                        title="Open commit history on GitHub"
+                      >
+                        <GitCommitHorizontal size={12} />
+                        History
+                      </a>
+                      <a
+                        href={`https://github.com/${gh.owner}/${gh.repo}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800"
+                        title="Open project on GitHub"
+                      >
+                        <Folder size={12} />
+                        Repo
+                      </a>
+                    </div>
+                  );
+                })()}
 
                 <div className="mt-2 grid grid-cols-2 gap-1.5">
                   <button
