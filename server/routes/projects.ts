@@ -194,29 +194,37 @@ router.get("/:id/git/diff", async (req, res) => {
     const connectionIdParam = req.query.connectionId as string;
     const connectionId = connectionIdParam ? Number.parseInt(connectionIdParam, 10) : null;
     const staged = req.query.staged === "true";
+    const hash = (req.query.hash as string)?.trim();
 
     if (!file) {
       res.status(400).json({ error: "File path is required" });
       return;
     }
 
-    const { createExecutionContext, execGitOrThrow } = await import("./git-lib.js");
+    const { createExecutionContext, execGitOrThrow, sanitizeCommitHash } = await import("./git-lib.js");
     const ctx = await createExecutionContext(req.params.id, directory, connectionId);
-
-    const statusOutput = await execGitOrThrow(ctx, ["status", "--short", "--", file]);
-    const isUntracked = statusOutput.startsWith("??");
 
     let diff: string;
 
-    if (isUntracked) {
-      diff = await execGitOrThrow(ctx, ["diff", "--no-color", "--no-index", "/dev/null", file]).catch(() => {
-        return execGitOrThrow(ctx, ["show", `:${file}`]).catch(() => "Unable to read file content");
+    if (hash) {
+      const sanitizedHash = sanitizeCommitHash(hash);
+      diff = await execGitOrThrow(ctx, ["show", "--no-color", "--format=", sanitizedHash, "--", file]).catch(() => {
+        return execGitOrThrow(ctx, ["diff", "--no-color", `${sanitizedHash}^..${sanitizedHash}`, "--", file]).catch(() => "No changes");
       });
     } else {
-      const args = ["diff", "--no-color"];
-      if (staged) args.push("--cached");
-      args.push("--", file);
-      diff = await execGitOrThrow(ctx, args);
+      const statusOutput = await execGitOrThrow(ctx, ["status", "--short", "--", file]);
+      const isUntracked = statusOutput.startsWith("??");
+
+      if (isUntracked) {
+        diff = await execGitOrThrow(ctx, ["diff", "--no-color", "--no-index", "/dev/null", file]).catch(() => {
+          return execGitOrThrow(ctx, ["show", `:${file}`]).catch(() => "Unable to read file content");
+        });
+      } else {
+        const args = ["diff", "--no-color"];
+        if (staged) args.push("--cached");
+        args.push("--", file);
+        diff = await execGitOrThrow(ctx, args);
+      }
     }
 
     res.json({ diff });

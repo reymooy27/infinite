@@ -511,7 +511,7 @@ export async function execGitOrThrow(ctx: GitExecutionContext, args: string[]) {
   return result.stdout;
 }
 
-function sanitizeCommitHash(hash: string) {
+export function sanitizeCommitHash(hash: string) {
   const trimmed = hash.trim();
   if (!/^[0-9a-fA-F]{1,40}$/.test(trimmed)) {
     throw new GitActionError("Invalid commit hash");

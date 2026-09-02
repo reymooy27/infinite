@@ -1596,7 +1596,7 @@ export default function FocusModeGitPanel({
                                     setSelectedFilePath(file.path);
                                     setSelectedFileDiff(null);
                                     setDiffLoading(true);
-                                    fetch(`/api/projects/${projectId}/git/diff?${new URLSearchParams({ file: file.path, staged: "false", ...(directory ? { directory } : {}), ...(connectionId ? { connectionId: String(connectionId) } : {}) })}`)
+                                    fetch(`/api/projects/${projectId}/git/diff?${new URLSearchParams({ file: file.path, hash: commitDetails.hash, staged: "false", ...(directory ? { directory } : {}), ...(connectionId ? { connectionId: String(connectionId) } : {}) })}`)
                                       .then(r => r.json())
                                       .then(b => setSelectedFileDiff(b.diff || "No changes"))
                                       .catch(() => setSelectedFileDiff("Failed to load diff"))
