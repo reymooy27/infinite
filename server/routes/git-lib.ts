@@ -519,6 +519,71 @@ function sanitizeCommitHash(hash: string) {
   return trimmed;
 }
 
+export type GitCommitFile = {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed";
+  originalPath?: string;
+};
+
+export type GitCommitDetails = {
+  hash: string;
+  subject: string;
+  authorName: string;
+  authorEmail: string;
+  relativeDate: string;
+  body: string;
+  files: GitCommitFile[];
+  diff: string;
+};
+
+export async function getCommitDetails(options: {
+  projectId: string;
+  hash: string;
+  requestedDirectory?: string | null;
+  connectionId?: number | null;
+}): Promise<GitCommitDetails> {
+  const ctx = await createExecutionContext(options.projectId, options.requestedDirectory, options.connectionId);
+  const hash = sanitizeCommitHash(options.hash);
+
+  const [diffOutput, commitInfoOutput, nameStatusOutput] = await Promise.all([
+    execGitOrThrow(ctx, ["show", "--no-color", "--format=", hash]),
+    execGitOrThrow(ctx, ["show", "--no-color", "--format=%H%x09%s%x09%an%x09%ae%x09%cr%x09%B", hash]),
+    execGitOrThrow(ctx, ["show", "--name-status", "--format=", hash]),
+  ]);
+
+  const [fullHash, subject, authorName, authorEmail, relativeDate, body] = commitInfoOutput.split("\t");
+  const diff = diffOutput || "No changes";
+
+  const files: GitCommitFile[] = nameStatusOutput
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [status, ...pathParts] = line.split("\t");
+      if (status === "R") {
+        return {
+          status: "renamed" as const,
+          originalPath: pathParts[0],
+          path: pathParts[1],
+        };
+      }
+      return {
+        status: (status === "A" ? "added" : status === "M" ? "modified" : "deleted") as GitCommitFile["status"],
+        path: pathParts.join("\t"),
+      };
+    });
+
+  return {
+    hash: fullHash || hash,
+    subject: subject || "",
+    authorName: authorName || "",
+    authorEmail: authorEmail || "",
+    relativeDate: relativeDate || "",
+    body: body || "",
+    files,
+    diff,
+  };
+}
+
 export async function getCommitDiff(options: {
   projectId: string;
   hash: string;

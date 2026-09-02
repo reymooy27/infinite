@@ -5,6 +5,7 @@ import {
   GitActionError,
   getGitStatus,
   getCommitDiff,
+  getCommitDetails,
   runGitAction,
   createExecutionContext,
   execGitOrThrow,
@@ -287,6 +288,36 @@ router.get("/:id/git/commit-diff", async (req, res) => {
       return;
     }
     res.status(500).json({ error: "Failed to fetch commit diff" });
+  }
+});
+
+// GET /api/projects/:id/git/commit-details
+router.get("/:id/git/commit-details", async (req, res) => {
+  try {
+    const hash = (req.query.hash as string)?.trim();
+    const directory = (req.query.directory as string)?.trim() || null;
+    const connectionIdParam = req.query.connectionId as string;
+    const connectionId = connectionIdParam ? Number.parseInt(connectionIdParam, 10) : null;
+
+    if (!hash) {
+      res.status(400).json({ error: "Commit hash is required" });
+      return;
+    }
+
+    const result = await getCommitDetails({
+      projectId: req.params.id,
+      hash,
+      requestedDirectory: directory,
+      connectionId,
+    });
+
+    res.json(result);
+  } catch (error) {
+    if (error instanceof GitActionError) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: "Failed to fetch commit details" });
   }
 });
 
