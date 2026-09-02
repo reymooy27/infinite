@@ -1577,24 +1577,23 @@ export default function FocusModeGitPanel({
                     </button>
                   </div>
                   {commitDetails && (
-                    <div className="flex flex-col md:flex-row h-[calc(100vh-280px)] max-h-[80vh] overflow-hidden">
-                      <div className="w-full md:w-64 md:border-r md:border-neutral-800 border-b md:border-b-0 border-neutral-800 overflow-y-auto bg-neutral-950/50 flex-shrink-0">
+                    <div className="flex flex-col h-[calc(100vh-280px)] max-h-[80vh] overflow-hidden">
+                      <div className="w-full border-b border-neutral-800 overflow-y-auto bg-neutral-950/50 flex-shrink-0">
                         <div className="px-2 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500 border-b border-neutral-800">
                           Files ({commitDetails.files.length})
                         </div>
-                        <div className="py-1 max-h-[calc(100vh-320px)] md:max-h-none overflow-y-auto">
+                        <div className="py-1 max-h-[calc(100vh-320px)] overflow-y-auto">
                           {commitDetails.files.map((file, idx) => {
                             const isSelected = selectedFilePath === file.path;
-                            const collapsed = commitFilesCollapsed[file.path];
                             return (
                               <button
                                 key={`${idx}-${file.path}`}
                                 onClick={() => {
-                                  setSelectedFilePath(file.path);
-                                  if (isSelected && selectedFileDiff) {
+                                  if (isSelected) {
                                     setSelectedFileDiff(null);
                                     setSelectedFilePath(null);
                                   } else {
+                                    setSelectedFilePath(file.path);
                                     setSelectedFileDiff(null);
                                     setDiffLoading(true);
                                     fetch(`/api/projects/${projectId}/git/diff?${new URLSearchParams({ file: file.path, staged: "false", ...(directory ? { directory } : {}), ...(connectionId ? { connectionId: String(connectionId) } : {}) })}`)
@@ -1635,9 +1634,9 @@ export default function FocusModeGitPanel({
                           })}
                         </div>
                       </div>
-                      <div className="flex-1 min-w-0 overflow-auto p-2 md:h-full">
+                      <div className="flex-1 min-w-0 overflow-auto p-2">
                         {commitDetailsLoading || diffLoading ? (
-                          <div className="flex items-center justify-center h-full md:h-[calc(100vh-320px)] text-neutral-500">
+                          <div className="flex items-center justify-center h-[calc(100vh-320px)] text-neutral-500">
                             <LoaderCircle size={14} className="animate-spin mr-2" />
                             <span className="text-xs">Loading...</span>
                           </div>
