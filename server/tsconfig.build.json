@@ -6,7 +6,8 @@
     "rootDir": ".",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "incremental": false
+    "incremental": false,
+    "allowImportingTsExtensions": false
   },
   "include": ["**/*.ts", "**/*.cjs"],
   "exclude": ["node_modules", "dist"]

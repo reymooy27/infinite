@@ -223,7 +223,7 @@ export default function UsagePanel() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [errorLogs, setErrorLogs] = useState<ErrorRequestDetail[]>([]);
+  const [errorLogs, setErrorLogs] = useState<string[]>([]);
   const [errorLoading, setErrorLoading] = useState(false);
   const [errorLogsError, setErrorLogsError] = useState("");
   const [showErrorLogs, setShowErrorLogs] = useState(false);
@@ -276,16 +276,12 @@ export default function UsagePanel() {
     setErrorLoading(true);
     setErrorLogsError("");
     try {
-      const query = new URLSearchParams({
-        period,
-        baseUrl,
-        status: "error",
-        pageSize: "20",
-      });
-      const res = await fetch(`/api/router-usage/request-details?${query.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/translator/console-logs`, { cache: "no-store" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Failed to load error logs");
-      setErrorLogs(body.details ?? []);
+      // Expect { type: "init", logs: string[] }
+      const logs = (body.logs ?? []);
+      setErrorLogs(logs);
     } catch (err) {
       setErrorLogsError(err instanceof Error ? err.message : "Failed to load error logs");
     } finally {
@@ -424,12 +420,6 @@ export default function UsagePanel() {
                             <div className="truncate text-[12px] font-medium text-neutral-100">
                               {item.model}
                             </div>
-                            <div className="truncate text-[11px] text-neutral-500">
-                              {pickText(
-                                stats?.byModel?.[item.model]?.provider,
-                                item.provider,
-                              ) || "Unknown provider"}
-                            </div>
                           </div>
                           <div className="shrink-0 text-right text-[11px] text-neutral-400">
                             <div>
@@ -444,7 +434,20 @@ export default function UsagePanel() {
                   </div>
                 )}
 
-                {/* Error Log Section */}
+                
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => void handleRefresh()}
+            disabled={loading || refreshing}
+            className="w-full shrink-0 rounded-md border border-neutral-700 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-neutral-600 hover:text-neutral-100 disabled:opacity-50 sm:w-auto"
+          >
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </div>
+      {/* Error Log Section */}
                 <div className="mt-3 border-t border-neutral-800 pt-3">
                   <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
                     <button
@@ -478,28 +481,10 @@ export default function UsagePanel() {
                           <div className="text-[12px] text-neutral-500">No errors in this period.</div>
                         ) : (
                           <div className="overflow-x-auto rounded-lg border border-neutral-700">
-                            <div className="grid min-w-[600px] grid-cols-[1fr_120px_100px_80px] gap-3 bg-neutral-900/80 px-3 py-2 text-[10px] uppercase tracking-wide text-neutral-500">
-                              <div>Model</div>
-                              <div>Error</div>
-                              <div>Latency</div>
-                              <div>Time</div>
-                            </div>
                             <div className="divide-y divide-neutral-800">
-                              {errorLogs.slice(0, 10).map((log) => (
-                                <div key={log.id} className="grid min-w-[600px] grid-cols-[1fr_120px_100px_80px] gap-3 px-3 py-2.5 text-[12px]">
-                                  <div className="min-w-0">
-                                    <div className="truncate font-medium text-neutral-100">{log.model}</div>
-                                    <div className="truncate text-[11px] text-neutral-500">{log.provider}</div>
-                                  </div>
-                                  <div className="text-right text-red-300 truncate" title={log.response?.error}>
-                                    {log.response?.error || "Unknown error"}
-                                  </div>
-                                  <div className="text-right text-neutral-300">
-                                    {(log.latency.total / 1000).toFixed(0)}s
-                                  </div>
-                                  <div className="text-right text-neutral-500">
-                                    {fmtDate(log.timestamp)}
-                                  </div>
+                              {errorLogs.slice(0, 10).map((log, index) => (
+                                <div key={index} className="px-3 py-2 text-[12px] font-mono text-neutral-300 border-b border-neutral-800/50 last:border-0">
+                                  {log}
                                 </div>
                               ))}
                             </div>
@@ -509,18 +494,6 @@ export default function UsagePanel() {
                     )}
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-          <button
-            onClick={() => void handleRefresh()}
-            disabled={loading || refreshing}
-            className="w-full shrink-0 rounded-md border border-neutral-700 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-neutral-600 hover:text-neutral-100 disabled:opacity-50 sm:w-auto"
-          >
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </div>
 
       <div className="grid grid-cols-5 gap-1 rounded-lg border border-neutral-700 bg-neutral-800/70 p-1">
         {ROUTER_USAGE_PERIODS.map((item) => (
@@ -538,7 +511,7 @@ export default function UsagePanel() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <MetricCard
           label="Requests"
           value={fmtNumber(stats?.totalRequests)}

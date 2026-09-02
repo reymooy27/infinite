@@ -46,6 +46,7 @@ import devBrowserRouter from "./routes/dev-browser.js";
 import routerUsageRouter from "./routes/router-usage.js";
 import filesRouter from "./routes/files.js";
 import pushRouter from "./routes/push.js";
+import translatorRouter from "./routes/translator.js";
 
 const LOCAL_USER_ID = "local-user";
 
@@ -98,6 +99,7 @@ app.use("/api/projects", filesRouter);
 app.use("/api/dev-browser", devBrowserRouter);
 app.use("/api/router-usage", routerUsageRouter);
 app.use("/api/push", pushRouter);
+app.use("/api/translator", translatorRouter);
 
 function resolveConfiguredPublicServerBaseUrl() {
   const configured =
