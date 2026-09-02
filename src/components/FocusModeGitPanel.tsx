@@ -1582,7 +1582,7 @@ export default function FocusModeGitPanel({
                         <div className="px-2 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500 border-b border-neutral-800">
                           Files ({commitDetails.files.length})
                         </div>
-                        <div className="py-1 max-h-[calc(100vh-320px)] overflow-y-auto">
+                        <div className="py-1 max-h-[calc(100vh-400px)] overflow-y-auto">
                           {commitDetails.files.map((file, idx) => {
                             const isSelected = selectedFilePath === file.path;
                             return (
@@ -1634,9 +1634,9 @@ export default function FocusModeGitPanel({
                           })}
                         </div>
                       </div>
-                      <div className="flex-1 min-w-0 overflow-auto p-2">
+                      <div className="flex-1 min-w-0 min-h-[450px] overflow-auto p-2">
                         {commitDetailsLoading || diffLoading ? (
-                          <div className="flex items-center justify-center h-[calc(100vh-320px)] text-neutral-500">
+                          <div className="flex items-center justify-center h-[450px] text-neutral-500">
                             <LoaderCircle size={14} className="animate-spin mr-2" />
                             <span className="text-xs">Loading...</span>
                           </div>
