@@ -422,8 +422,8 @@ export default function FocusModeGitPanel({
   } | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationState>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(true);
-  const [stashOpen, setStashOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [stashOpen, setStashOpen] = useState(false);
   const [selectedFileDiff, setSelectedFileDiff] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);

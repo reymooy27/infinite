@@ -144,7 +144,10 @@ export default function ProjectSwitcher({
 
   useEffect(() => {
     if (isOpen) {
-      requestAnimationFrame(() => dropdownRef.current?.focus());
+      const isMobile = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+      if (!isMobile) {
+        requestAnimationFrame(() => dropdownRef.current?.focus());
+      }
     }
   }, [isOpen]);
 

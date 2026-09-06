@@ -398,7 +398,7 @@ export default function FocusModeLayout({
       </div>
 
       {activeWindow && (
-        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center justify-end gap-2">
+        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center justify-end gap-2 overflow-x-auto scrollbar-hide">
           <div className="relative">
             <button
               ref={tabToggleBtnRef}

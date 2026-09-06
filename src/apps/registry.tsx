@@ -12,6 +12,7 @@ import {
   FileTerminal,
   Globe,
   Loader2,
+  Mic,
   NotepadText,
   RefreshCw,
   Upload,
@@ -19,6 +20,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
+import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import FileTransferWindow from "@/components/FileTransferModal";
 import DevBrowser from "./DevBrowser";
@@ -71,6 +73,7 @@ export const SSHPane = ({
     return window.matchMedia("(max-width: 767px)").matches;
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -259,6 +262,8 @@ export const SSHPane = ({
 
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
+    // Skip autofocus on mobile to prevent virtual keyboard
+    if (isMobile) return;
     // Don't steal focus from inputs/textareas outside the terminal
     // (e.g. modal forms, sidebar inputs)
     const active = document.activeElement;
@@ -273,7 +278,7 @@ export const SSHPane = ({
       return;
     }
     termInstanceRef.current?.focus();
-  }, []);
+  }, [isMobile]);
 
   // Ctrl+W is a browser-reserved shortcut; the only way to intercept it is
   // the Keyboard Lock API, which only captures reserved keys in fullscreen.
@@ -1211,9 +1216,43 @@ export const SSHPane = ({
     if (conn) useFileTransferStore.getState().openDownload(conn);
   }, [connectionId]);
 
+  const handleVoiceSend = useCallback((text: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "data", data: text + "\r" }));
+    }
+  }, []);
+
+  const openVoiceOverlay = useCallback(() => {
+    setVoiceOverlayOpen(true);
+  }, []);
+
+  const closeVoiceOverlay = useCallback(() => {
+    setVoiceOverlayOpen(false);
+  }, []);
+
   const mobileBottomInset = isMobile
     ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
     : 0;
+
+  const translateVoice = useCallback(async (text: string) => {
+    try {
+      const { ninerouterApiKey, ninerouterModel } = useSettingsStore.getState();
+      const res = await fetch("/api/voice/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          apiKey: ninerouterApiKey || undefined,
+          model: ninerouterModel || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Translation failed");
+      const data = await res.json();
+      return data.translated || text;
+    } catch {
+      return text;
+    }
+  }, []);
 
   return (
     <div
@@ -1246,23 +1285,34 @@ export const SSHPane = ({
 
       {/* Mobile UI */}
       {status === "connected" && isMobile && showTerminalShortcuts && (
-        <div
-          className="absolute left-1 right-1 z-30"
-          style={{
-            bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
-          }}
-        >
-          <QuickBar
-            onSend={sendShortcut}
-            onTmux={sendTmux}
-            onCopy={handleCopy}
-            onPaste={handlePaste}
-            onToggleDrawer={() => setDrawerOpen((o) => !o)}
-            copyFeedback={copyFeedback}
-            pasteFeedback={pasteFeedback}
-            drawerOpen={drawerOpen}
-          />
-        </div>
+        <>
+          <button
+            onClick={openVoiceOverlay}
+            className="absolute left-1/2 -translate-x-1/2 z-30 mb-2 w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white shadow-xl transition-colors active:scale-95 touch-manipulation"
+            style={{ bottom: keyboardHeight ? `${keyboardHeight + 64}px` : "4rem" }}
+            title="Voice Input"
+            aria-label="Voice Input"
+          >
+            <Mic className="w-6 h-6" />
+          </button>
+          <div
+            className="absolute left-1 right-1 z-30"
+            style={{
+              bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
+            }}
+          >
+            <QuickBar
+              onSend={sendShortcut}
+              onTmux={sendTmux}
+              onCopy={handleCopy}
+              onPaste={handlePaste}
+              onToggleDrawer={() => setDrawerOpen((o) => !o)}
+              copyFeedback={copyFeedback}
+              pasteFeedback={pasteFeedback}
+              drawerOpen={drawerOpen}
+            />
+          </div>
+        </>
       )}
       {status === "connected" &&
         isMobile &&
@@ -1393,6 +1443,14 @@ export const SSHPane = ({
             </button>
             <div className="w-px h-4 bg-neutral-700" />
             <button
+              onClick={openVoiceOverlay}
+              className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-600/20 transition-colors cursor-pointer font-mono"
+              title="Voice Input (Speech to Text)"
+            >
+              <Mic className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-neutral-700" />
+            <button
               onClick={handleUploadClick}
               className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer"
               title="Upload file to remote"
@@ -1439,6 +1497,13 @@ export const SSHPane = ({
           )}
         </div>
       )}
+      <VoiceInputOverlay
+        isOpen={voiceOverlayOpen}
+        onClose={closeVoiceOverlay}
+        onSend={handleVoiceSend}
+        isMobile={isMobile}
+        onTranslate={translateVoice}
+      />
     </div>
   );
 };
