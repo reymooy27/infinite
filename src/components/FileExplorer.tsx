@@ -224,6 +224,8 @@ export default function FileExplorer({
   });
   const [filterText, setFilterText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [treeCollapsed, setTreeCollapsed] = useState(() =>
     typeof window !== "undefined" && window.innerWidth < 768,
   );
@@ -246,6 +248,9 @@ export default function FileExplorer({
   const [diffMode, setDiffMode] = useState(false);
   const [headContent, setHeadContent] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
+  // Recently-opened file paths (most-recent first) for the mobile quick-switch
+  // strip. ponytail: in-memory only, capped at 6 — add persistence when needed.
+  const [recentFiles, setRecentFiles] = useState<string[]>([]);
 
   // --- API calls ---
 
@@ -300,6 +305,7 @@ export default function FileExplorer({
       setEditContent(null);
       setDiffMode(false);
       setHeadContent(null);
+      setRecentFiles((prev) => [path, ...prev.filter((p) => p !== path)].slice(0, 6));
 
       try {
         const params = new URLSearchParams({ path });
@@ -462,6 +468,32 @@ export default function FileExplorer({
     return () => clearTimeout(filterTimerRef.current);
   }, [filterText]);
 
+  // Run recursive search on the server so matches in unfetched subfolders appear
+  useEffect(() => {
+    if (!projectId || !searchQuery) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+    const ctrl = new AbortController();
+    setSearchLoading(true);
+    const params = new URLSearchParams({ q: searchQuery });
+    if (connectionId) params.set("connectionId", String(connectionId));
+    fetch(`/api/projects/${projectId}/files/search?${params}`, { signal: ctrl.signal })
+      .then((r) => r.json())
+      .then((body) => {
+        if (ctrl.signal.aborted) return;
+        setSearchResults(body.entries ?? []);
+      })
+      .catch((err) => {
+        if (err?.name !== "AbortError") setSearchResults([]);
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setSearchLoading(false);
+      });
+    return () => ctrl.abort();
+  }, [projectId, connectionId, searchQuery]);
+
   // Auto-dismiss save feedback
   useEffect(() => {
     if (!saveFeedback) return;
@@ -497,40 +529,22 @@ export default function FileExplorer({
 
   const handleFileSelect = (path: string) => {
     void fetchFile(path);
+    // On mobile the tree is a full-width overlay; collapse it so the freshly
+    // opened file is visible instead of leaving the user on the file list.
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setTreeCollapsed(true);
+    }
   };
 
   // --- Derived state ---
-
-  // Flatten cached entries recursively (only folders already loaded into dirCache)
-  const flattenCachedEntries = useCallback((): FileEntry[] => {
-    const result: FileEntry[] = [];
-    const seen = new Set<string>();
-    const walk = (entries: FileEntry[]) => {
-      for (const entry of entries) {
-        if (seen.has(entry.path)) continue;
-        seen.add(entry.path);
-        result.push(entry);
-        if (entry.isDir) {
-          const child = dirCache[entry.path];
-          if (child?.entries) walk(child.entries);
-        }
-      }
-    };
-    if (dirCache[""]?.entries) walk(dirCache[""].entries);
-    return result;
-  }, [dirCache]);
 
   const rootEntries = dirCache[""]?.entries
     ? sortEntries(dirCache[""].entries)
     : [];
 
-  // When filtering, flatten all cached entries; otherwise show root tree as-is
-  const filteredFlat = searchQuery
-    ? flattenCachedEntries().filter((e) => {
-        const fullPath = e.path ? e.path.toLowerCase() : e.name.toLowerCase();
-        return fullPath.includes(searchQuery);
-      })
-    : null;
+  // When searching, show the server's recursive results (reaches unfetched
+  // subfolders); otherwise show the root tree as-is.
+  const filteredFlat = searchQuery ? (searchResults ?? []) : null;
 
   const isModified =
     editContent !== null &&
@@ -585,8 +599,10 @@ export default function FileExplorer({
       : "absolute inset-y-0 right-0 z-40 flex w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
     }>
       {/* --- Tree Panel (left) --- */}
+      {/* Mobile: full-width overlay so file names have room; collapses on select.
+          Desktop: fixed 15rem sidebar. */}
       <div
-        className={`flex h-full w-60 shrink-0 flex-col border-r border-neutral-800 ${
+        className={`absolute inset-0 z-10 flex h-full w-full shrink-0 flex-col border-r border-neutral-800 bg-neutral-950 md:static md:z-auto md:w-60 md:bg-transparent ${
           treeCollapsed ? "hidden" : "flex"
         } md:flex`}
       >
@@ -662,7 +678,12 @@ export default function FileExplorer({
           )}
 
           {filteredFlat ? (
-            filteredFlat.length === 0 ? (
+            searchLoading && filteredFlat.length === 0 ? (
+              <div className="flex items-center justify-center py-6 text-neutral-500">
+                <LoaderCircle size={14} className="animate-spin mr-2" />
+                <span className="text-xs">Searching...</span>
+              </div>
+            ) : filteredFlat.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-neutral-500">
                 No matching files
               </div>
@@ -804,6 +825,32 @@ export default function FileExplorer({
             </>
           )}
         </div>
+
+        {/* Recent-files quick switch — mobile only. One tap to jump between
+            recently opened files without reopening the tree. */}
+        {recentFiles.length > 1 && (
+          <div className="flex gap-1 overflow-x-auto border-b border-neutral-800 px-2 py-1.5 md:hidden">
+            {recentFiles.map((p) => {
+              const isActive = p === openFile?.path;
+              const Icon = getFileIcon(p);
+              return (
+                <button
+                  key={p}
+                  onClick={() => void fetchFile(p)}
+                  title={p}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] transition-colors ${
+                    isActive
+                      ? "bg-neutral-800 text-white"
+                      : "text-neutral-400 hover:bg-neutral-800/70 hover:text-white"
+                  }`}
+                >
+                  <Icon size={12} className="shrink-0 text-neutral-500" />
+                  <span className="max-w-[8rem] truncate">{p.split("/").pop()}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Editor content */}
         <div className="flex-1 overflow-y-auto">

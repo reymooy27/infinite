@@ -47,8 +47,13 @@ const DEFAULT_QUICK_BAR: QuickBarSlot[] = [
   { label: "C-c", data: "\x03" },
   { label: "C-d", data: "\x04" },
   { label: "Tab", data: "\x09" },
+  { label: "Esc", data: "\x1b" },
   { label: "↑", data: "\x1b[A" },
   { label: "↓", data: "\x1b[B" },
+  { label: "C-u", data: "\x15" },
+  { label: "C-w", data: "\x17" },
+  { label: "C-r", data: "\x12" },
+  { label: "Enter", data: "\r" },
 ];
 
 interface SettingsState {
@@ -59,6 +64,8 @@ interface SettingsState {
   bgColor: string;
   quickBarSlots: QuickBarSlot[];
   routerUsageBaseUrl: string;
+  ninerouterApiKey: string;
+  ninerouterModel: string;
   focusMode: boolean;
   focusModeWindowId: string | null;
   setShowTerminalShortcuts: (value: boolean) => void;
@@ -68,6 +75,8 @@ interface SettingsState {
   setBgColor: (color: string) => void;
   setQuickBarSlots: (slots: QuickBarSlot[]) => void;
   setRouterUsageBaseUrl: (value: string) => void;
+  setNinerouterApiKey: (value: string) => void;
+  setNinerouterModel: (value: string) => void;
   setFocusMode: (value: boolean) => void;
   setFocusModeWindowId: (id: string | null) => void;
 }
@@ -82,6 +91,8 @@ export const useSettingsStore = create<SettingsState>()(
       bgColor: "#171717",
       quickBarSlots: DEFAULT_QUICK_BAR,
       routerUsageBaseUrl: DEFAULT_ROUTER_USAGE_BASE_URL,
+      ninerouterApiKey: "",
+      ninerouterModel: "gpt-4o-mini",
       focusMode: false,
       focusModeWindowId: null,
       setShowTerminalShortcuts: (value) =>
@@ -92,6 +103,8 @@ export const useSettingsStore = create<SettingsState>()(
       setBgColor: (color) => set({ bgColor: color }),
       setQuickBarSlots: (slots) => set({ quickBarSlots: slots }),
       setRouterUsageBaseUrl: (value) => set({ routerUsageBaseUrl: value }),
+      setNinerouterApiKey: (value) => set({ ninerouterApiKey: value }),
+      setNinerouterModel: (value) => set({ ninerouterModel: value }),
       setFocusMode: (value) =>
         set((state) => (state.focusMode === value ? state : { focusMode: value })),
       setFocusModeWindowId: (id) =>

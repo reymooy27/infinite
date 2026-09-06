@@ -18,7 +18,7 @@ function normalizeRouterUsageBaseUrl(raw: string): string {
 
 const router = Router();
 
-async function proxyRouterUsage(req: Request, res: Response, path: "/api/usage/stats" | "/api/usage/chart", apiPath: string) {
+async function proxyRouterUsage(req: Request, res: Response, path: "/api/usage/stats" | "/api/usage/chart" | "/api/usage/request-details", apiPath: string) {
   const period = (req.query.period as string) || "7d";
 
   if (!isRouterUsagePeriod(period)) {
@@ -83,5 +83,8 @@ router.get("/chart", (req, res) => proxyRouterUsage(req, res, "/api/usage/chart"
 
 // GET /api/router-usage/stats
 router.get("/stats", (req, res) => proxyRouterUsage(req, res, "/api/usage/stats", "/api/router-usage/stats"));
+
+// GET /api/router-usage/request-details
+router.get("/request-details", (req, res) => proxyRouterUsage(req, res, "/api/usage/request-details", "/api/router-usage/request-details"));
 
 export default router;

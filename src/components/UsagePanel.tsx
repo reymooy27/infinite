@@ -32,6 +32,18 @@ type RecentRequest = {
   status?: string;
 };
 
+type ErrorRequestDetail = {
+  id: string;
+  provider: string;
+  model: string;
+  connectionId: string;
+  timestamp: string;
+  status: string;
+  latency: { ttft: number; total: number };
+  tokens: { prompt_tokens: number; completion_tokens: number };
+  response?: { error?: string; status?: number };
+};
+
 type UsageStatsResponse = {
   totalRequests?: number;
   totalPromptTokens?: number;
@@ -211,6 +223,10 @@ export default function UsagePanel() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [errorLogs, setErrorLogs] = useState<string[]>([]);
+  const [errorLoading, setErrorLoading] = useState(false);
+  const [errorLogsError, setErrorLogsError] = useState("");
+  const [showErrorLogs, setShowErrorLogs] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,6 +270,27 @@ export default function UsagePanel() {
     return () => {
       cancelled = true;
     };
+  }, [baseUrl, period]);
+
+  async function fetchErrorLogs() {
+    setErrorLoading(true);
+    setErrorLogsError("");
+    try {
+      const res = await fetch(`/api/translator/console-logs`, { cache: "no-store" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load error logs");
+      // Expect { type: "init", logs: string[] }
+      const logs = (body.logs ?? []);
+      setErrorLogs(logs);
+    } catch (err) {
+      setErrorLogsError(err instanceof Error ? err.message : "Failed to load error logs");
+    } finally {
+      setErrorLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void fetchErrorLogs();
   }, [baseUrl, period]);
 
   async function handleRefresh() {
@@ -383,12 +420,6 @@ export default function UsagePanel() {
                             <div className="truncate text-[12px] font-medium text-neutral-100">
                               {item.model}
                             </div>
-                            <div className="truncate text-[11px] text-neutral-500">
-                              {pickText(
-                                stats?.byModel?.[item.model]?.provider,
-                                item.provider,
-                              ) || "Unknown provider"}
-                            </div>
                           </div>
                           <div className="shrink-0 text-right text-[11px] text-neutral-400">
                             <div>
@@ -402,6 +433,8 @@ export default function UsagePanel() {
                     </div>
                   </div>
                 )}
+
+                
               </div>
             )}
           </div>
@@ -414,6 +447,53 @@ export default function UsagePanel() {
           </button>
         </div>
       </div>
+      {/* Error Log Section */}
+                <div className="mt-3 border-t border-neutral-800 pt-3">
+                  <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+                    <button
+                      onClick={() => setShowErrorLogs((prev) => !prev)}
+                      className="flex w-full items-center justify-between text-left"
+                    >
+                      <div>
+                        <h3 className="text-[13px] font-medium text-neutral-100">Error Log</h3>
+                        <p className="mt-1 text-[11px] text-neutral-400">
+                          Recent failed requests from 9router.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {errorLogs.length > 0 && (
+                          <span className="rounded-full bg-red-900/60 px-2 py-0.5 text-[10px] text-red-300">
+                            {errorLogs.length}
+                          </span>
+                        )}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${showErrorLogs ? "rotate-180" : ""}`}>
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
+                      </div>
+                    </button>
+                    {showErrorLogs && (
+                      <div className="mt-3">
+                        {errorLoading ? (
+                          <div className="text-[12px] text-neutral-500">Loading error logs...</div>
+                        ) : errorLogsError ? (
+                          <div className="text-[12px] text-red-300">{errorLogsError}</div>
+                        ) : errorLogs.length === 0 ? (
+                          <div className="text-[12px] text-neutral-500">No errors in this period.</div>
+                        ) : (
+                          <div className="overflow-x-auto rounded-lg border border-neutral-700">
+                            <div className="divide-y divide-neutral-800">
+                              {errorLogs.slice(0, 10).map((log, index) => (
+                                <div key={index} className="px-3 py-2 text-[12px] font-mono text-neutral-300 border-b border-neutral-800/50 last:border-0">
+                                  {log}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
       <div className="grid grid-cols-5 gap-1 rounded-lg border border-neutral-700 bg-neutral-800/70 p-1">
         {ROUTER_USAGE_PERIODS.map((item) => (
@@ -431,7 +511,7 @@ export default function UsagePanel() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <MetricCard
           label="Requests"
           value={fmtNumber(stats?.totalRequests)}

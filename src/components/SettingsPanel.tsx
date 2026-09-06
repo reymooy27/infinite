@@ -73,6 +73,10 @@ export default function SettingsPanel({
   const setQuickBarSlots = useSettingsStore((s) => s.setQuickBarSlots);
   const routerUsageBaseUrl = useSettingsStore((s) => s.routerUsageBaseUrl);
   const setRouterUsageBaseUrl = useSettingsStore((s) => s.setRouterUsageBaseUrl);
+  const ninerouterApiKey = useSettingsStore((s) => s.ninerouterApiKey);
+  const setNinerouterApiKey = useSettingsStore((s) => s.setNinerouterApiKey);
+  const ninerouterModel = useSettingsStore((s) => s.ninerouterModel);
+  const setNinerouterModel = useSettingsStore((s) => s.setNinerouterModel);
 
   // Push state lives in the browser (permission + SW subscription), not the store.
   const [pushOn, setPushOn] = useState(false);
@@ -300,7 +304,7 @@ export default function SettingsPanel({
                     setQuickBarSlots(
                       quickBarSlots.filter((q) => q.data !== s.data),
                     );
-                  } else if (quickBarSlots.length < 9) {
+                  } else {
                     setQuickBarSlots([...quickBarSlots, s]);
                   }
                 }}
@@ -326,7 +330,7 @@ export default function SettingsPanel({
                     setQuickBarSlots(
                       quickBarSlots.filter((q) => q.data !== s.data),
                     );
-                  } else if (quickBarSlots.length < 9) {
+                  } else {
                     setQuickBarSlots([...quickBarSlots, s]);
                   }
                 }}
@@ -342,8 +346,50 @@ export default function SettingsPanel({
           })}
         </div>
         <p className="mt-1.5 text-[10px] text-neutral-500">
-          {quickBarSlots.length}/9 selected
+          {quickBarSlots.length} selected
         </p>
+      </div>
+
+      <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+        <h3 className="text-[13px] font-medium text-neutral-100">
+          9router AI (Voice-to-Command)
+        </h3>
+        <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+          AI translation for voice input to Linux commands. Get your API key from{" "}
+          <a
+            href="https://9router.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300 underline"
+          >
+            9router.dev
+          </a>
+          .
+        </p>
+        <div className="mt-3 space-y-2">
+          <div>
+            <label className="text-[11px] text-neutral-400">API Key</label>
+            <input
+              type="password"
+              value={ninerouterApiKey}
+              onChange={(e) => setNinerouterApiKey(e.target.value)}
+              placeholder="sk-..."
+              className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500 font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-neutral-400">Model</label>
+            <input
+              value={ninerouterModel}
+              onChange={(e) => setNinerouterModel(e.target.value)}
+              placeholder="gpt-4o-mini"
+              className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-[12px] text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-blue-500 font-mono"
+            />
+          </div>
+          <p className="text-[10px] text-neutral-500">
+            Without API key, voice translation uses rule-based fallback only.
+          </p>
+        </div>
       </div>
     </div>
   );

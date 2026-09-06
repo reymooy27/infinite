@@ -112,6 +112,7 @@ export default function ProjectSwitcher({
   const [usageError, setUsageError] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const rowRefs = useRef<(HTMLElement | null)[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -143,9 +144,16 @@ export default function ProjectSwitcher({
 
   useEffect(() => {
     if (isOpen) {
-      requestAnimationFrame(() => dropdownRef.current?.focus());
+      const isMobile = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+      if (!isMobile) {
+        requestAnimationFrame(() => dropdownRef.current?.focus());
+      }
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    rowRefs.current[focusedIdx]?.scrollIntoView({ block: "nearest" });
+  }, [focusedIdx]);
 
   const loadUsage = useCallback(
     async (signal?: AbortSignal, silent = false) => {
@@ -223,10 +231,10 @@ export default function ProjectSwitcher({
     (e: React.KeyboardEvent) => {
       const items = nonActiveProjects;
       const totalItems = items.length + SIDEBAR_SECTIONS.length + 2;
-      if (e.key === "ArrowDown") {
+      if (e.key === "ArrowDown" || e.key === "j") {
         e.preventDefault();
         setFocusedIdx((prev) => Math.min(prev + 1, totalItems - 1));
-      } else if (e.key === "ArrowUp") {
+      } else if (e.key === "ArrowUp" || e.key === "k") {
         e.preventDefault();
         setFocusedIdx((prev) => Math.max(prev - 1, 0));
       } else if (e.key === "Enter") {
@@ -343,6 +351,7 @@ export default function ProjectSwitcher({
                 aria-selected={focusedIdx === index}
                 disabled={switching === project.id}
                 onClick={() => handleSwitch(project.id)}
+                ref={(el) => (rowRefs.current[index] = el)}
                 className={itemClassName(
                   index,
                   "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer hover:bg-neutral-800 disabled:opacity-50 text-neutral-100",
@@ -372,6 +381,7 @@ export default function ProjectSwitcher({
                   role="option"
                   aria-selected={focusedIdx === index}
                   onClick={() => handleOpenSection(section.id)}
+                  ref={(el) => (rowRefs.current[nonActiveProjects.length + sectionIndex] = el)}
                   className={itemClassName(
                     index,
                     "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
@@ -434,6 +444,7 @@ export default function ProjectSwitcher({
               focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length
             }
             onClick={() => handleOpenSection("usage")}
+            ref={(el) => (rowRefs.current[nonActiveProjects.length + SIDEBAR_SECTIONS.length] = el)}
             className={itemClassName(
               nonActiveProjects.length + SIDEBAR_SECTIONS.length,
               "block w-full border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-neutral-900",
@@ -499,6 +510,7 @@ export default function ProjectSwitcher({
                 nonActiveProjects.length + SIDEBAR_SECTIONS.length + 1
               }
               onClick={() => handleOpenSection("projects")}
+              ref={(el) => (rowRefs.current[nonActiveProjects.length + SIDEBAR_SECTIONS.length + 1] = el)}
               className={itemClassName(
                 nonActiveProjects.length + SIDEBAR_SECTIONS.length + 1,
                 "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",

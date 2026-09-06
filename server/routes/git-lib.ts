@@ -61,6 +61,7 @@ export type GitStatusPayload = {
   clean: boolean;
   changes: GitChange[];
   scannedAt: string;
+  remoteUrl: string | null;
 };
 
 export type GitAction =
@@ -153,6 +154,7 @@ function createBasePayload(projectId: string, projectName: string, directory: st
     clean: true,
     changes: [],
     scannedAt: new Date().toISOString(),
+    remoteUrl: null,
   };
 }
 
@@ -509,12 +511,77 @@ export async function execGitOrThrow(ctx: GitExecutionContext, args: string[]) {
   return result.stdout;
 }
 
-function sanitizeCommitHash(hash: string) {
+export function sanitizeCommitHash(hash: string) {
   const trimmed = hash.trim();
   if (!/^[0-9a-fA-F]{1,40}$/.test(trimmed)) {
     throw new GitActionError("Invalid commit hash");
   }
   return trimmed;
+}
+
+export type GitCommitFile = {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed";
+  originalPath?: string;
+};
+
+export type GitCommitDetails = {
+  hash: string;
+  subject: string;
+  authorName: string;
+  authorEmail: string;
+  relativeDate: string;
+  body: string;
+  files: GitCommitFile[];
+  diff: string;
+};
+
+export async function getCommitDetails(options: {
+  projectId: string;
+  hash: string;
+  requestedDirectory?: string | null;
+  connectionId?: number | null;
+}): Promise<GitCommitDetails> {
+  const ctx = await createExecutionContext(options.projectId, options.requestedDirectory, options.connectionId);
+  const hash = sanitizeCommitHash(options.hash);
+
+  const [diffOutput, commitInfoOutput, nameStatusOutput] = await Promise.all([
+    execGitOrThrow(ctx, ["show", "--no-color", "--format=", hash]),
+    execGitOrThrow(ctx, ["show", "--no-color", "--format=%H%x09%s%x09%an%x09%ae%x09%cr%x09%B", hash]),
+    execGitOrThrow(ctx, ["show", "--name-status", "--format=", hash]),
+  ]);
+
+  const [fullHash, subject, authorName, authorEmail, relativeDate, body] = commitInfoOutput.split("\t");
+  const diff = diffOutput || "No changes";
+
+  const files: GitCommitFile[] = nameStatusOutput
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [status, ...pathParts] = line.split("\t");
+      if (status === "R") {
+        return {
+          status: "renamed" as const,
+          originalPath: pathParts[0],
+          path: pathParts[1],
+        };
+      }
+      return {
+        status: (status === "A" ? "added" : status === "M" ? "modified" : "deleted") as GitCommitFile["status"],
+        path: pathParts.join("\t"),
+      };
+    });
+
+  return {
+    hash: fullHash || hash,
+    subject: subject || "",
+    authorName: authorName || "",
+    authorEmail: authorEmail || "",
+    relativeDate: relativeDate || "",
+    body: body || "",
+    files,
+    diff,
+  };
 }
 
 export async function getCommitDiff(options: {
@@ -541,12 +608,13 @@ export async function getGitStatus(options: {
     payload.repoRoot = await execGitOrThrow(ctx, ["rev-parse", "--show-toplevel"]);
     payload.isRepo = true;
 
-    const [statusOutput, branchesOutput, lastCommitOutput, recentCommitsOutput, stashOutput] = await Promise.all([
+    const [statusOutput, branchesOutput, lastCommitOutput, recentCommitsOutput, stashOutput, remoteUrlOutput] = await Promise.all([
       execGitOrThrow(ctx, ["status", "--short", "--branch", "--untracked-files=all"]),
       execGitOrThrow(ctx, ["branch", "--format=%(refname:short)"]).catch(() => ""),
       execGitOrThrow(ctx, ["log", "-1", "--pretty=format:%h%x09%s%x09%cr%x09%an"]).catch(() => ""),
       execGitOrThrow(ctx, ["log", "-12", "--pretty=format:%h%x09%s%x09%cr%x09%an"]).catch(() => ""),
       execGitOrThrow(ctx, ["stash", "list", "--format=%gd%x09%gs"]).catch(() => ""),
+      execGitOrThrow(ctx, ["remote", "get-url", "origin"]).catch(() => ""),
     ]);
 
     parseChanges(statusOutput, payload);
@@ -555,6 +623,7 @@ export async function getGitStatus(options: {
     payload.recentCommits = parseRecentCommits(recentCommitsOutput);
     payload.stashes = parseStashes(stashOutput);
     payload.stashCount = parseStashCount(stashOutput);
+    payload.remoteUrl = remoteUrlOutput.trim() || null;
     payload.scannedAt = new Date().toISOString();
     return payload;
   } catch (error) {

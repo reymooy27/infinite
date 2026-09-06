@@ -5,6 +5,7 @@ import {
   GitActionError,
   getGitStatus,
   getCommitDiff,
+  getCommitDetails,
   runGitAction,
   createExecutionContext,
   execGitOrThrow,
@@ -193,29 +194,37 @@ router.get("/:id/git/diff", async (req, res) => {
     const connectionIdParam = req.query.connectionId as string;
     const connectionId = connectionIdParam ? Number.parseInt(connectionIdParam, 10) : null;
     const staged = req.query.staged === "true";
+    const hash = (req.query.hash as string)?.trim();
 
     if (!file) {
       res.status(400).json({ error: "File path is required" });
       return;
     }
 
-    const { createExecutionContext, execGitOrThrow } = await import("./git-lib.js");
+    const { createExecutionContext, execGitOrThrow, sanitizeCommitHash } = await import("./git-lib.js");
     const ctx = await createExecutionContext(req.params.id, directory, connectionId);
-
-    const statusOutput = await execGitOrThrow(ctx, ["status", "--short", "--", file]);
-    const isUntracked = statusOutput.startsWith("??");
 
     let diff: string;
 
-    if (isUntracked) {
-      diff = await execGitOrThrow(ctx, ["diff", "--no-color", "--no-index", "/dev/null", file]).catch(() => {
-        return execGitOrThrow(ctx, ["show", `:${file}`]).catch(() => "Unable to read file content");
+    if (hash) {
+      const sanitizedHash = sanitizeCommitHash(hash);
+      diff = await execGitOrThrow(ctx, ["show", "--no-color", "--format=", sanitizedHash, "--", file]).catch(() => {
+        return execGitOrThrow(ctx, ["diff", "--no-color", `${sanitizedHash}^..${sanitizedHash}`, "--", file]).catch(() => "No changes");
       });
     } else {
-      const args = ["diff", "--no-color"];
-      if (staged) args.push("--cached");
-      args.push("--", file);
-      diff = await execGitOrThrow(ctx, args);
+      const statusOutput = await execGitOrThrow(ctx, ["status", "--short", "--", file]);
+      const isUntracked = statusOutput.startsWith("??");
+
+      if (isUntracked) {
+        diff = await execGitOrThrow(ctx, ["diff", "--no-color", "--no-index", "/dev/null", file]).catch(() => {
+          return execGitOrThrow(ctx, ["show", `:${file}`]).catch(() => "Unable to read file content");
+        });
+      } else {
+        const args = ["diff", "--no-color"];
+        if (staged) args.push("--cached");
+        args.push("--", file);
+        diff = await execGitOrThrow(ctx, args);
+      }
     }
 
     res.json({ diff });
@@ -287,6 +296,36 @@ router.get("/:id/git/commit-diff", async (req, res) => {
       return;
     }
     res.status(500).json({ error: "Failed to fetch commit diff" });
+  }
+});
+
+// GET /api/projects/:id/git/commit-details
+router.get("/:id/git/commit-details", async (req, res) => {
+  try {
+    const hash = (req.query.hash as string)?.trim();
+    const directory = (req.query.directory as string)?.trim() || null;
+    const connectionIdParam = req.query.connectionId as string;
+    const connectionId = connectionIdParam ? Number.parseInt(connectionIdParam, 10) : null;
+
+    if (!hash) {
+      res.status(400).json({ error: "Commit hash is required" });
+      return;
+    }
+
+    const result = await getCommitDetails({
+      projectId: req.params.id,
+      hash,
+      requestedDirectory: directory,
+      connectionId,
+    });
+
+    res.json(result);
+  } catch (error) {
+    if (error instanceof GitActionError) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: "Failed to fetch commit details" });
   }
 });
 

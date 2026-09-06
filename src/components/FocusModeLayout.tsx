@@ -190,6 +190,51 @@ export default function FocusModeLayout({
     );
   };
 
+  // Focus-mode keyboard shortcuts: Ctrl/Cmd+Shift+<key>.
+  // Ref holds the latest closures so the listener stays mounted once.
+  // Keyed on e.code (layout-independent). Project switch (P) + focus toggle (F)
+  // are handled globally in App.tsx, so they're intentionally absent here.
+  const shortcutRef = useRef<Record<string, () => void>>({});
+  shortcutRef.current = {
+    Period: handleNextWindow, // next terminal
+    Comma: handlePrevWindow, // previous terminal
+    KeyG: () => {
+      if (!activeProjectId) return;
+      toggleGitPanel();
+      setFileExplorerOpen(false);
+      setTabPanelOpen(false);
+    },
+    KeyE: () => {
+      if (!activeProjectId) return;
+      setFileExplorerOpen((prev) => !prev);
+      useGitStore.getState().closePanel();
+      setTabPanelOpen(false);
+    },
+    KeyB: toggleDockerPanel, // docker
+    KeyM: toggleSysMonPanel, // system monitor
+    KeyK: () => {
+      if (!activeWindow) return;
+      setPaneRefreshKey((k) => k + 1);
+    },
+    // Ctrl+Shift+T is browser-reserved (reopen closed tab) and can't be
+    // intercepted; Enter is free everywhere.
+    Enter: handleAddTab, // new terminal tab
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
+      const action = shortcutRef.current[e.code];
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      action();
+    };
+    // Capture phase so the terminal's key handler doesn't swallow it first.
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, []);
+
   useEffect(() => {
     if (!settingsOpen) return;
     const handler = (e: MouseEvent) => {
@@ -282,7 +327,7 @@ export default function FocusModeLayout({
           <button
             onClick={() => setPaneRefreshKey((k) => k + 1)}
             disabled={!activeWindow}
-            title="Refresh terminal"
+            title="Refresh terminal (Ctrl+Shift+K)"
             className="px-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-neutral-800"
           >
             <RefreshCw size={14} />
@@ -320,7 +365,7 @@ export default function FocusModeLayout({
 
           <button
             onClick={toggleDockerPanel}
-            title="Docker Manager"
+            title="Docker Manager (Ctrl+Shift+B)"
             className={`px-1.5 transition-colors cursor-pointer rounded ${
               dockerOpen
                 ? "text-white bg-neutral-800"
@@ -332,7 +377,7 @@ export default function FocusModeLayout({
 
           <button
             onClick={toggleSysMonPanel}
-            title="System Monitor"
+            title="System Monitor (Ctrl+Shift+M)"
             className={`px-1.5 transition-colors cursor-pointer rounded ${
               sysMonOpen
                 ? "text-white bg-neutral-800"
@@ -460,6 +505,7 @@ export default function FocusModeLayout({
                     >
                       <Plus size={12} />
                       <span>New tab</span>
+                      <span className="ml-auto text-[10px] text-neutral-600">⇧⌃↵</span>
                     </div>
                   </div>
                 </div>
@@ -485,7 +531,7 @@ export default function FocusModeLayout({
               setTabPanelOpen(false);
             }}
             disabled={!activeProjectId}
-            title={gitPanelOpen ? "Hide git changes" : "Show git changes"}
+            title={gitPanelOpen ? "Hide git changes (Ctrl+Shift+G)" : "Show git changes (Ctrl+Shift+G)"}
             className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
               gitPanelOpen
                 ? "bg-neutral-800 text-white border-neutral-700"
@@ -502,7 +548,7 @@ export default function FocusModeLayout({
             }}
             disabled={!activeProjectId}
             title={
-              fileExplorerOpen ? "Hide file explorer" : "Show file explorer"
+              fileExplorerOpen ? "Hide file explorer (Ctrl+Shift+E)" : "Show file explorer (Ctrl+Shift+E)"
             }
             className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
               fileExplorerOpen
