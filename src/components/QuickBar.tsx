@@ -34,10 +34,10 @@ export function QuickBar({
     [onSend, onTmux],
   );
 
-  const btn = "flex-1 h-10 flex items-center justify-center rounded-lg bg-neutral-800 active:bg-neutral-600 text-[11px] font-mono text-neutral-300 transition-colors";
+  const btn = "shrink-0 w-12 h-10 flex items-center justify-center rounded-lg bg-neutral-800 active:bg-neutral-600 text-[11px] font-mono text-neutral-300 transition-colors";
 
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5 mr-5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg">
+    <div className="flex items-center gap-1 px-2 py-1.5 mr-5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg overflow-x-auto scrollbar-hide">
       {slots.map((s) => (
         <button key={s.label + (s.isTmux ? "-tmux" : "")} onClick={() => press(s)} className={btn}>{s.label}</button>
       ))}

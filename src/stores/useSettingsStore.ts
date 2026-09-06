@@ -47,8 +47,13 @@ const DEFAULT_QUICK_BAR: QuickBarSlot[] = [
   { label: "C-c", data: "\x03" },
   { label: "C-d", data: "\x04" },
   { label: "Tab", data: "\x09" },
+  { label: "Esc", data: "\x1b" },
   { label: "↑", data: "\x1b[A" },
   { label: "↓", data: "\x1b[B" },
+  { label: "C-u", data: "\x15" },
+  { label: "C-w", data: "\x17" },
+  { label: "C-r", data: "\x12" },
+  { label: "Enter", data: "\r" },
 ];
 
 interface SettingsState {

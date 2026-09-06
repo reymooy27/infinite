@@ -304,7 +304,7 @@ export default function SettingsPanel({
                     setQuickBarSlots(
                       quickBarSlots.filter((q) => q.data !== s.data),
                     );
-                  } else if (quickBarSlots.length < 9) {
+                  } else {
                     setQuickBarSlots([...quickBarSlots, s]);
                   }
                 }}
@@ -330,7 +330,7 @@ export default function SettingsPanel({
                     setQuickBarSlots(
                       quickBarSlots.filter((q) => q.data !== s.data),
                     );
-                  } else if (quickBarSlots.length < 9) {
+                  } else {
                     setQuickBarSlots([...quickBarSlots, s]);
                   }
                 }}
@@ -346,7 +346,7 @@ export default function SettingsPanel({
           })}
         </div>
         <p className="mt-1.5 text-[10px] text-neutral-500">
-          {quickBarSlots.length}/9 selected
+          {quickBarSlots.length} selected
         </p>
       </div>
 
