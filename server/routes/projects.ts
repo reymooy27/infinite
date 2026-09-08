@@ -366,4 +366,75 @@ router.post("/:id/git/action", async (req, res) => {
   }
 });
 
+// POST /api/projects/:id/git/generate-commit-message
+router.post("/:id/git/generate-commit-message", async (req, res) => {
+  try {
+    const { directory, connectionId: connectionIdParam } = req.body;
+    const connectionId = typeof connectionIdParam === "number" && Number.isFinite(connectionIdParam) ? connectionIdParam : null;
+
+    const { createExecutionContext, execGitOrThrow } = await import("./git-lib.js");
+    const ctx = await createExecutionContext(req.params.id, directory?.trim() || null, connectionId);
+    
+    const diff = await execGitOrThrow(ctx, ["diff", "--cached"]).catch(() => "");
+
+    if (!diff.trim()) {
+      res.status(400).json({ error: "No staged changes to generate commit message for" });
+      return;
+    }
+
+    const SYSTEM_PROMPT = `You are a helpful AI that generates git commit messages.
+Given a diff of staged changes, write a clear, concise commit message in the imperative mood (e.g., "add feature", "fix bug").
+Output ONLY the commit message, no explanations, no markdown, no extra text.
+Keep the subject line under 50 characters if possible.`;
+
+    const NINEROUTER_BASE_URL = process.env.ROUTER_USAGE_BASE_URL || "https://api.9router.com";
+    const NINEROUTER_API_KEY = process.env.ROUTER_USAGE_API_KEY || process.env.NINEROUTER_API_KEY || "";
+    const NINEROUTER_MODEL = process.env.NINEROUTER_MODEL || "gpt-4o-mini";
+
+    if (!NINEROUTER_API_KEY) {
+      res.status(500).json({ error: "AI API key not configured" });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${NINEROUTER_BASE_URL}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${NINEROUTER_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: NINEROUTER_MODEL,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: `Here is the diff:\n\n${diff}` },
+          ],
+          temperature: 0.2,
+          max_tokens: 100,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI request failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const message = data.choices?.[0]?.message?.content?.trim();
+
+      if (!message) {
+        throw new Error("AI returned empty message");
+      }
+
+      res.json({ message });
+    } catch (error) {
+      console.error("[GenerateCommit] AI Error:", error);
+      res.status(500).json({ error: "Failed to generate commit message" });
+    }
+  } catch (error) {
+    console.error("[GenerateCommit] Error:", error);
+    res.status(500).json({ error: "Failed to generate commit message" });
+  }
+});
+
 export default router;

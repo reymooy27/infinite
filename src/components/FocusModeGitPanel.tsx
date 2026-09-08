@@ -17,6 +17,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -416,6 +417,7 @@ export default function FocusModeGitPanel({
   const [commitMessage, setCommitMessage] = useState("");
   const [commitComposerOpen, setCommitComposerOpen] = useState(false);
   const [stageAllBeforeCommit, setStageAllBeforeCommit] = useState(false);
+  const [commitGenerating, setCommitGenerating] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "success" | "error";
     text: string;
@@ -799,6 +801,28 @@ export default function FocusModeGitPanel({
     }
     await executeAction({ action: "commit", message });
   }, [commitMessage, executeAction, stageAllBeforeCommit]);
+
+  const handleGenerateCommitMessage = useCallback(async () => {
+    if (!projectId) return;
+    setCommitGenerating(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/git/generate-commit-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ directory, connectionId }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to generate message");
+      setCommitMessage(body.message);
+    } catch (err) {
+      setFeedback({
+        kind: "error",
+        text: err instanceof Error ? err.message : "Failed to generate commit message",
+      });
+    } finally {
+      setCommitGenerating(false);
+    }
+  }, [projectId, directory, connectionId, setFeedback]);
 
   const handleBranchCreate = useCallback(() => {
     const branch = newBranchName.trim();
@@ -1768,20 +1792,35 @@ export default function FocusModeGitPanel({
                 <div className="text-[10px] text-neutral-500">
                   {data?.branch ? `On ${data.branch}` : "No branch selected"}
                 </div>
-                <button
-                  onClick={() => void handleCommit()}
-                  disabled={
-                    actionBusy || !commitMessage.trim() || !data?.isRepo
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[11px] font-medium text-neutral-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {actionBusy ? (
-                    <LoaderCircle size={11} className="animate-spin" />
-                  ) : (
-                    <Plus size={11} />
-                  )}
-                  Commit
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void handleGenerateCommitMessage()}
+                    disabled={commitGenerating || actionBusy}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+                    title="Generate commit message with AI"
+                  >
+                    {commitGenerating ? (
+                      <LoaderCircle size={11} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={11} />
+                    )}
+                    AI
+                  </button>
+                  <button
+                    onClick={() => void handleCommit()}
+                    disabled={
+                      actionBusy || !commitMessage.trim() || !data?.isRepo
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[11px] font-medium text-neutral-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {actionBusy ? (
+                      <LoaderCircle size={11} className="animate-spin" />
+                    ) : (
+                      <Plus size={11} />
+                    )}
+                    Commit
+                  </button>
+                </div>
               </div>
             </>
           )}
