@@ -165,7 +165,12 @@ export default function FocusModeLayout({
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
-    if (!activeWindow || tabs.length <= 1) return;
+    if (!activeWindow) return;
+    // If this is the last tab, close the entire window (triggers tmux cleanup)
+    if (tabs.length <= 1) {
+      handleCloseWindow(activeWindow.id);
+      return;
+    }
     closeTerminalTab(activeWindow.id, tabId);
   };
 
