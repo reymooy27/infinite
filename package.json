@@ -1,7 +1,7 @@
 {
   "name": "infinite",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite\" \"node scripts/dev-server.mjs\"",
