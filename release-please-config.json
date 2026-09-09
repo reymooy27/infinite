@@ -1,0 +1,20 @@
+{
+  "packages": {
+    ".": {
+      "component": "root"
+    },
+    "server": {
+      "component": "server"
+    },
+    "agent": {
+      "component": "agent"
+    }
+  },
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "infinite",
+      "components": ["root", "server", "agent"]
+    }
+  ]
+}
