@@ -1,20 +1,17 @@
 {
   "packages": {
-    ".": {
-      "component": "root"
-    },
-    "server": {
-      "component": "server"
-    },
-    "agent": {
-      "component": "agent"
-    }
+    ".": {}
   },
-  "plugins": [
+  "extra-files": [
     {
-      "type": "linked-versions",
-      "groupName": "infinite",
-      "components": ["root", "server", "agent"]
+      "type": "json",
+      "path": "server/package.json",
+      "jsonpath": "$.version"
+    },
+    {
+      "type": "json",
+      "path": "agent/package.json",
+      "jsonpath": "$.version"
     }
   ]
 }
