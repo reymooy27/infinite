@@ -18,23 +18,30 @@ Infinite is a browser-based spatial workspace for development tools. It gives yo
   a sortable process table (by CPU or memory, with real RSS in MB/GB), and a
   listening-ports table — kill any process or free a stuck port over SSH
 - **Git view** — status tree, diff viewer, and commit/push/pull/stash per project
+  (with commit file tree, GitHub redirect buttons, and AI-generated commit
+  messages)
 - **Code editor** — VS Code-like Monaco editor (syntax highlight, autocomplete,
   multi-cursor) with save, git diff overlay, and recursive file filter across
   expanded subfolders
 - **9router usage analytics** — read-only dashboard of AI/LLM traffic
-  (requests, tokens, cost, breakdown by model/provider/key/endpoint)
-  pulled live from a [9router](https://9router.dev) service
+  (requests, tokens, cost, breakdown by model/provider/key/endpoint,
+  plus an Error Log of failed requests) pulled live from a
+  [9router](https://9router.dev) service
 - **Notes**, **bookmarks**, and **projects** for project-oriented workspace state
 - **Canvas navigation aids** — off-screen window compass and a "next
   terminal" switcher for many open windows
 - **Terminal customization** — font size, background color, on-screen
-  shortcut buttons, and a configurable mobile quick bar
+  shortcut buttons, and a configurable mobile quick bar (unlimited slots
+  with sensible terminal defaults)
 - **Focus mode** — distraction-free layout with the terminal, git sidebar, and
-  Docker toggle
+  Docker toggle, plus `j`/`k` line-by-line history navigation that
+  follows scrollback (`Ctrl+Shift+K` resets to live)
 - **tmux support** — auto-attach a persistent tmux session on SSH connect, plus
   on-screen tmux keypad (next/prev window, new, split vertical/horizontal,
   zoom, kill) configurable via Settings
-- Mobile **quick bar** and **shortcut drawer** for terminal/tmux key pads
+- Mobile **quick bar** and **shortcut drawer** for terminal/tmux key pads,
+  plus **voice input** (mic-to-text) and **file search** for touch devices
+- Global **keyboard shortcuts** (Cmd palette, panel toggle, theme, etc.)
 - All state persisted in a local SQLite file — no external database required
 - **Docker support** — multi-container setup with nginx frontend + Node.js backend
 
@@ -112,6 +119,14 @@ Per active project: working-tree status (staged / unstaged / untracked), a diff
 viewer, and stage / unstage / discard / commit / branch / push / pull / stash
 actions. Reached via the Focus Mode git toggle.
 
+- **Commit file tree** — click any commit in the history to inspect the
+  files it touched; picking a file jumps to the diff for that exact path
+- **GitHub redirect** — one-click buttons to open the current repo /
+  branch / file on GitHub
+- **AI commit messages** — when an AI API key is configured, the commit
+  dialog drafts a Conventional-Commits-style message from the staged
+  diff (settings pick the model and style)
+
 ### Code editor
 
 A Monaco-based editor for the active project's directory:
@@ -143,6 +158,8 @@ The Usage panel (sidebar → **Usage**) shows:
 - a breakdown table grouped by **model**, **provider**, or **API key**
   (plus **endpoint** when present)
 - the most recent requests
+- an **Error Log** of the most recent failed requests (status, error
+  message, model, provider) for quick triage
 
 The same "today" summary also appears at a glance in the Projects
 switcher. Point the endpoint at your 9router base URL; Infinite only
@@ -262,6 +279,15 @@ When many windows are spread across the infinite canvas:
   the git sidebar and the Docker / system-monitor toggles.
 - **Quick bar** and **shortcut drawer** surface copy/paste and terminal/tmux/nav
   key pads for touch devices.
+- **`j` / `k` history navigation** in Focus Mode steps through the terminal
+  scrollback one line at a time and auto-follows the latest output;
+  **`Ctrl+Shift+K`** snaps back to live tail.
+- **Voice input** in the quick bar transcribes speech into the terminal
+  (uses the Web Speech API; HTTPS or localhost required).
+- **Mobile file search** opens a touch-friendly file picker for the active
+  project's working directory.
+- A global **keyboard shortcut palette** (Cmd palette) lists every shortcut
+  and surfaces rarely-used actions on demand.
 
 ### Notifications
 
