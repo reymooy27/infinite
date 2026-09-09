@@ -74,6 +74,10 @@ export const SSHPane = ({
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
+  const [micPos, setMicPos] = useState<{ x: number; y: number } | null>(null);
+  const micDragStartRef = useRef({ x: 0, y: 0 });
+  const micDragOriginRef = useRef({ x: 0, y: 0 });
+  const micDragMovedRef = useRef(false);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -1230,6 +1234,43 @@ export const SSHPane = ({
     setVoiceOverlayOpen(false);
   }, []);
 
+  // Tap-vs-drag: pointerup with no movement = tap (opens overlay), so no onClick here.
+  const MIC_DRAG_THRESHOLD = 6;
+  const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    const el = e.currentTarget;
+    micDragOriginRef.current = { x: el.offsetLeft, y: el.offsetTop };
+    micDragStartRef.current = { x: e.clientX, y: e.clientY };
+    micDragMovedRef.current = false;
+    el.setPointerCapture(e.pointerId);
+  }, []);
+
+  const handleMicPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    const el = e.currentTarget;
+    if (!el.hasPointerCapture(e.pointerId)) return;
+    const dx = e.clientX - micDragStartRef.current.x;
+    const dy = e.clientY - micDragStartRef.current.y;
+    if (!micDragMovedRef.current && Math.hypot(dx, dy) < MIC_DRAG_THRESHOLD) return;
+    micDragMovedRef.current = true;
+    const parent = el.offsetParent ?? el.parentElement;
+    const maxX = parent ? parent.clientWidth - el.offsetWidth : 0;
+    const maxY = parent ? parent.clientHeight - el.offsetHeight : 0;
+    setMicPos({
+      x: Math.max(0, Math.min(maxX, micDragOriginRef.current.x + dx)),
+      y: Math.max(0, Math.min(maxY, micDragOriginRef.current.y + dy)),
+    });
+  }, []);
+
+  const handleMicPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+      if (!micDragMovedRef.current) openVoiceOverlay();
+      micDragMovedRef.current = false;
+    },
+    [openVoiceOverlay],
+  );
+
   const mobileBottomInset = isMobile
     ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
     : 0;
@@ -1287,9 +1328,21 @@ export const SSHPane = ({
       {status === "connected" && isMobile && showTerminalShortcuts && (
         <>
           <button
-            onClick={openVoiceOverlay}
-            className="absolute left-1/2 -translate-x-1/2 z-30 mb-2 w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white shadow-xl transition-colors active:scale-95 touch-manipulation"
-            style={{ bottom: keyboardHeight ? `${keyboardHeight + 64}px` : "4rem" }}
+            onPointerDown={handleMicPointerDown}
+            onPointerMove={handleMicPointerMove}
+            onPointerUp={handleMicPointerUp}
+            onPointerCancel={handleMicPointerUp}
+            className={`absolute z-30 mb-2 w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white shadow-xl transition-colors active:scale-95 touch-none cursor-grab active:cursor-grabbing ${
+              micPos ? "" : "left-1/2 -translate-x-1/2"
+            }`}
+            style={
+              micPos
+                ? { left: micPos.x, top: micPos.y }
+                : {
+                    position: "absolute",
+                    bottom: keyboardHeight ? `${keyboardHeight + 64}px` : "4rem",
+                  }
+            }
             title="Voice Input"
             aria-label="Voice Input"
           >
