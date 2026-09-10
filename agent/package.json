@@ -1,6 +1,6 @@
 {
   "name": "infinite-agent",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Infinite SSH relay agent",
   "type": "module",
   "bin": {
