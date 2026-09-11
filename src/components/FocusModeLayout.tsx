@@ -83,6 +83,10 @@ export default function FocusModeLayout({
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
+  const gitToggleBtnRef = useRef<HTMLButtonElement>(null);
+  const codeEditorToggleBtnRef = useRef<HTMLButtonElement>(null);
+  const gitPanelRef = useRef<HTMLDivElement>(null);
+  const fileExplorerRef = useRef<HTMLDivElement>(null);
 
   const sshConnections = useSSHStore((s) => s.connections);
 
@@ -272,6 +276,31 @@ export default function FocusModeLayout({
     document.addEventListener("mousedown", handler, true);
     return () => document.removeEventListener("mousedown", handler, true);
   }, [tabPanelOpen]);
+
+  // Outside-click-to-close for the git + file-explorer side panels (same intent
+  // as the Docker/SysMon overlay panels). A click in the terminal or anywhere
+  // other than the panel or its toolbar toggle button closes it. Excluding the
+  // toggle buttons avoids a double-fire with their own onClick handler.
+  useEffect(() => {
+    if (!gitPanelOpen && !fileExplorerOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const outsideGit =
+        gitPanelOpen &&
+        (!gitPanelRef.current || !gitPanelRef.current.contains(target)) &&
+        (!gitToggleBtnRef.current || !gitToggleBtnRef.current.contains(target));
+      if (outsideGit) useGitStore.getState().closePanel();
+
+      const outsideFE =
+        fileExplorerOpen &&
+        (!fileExplorerRef.current || !fileExplorerRef.current.contains(target)) &&
+        (!codeEditorToggleBtnRef.current ||
+          !codeEditorToggleBtnRef.current.contains(target));
+      if (outsideFE) setFileExplorerOpen(false);
+    };
+    document.addEventListener("mousedown", handler, true);
+    return () => document.removeEventListener("mousedown", handler, true);
+  }, [gitPanelOpen, fileExplorerOpen]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -530,6 +559,7 @@ export default function FocusModeLayout({
             className="px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
           />
           <button
+            ref={gitToggleBtnRef}
             onClick={() => {
               toggleGitPanel();
               setFileExplorerOpen(false);
@@ -546,6 +576,7 @@ export default function FocusModeLayout({
             <GitBranch size={14} />
           </button>
           <button
+            ref={codeEditorToggleBtnRef}
             onClick={() => {
               setFileExplorerOpen((prev) => !prev);
               useGitStore.getState().closePanel();
@@ -626,33 +657,37 @@ export default function FocusModeLayout({
             </div>
           )}
         </div>
-        <FocusModeGitPanel
-          key={`${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}
-          open={gitPanelOpen && Boolean(activeProjectId)}
-          projectId={activeProjectId}
-          connectionId={connectionId}
-          directory={activeTerminalDirectory}
-          onOpenFile={(path) => {
-            setInitialFilePath(path);
-            setFileExplorerOpen(true);
-            setTimeout(() => {
-              (window as any).__focusExplorerOpenFile?.(path);
-            }, 50);
-          }}
-          onClose={() => useGitStore.getState().closePanel()}
-        />
-        <FileExplorer
-          key={`files:${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}
-          open={fileExplorerOpen && Boolean(activeProjectId)}
-          projectId={activeProjectId}
-          connectionId={connectionId}
-          directory={activeTerminalDirectory}
-          initialPath={initialFilePath}
-          onClose={() => {
-            setFileExplorerOpen(false);
-            setInitialFilePath(null);
-          }}
-        />
+        <div ref={gitPanelRef}>
+          <FocusModeGitPanel
+            key={`${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}
+            open={gitPanelOpen && Boolean(activeProjectId)}
+            projectId={activeProjectId}
+            connectionId={connectionId}
+            directory={activeTerminalDirectory}
+            onOpenFile={(path) => {
+              setInitialFilePath(path);
+              setFileExplorerOpen(true);
+              setTimeout(() => {
+                (window as any).__focusExplorerOpenFile?.(path);
+              }, 50);
+            }}
+            onClose={() => useGitStore.getState().closePanel()}
+          />
+        </div>
+        <div ref={fileExplorerRef}>
+          <FileExplorer
+            key={`files:${activeProjectId ?? "none"}:${connectionId ?? "none"}:${activeTerminalDirectory ?? ""}`}
+            open={fileExplorerOpen && Boolean(activeProjectId)}
+            projectId={activeProjectId}
+            connectionId={connectionId}
+            directory={activeTerminalDirectory}
+            initialPath={initialFilePath}
+            onClose={() => {
+              setFileExplorerOpen(false);
+              setInitialFilePath(null);
+            }}
+          />
+        </div>
       </div>
     </div>
   );
