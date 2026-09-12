@@ -848,24 +848,20 @@ export const SSHPane = ({
         if (lines !== 0) {
           if (autoTmux) {
             // Drive tmux copy-mode instead of xterm's local buffer: tmux owns
-            // the real history, so scrolling has to happen there.
+            // the real scrollback, so scrolling has to happen there.
             const up = lines > 0; // scrolling up = viewing older lines
+            const scrollKey = up ? "k" : "j";
             if (!tmuxCopyActiveRef.current && !tmuxEnteredThisGesture) {
-              // Enter tmux copy-mode (prefix + "["), inlined to avoid TDZ —
-              // sendTmux is declared later in this component body.
-              if (wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({ type: "data", data: "\x02" }));
-                setTimeout(() => {
-                  if (wsRef.current?.readyState === WebSocket.OPEN) {
-                    wsRef.current.send(JSON.stringify({ type: "data", data: "[" }));
-                  }
-                }, 80);
-              }
+              // Enter copy-mode + scroll in one PTY write so tmux applies them
+              // in order — sending k/j before "[" hits the shell as literal input.
+              const data = "\x02[" + scrollKey.repeat(Math.abs(lines));
+              wsRef.current?.send(JSON.stringify({ type: "data", data }));
               tmuxCopyActiveRef.current = true;
               tmuxEnteredThisGesture = true;
-            }
-            for (let i = 0; i < Math.abs(lines); i++) {
-              wsRef.current?.send(JSON.stringify({ type: "data", data: up ? "k" : "j" }));
+            } else {
+              wsRef.current?.send(
+                JSON.stringify({ type: "data", data: scrollKey.repeat(Math.abs(lines)) }),
+              );
             }
           } else {
             term.scrollLines(lines);
