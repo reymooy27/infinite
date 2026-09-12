@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useCallback } from "react";
-import { Copy, MoreHorizontal } from "lucide-react";
+import { Copy, Image as ImageIcon, MoreHorizontal } from "lucide-react";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import type { QuickBarSlot } from "@/stores/useSettingsStore";
 
@@ -9,6 +9,7 @@ export function QuickBar({
   onTmux,
   onCopy,
   onPaste,
+  onPasteImage,
   onToggleDrawer,
   copyFeedback,
   pasteFeedback,
@@ -18,6 +19,7 @@ export function QuickBar({
   onTmux: (key: string) => void;
   onCopy: () => void;
   onPaste: () => void;
+  onPasteImage: () => void;
   onToggleDrawer: () => void;
   copyFeedback: boolean;
   pasteFeedback: boolean;
@@ -46,6 +48,9 @@ export function QuickBar({
       </button>
       <button onClick={onPaste} className={btn}>
         {pasteFeedback ? <span className="text-green-400 text-[10px]">✓</span> : <span className="text-[10px]">Paste</span>}
+      </button>
+      <button onClick={onPasteImage} className={btn} title="Paste Image (⌘⇧I)">
+        {pasteFeedback ? <span className="text-green-400 text-[10px]">✓</span> : <ImageIcon size={13} />}
       </button>
       <button
         onClick={onToggleDrawer}

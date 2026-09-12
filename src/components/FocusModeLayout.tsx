@@ -225,6 +225,12 @@ export default function FocusModeLayout({
       if (!activeWindow) return;
       setPaneRefreshKey((k) => k + 1);
     },
+    KeyI: () => {
+      if (!activeWindowId) return;
+      window.dispatchEvent(
+        new CustomEvent(`app-paste-image-${activeWindowId}`),
+      );
+    },
     // Ctrl+Shift+T is browser-reserved (reopen closed tab) and can't be
     // intercepted; Enter is free everywhere.
     Enter: handleAddTab, // new terminal tab

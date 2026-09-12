@@ -1101,7 +1101,7 @@ export function createSSHSocket(
     logger.info(`[SSH] Shell ready for connection ${connection.id}`);
     safeSocketSend(pendingStart?.ws ?? ws, JSON.stringify({ type: "connected" }));
     const shellOptions = {
-      term: "xterm-256color",
+      term: "xterm-kitty",
       cols: initialCols,
       rows: initialRows,
     };
