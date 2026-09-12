@@ -612,6 +612,7 @@ export default function FocusModeLayout({
                   keyboardHeight={keyboardHeight}
                   refreshNonce={paneRefreshKey}
                   isModalOpen={gitPanelOpen || fileExplorerOpen}
+                  enableTouchScroll
                 />
               ))}
             </>

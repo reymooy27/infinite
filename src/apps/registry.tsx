@@ -117,6 +117,8 @@ export const SSHPane = ({
   const pendingOsc52Ref = useRef("");
   const osc52CarryRef = useRef("");
   const osc7CarryRef = useRef("");
+  const isScrolledUpRef = useRef(false);
+  const suppressTouchFocusRef = useRef(false);
 
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
@@ -140,7 +142,9 @@ export const SSHPane = ({
       buffer === term.buffer.normal
         ? buffer.viewportY
         : Math.max(0, lastKnownViewportYRef.current);
-    return Math.max(0, buffer.baseY - viewportY);
+    const offset = Math.max(0, buffer.baseY - viewportY);
+    isScrolledUpRef.current = offset > 0;
+    return offset;
   }, []);
 
   const clampViewportOffset = useCallback((offset: number) => {
@@ -266,20 +270,23 @@ export const SSHPane = ({
 
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
-    // Skip autofocus on mobile to prevent virtual keyboard
-    if (isMobile) return;
-    // Don't steal focus from inputs/textareas outside the terminal
-    // (e.g. modal forms, sidebar inputs)
-    const active = document.activeElement;
-    if (
-      active &&
-      active !== document.body &&
-      !terminalRef.current?.contains(active) &&
-      (active.tagName === "INPUT" ||
-        active.tagName === "TEXTAREA" ||
-        (active as HTMLElement).contentEditable === "true")
-    ) {
-      return;
+    // Mobile: only focus when at the live tail — scrolling up suppresses
+    // the virtual keyboard so the user can scroll freely first.
+    if (isMobile) {
+      if (isScrolledUpRef.current) return;
+    } else {
+      // Desktop: don't steal focus from external inputs
+      const active = document.activeElement;
+      if (
+        active &&
+        active !== document.body &&
+        !terminalRef.current?.contains(active) &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          (active as HTMLElement).contentEditable === "true")
+      ) {
+        return;
+      }
     }
     termInstanceRef.current?.focus();
   }, [isMobile]);
@@ -612,6 +619,9 @@ export const SSHPane = ({
 
       lastKnownViewportYRef.current = term.buffer.active.viewportY;
       viewportOffsetRef.current = getViewportOffsetFromBottom();
+      if (!isScrolledUpRef.current) {
+        suppressTouchFocusRef.current = false;
+      }
     });
 
     const observer = new ResizeObserver(() => {
@@ -784,6 +794,11 @@ export const SSHPane = ({
       touchStartAt = Date.now();
       isDragSelection = false;
       gestureMode = "pending";
+
+      // Termux-style: scrolling up suppresses the keyboard; a tap at the
+      // live tail focuses. Read scroll state *before* this gesture moves it.
+      suppressTouchFocusRef.current =
+        isScrolledUpRef.current && !keyboardHeight;
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -861,6 +876,20 @@ export const SSHPane = ({
     };
 
     const onTouchEnd = (e: TouchEvent) => {
+      const suppress = suppressTouchFocusRef.current;
+      const pendingTap = !isDragSelection && !suppress && gestureMode === "pending";
+
+      if (pendingTap) {
+        setTimeout(() => {
+          const term = termInstanceRef.current;
+          if (term && isActiveRef.current && !isScrolledUpRef.current) {
+            term.focus();
+          }
+        }, 50);
+      }
+
+      suppressTouchFocusRef.current = false;
+
       if (isDragSelection && e.changedTouches.length === 1) {
         const t = e.changedTouches[0];
         dispatchDoc("mouseup", {
@@ -1575,6 +1604,39 @@ const SSHTerminal = ({
   const setActiveTerminalTab = useWindowStore((s) => s.setActiveTerminalTab);
   const focusWindow = useWindowStore((s) => s.focusWindow);
 
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    if (!mq.matches) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const update = () => {
+      if (keyboardRafRef.current !== null) {
+        cancelAnimationFrame(keyboardRafRef.current);
+      }
+      keyboardRafRef.current = requestAnimationFrame(() => {
+        const viewportBottom = Math.max(0, vv.height + vv.offsetTop);
+        const rawHeight = Math.max(0, window.innerHeight - viewportBottom);
+        const h = rawHeight < 80 ? 0 : rawHeight;
+        setKeyboardHeight((prev) => (Math.abs(prev - h) > 2 ? h : prev));
+        keyboardRafRef.current = null;
+      });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      if (keyboardRafRef.current !== null) {
+        cancelAnimationFrame(keyboardRafRef.current);
+      }
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
   const sshMeta = win ? getSSHMetadata(win) : null;
   const tabs = sshMeta?.tabs ?? [
     { id: "default", label: "Tab 1", connectionId },
@@ -1665,7 +1727,9 @@ const SSHTerminal = ({
             connectionId={tab.connectionId ?? connectionId}
             isActive={tab.id === activeTabId}
             hasNavigated={tab.hasNavigated}
+            keyboardHeight={keyboardHeight}
             refreshNonce={paneRefreshKey}
+            enableTouchScroll
           />
         ))}
       </div>
