@@ -119,12 +119,6 @@ export const SSHPane = ({
   const osc7CarryRef = useRef("");
   const isScrolledUpRef = useRef(false);
   const suppressTouchFocusRef = useRef(false);
-  // When we drive tmux copy-mode scrolling (autoTmux on), xterm's local
-  // viewport stays pinned to the live tail, so isScrolledUpRef can't tell us
-  // we're in the history. This flag tracks that we entered copy-mode via a
-  // swipe; it gates the keyboard and is cleared on the tap that exits it.
-  const tmuxCopyActiveRef = useRef(false);
-
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 1200);
@@ -280,7 +274,6 @@ export const SSHPane = ({
     // scroll freely first.
     if (isMobile) {
       if (isScrolledUpRef.current) return;
-      if (autoTmux && tmuxCopyActiveRef.current) return;
     } else {
       // Desktop: don't steal focus from external inputs
       const active = document.activeElement;
@@ -296,7 +289,7 @@ export const SSHPane = ({
       }
     }
     termInstanceRef.current?.focus();
-  }, [isMobile, autoTmux]);
+  }, [isMobile]);
 
   // Ctrl+W is a browser-reserved shortcut; the only way to intercept it is
   // the Keyboard Lock API, which only captures reserved keys in fullscreen.
@@ -778,8 +771,6 @@ export const SSHPane = ({
     let touchScrollRemainder = 0;
     let isDragSelection = false;
     let gestureMode: "pending" | "scroll" | "selection" = "pending";
-    let tmuxEnteredThisGesture = false;
-
     const getXterm = (): HTMLElement | null =>
       container.querySelector(".xterm");
 
@@ -802,7 +793,6 @@ export const SSHPane = ({
       touchStartAt = Date.now();
       isDragSelection = false;
       gestureMode = "pending";
-      tmuxEnteredThisGesture = false;
 
       // Termux-style: scrolling up suppresses the keyboard; a tap at the
       // live tail focuses. Read scroll state *before* this gesture moves it.
@@ -846,26 +836,7 @@ export const SSHPane = ({
             : Math.floor(touchScrollRemainder);
 
         if (lines !== 0) {
-          if (autoTmux) {
-            // Drive tmux copy-mode instead of xterm's local buffer: tmux owns
-            // the real scrollback, so scrolling has to happen there.
-            const up = lines > 0; // scrolling up = viewing older lines
-            const scrollKey = up ? "k" : "j";
-            if (!tmuxCopyActiveRef.current && !tmuxEnteredThisGesture) {
-              // Enter copy-mode + scroll in one PTY write so tmux applies them
-              // in order — sending k/j before "[" hits the shell as literal input.
-              const data = "\x02[" + scrollKey.repeat(Math.abs(lines));
-              wsRef.current?.send(JSON.stringify({ type: "data", data }));
-              tmuxCopyActiveRef.current = true;
-              tmuxEnteredThisGesture = true;
-            } else {
-              wsRef.current?.send(
-                JSON.stringify({ type: "data", data: scrollKey.repeat(Math.abs(lines)) }),
-              );
-            }
-          } else {
-            term.scrollLines(lines);
-          }
+          term.scrollLines(lines);
           touchScrollRemainder -= lines;
         }
         lastPos = { x: touch.clientX, y: touch.clientY };
@@ -909,19 +880,12 @@ export const SSHPane = ({
       const pendingTap =
         !isDragSelection &&
         !suppress &&
-        gestureMode === "pending" &&
-        !tmuxEnteredThisGesture;
+        gestureMode === "pending";
 
       if (pendingTap) {
         setTimeout(() => {
           const term = termInstanceRef.current;
           if (!term || !isActiveRef.current) return;
-          // A tap is the explicit "I'm done reading history" signal — exit
-          // tmux copy-mode, then focus so the keyboard is available.
-          if (autoTmux && tmuxCopyActiveRef.current) {
-            wsRef.current?.send(JSON.stringify({ type: "data", data: "q" }));
-            tmuxCopyActiveRef.current = false;
-          }
           if (!isScrolledUpRef.current) term.focus();
         }, 50);
       }
