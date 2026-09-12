@@ -851,12 +851,21 @@ export const SSHPane = ({
             // the real history, so scrolling has to happen there.
             const up = lines > 0; // scrolling up = viewing older lines
             if (!tmuxCopyActiveRef.current && !tmuxEnteredThisGesture) {
-              sendTmux("["); // prefix + [ => enter copy-mode
+              // Enter tmux copy-mode (prefix + "["), inlined to avoid TDZ —
+              // sendTmux is declared later in this component body.
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: "data", data: "\x02" }));
+                setTimeout(() => {
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({ type: "data", data: "[" }));
+                  }
+                }, 80);
+              }
               tmuxCopyActiveRef.current = true;
               tmuxEnteredThisGesture = true;
             }
             for (let i = 0; i < Math.abs(lines); i++) {
-              sendShortcut(up ? "k" : "j"); // copy-mode: k=up, j=down
+              wsRef.current?.send(JSON.stringify({ type: "data", data: up ? "k" : "j" }));
             }
           } else {
             term.scrollLines(lines);
@@ -914,7 +923,7 @@ export const SSHPane = ({
           // A tap is the explicit "I'm done reading history" signal — exit
           // tmux copy-mode, then focus so the keyboard is available.
           if (autoTmux && tmuxCopyActiveRef.current) {
-            sendShortcut("q");
+            wsRef.current?.send(JSON.stringify({ type: "data", data: "q" }));
             tmuxCopyActiveRef.current = false;
           }
           if (!isScrolledUpRef.current) term.focus();
@@ -956,7 +965,7 @@ export const SSHPane = ({
       container.removeEventListener("touchend", onTouchEnd);
       container.removeEventListener("auxclick", onAuxClick, true);
     };
-  }, [enableTouchScroll, isMobile, autoTmux, sendShortcut, sendTmux]);
+  }, [enableTouchScroll, isMobile, autoTmux]);
 
   const sendShortcut = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
