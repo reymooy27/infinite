@@ -1276,7 +1276,10 @@ export const SSHPane = ({
       if (ws?.readyState !== WebSocket.OPEN) return;
 
       const uploadId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      const ext =
+        (file.name.split(".").pop() || "png")
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "") || "png";
       const fileName = `inf-img-${Date.now()}.${ext}`;
 
       const acked = new Promise<void>((resolve) => {
@@ -1331,10 +1334,24 @@ export const SSHPane = ({
         ws.send(JSON.stringify({ type: "upload_end", uploadId }));
 
         const remotePath = await completed;
-        if (remotePath && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "data", data: `@${remotePath}` }));
-          showPasteFeedback();
+        if (!remotePath) return;
+        if (connectionId) {
+          try {
+            const res = await fetch(`/api/ssh/${connectionId}/set-clipboard`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: remotePath }),
+            });
+            if (res.ok) {
+              showPasteFeedback();
+              return;
+            }
+          } catch {}
         }
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "data", data: `@${remotePath}` }));
+        }
+        showPasteFeedback();
       } catch {
       } finally {
         clearTimeout(timeout);
@@ -1342,7 +1359,7 @@ export const SSHPane = ({
         uploadCompleteResolveRef.current = null;
       }
     },
-    [showPasteFeedback],
+    [connectionId, showPasteFeedback],
   );
 
   useEffect(() => {
