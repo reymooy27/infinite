@@ -38,6 +38,8 @@ import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 import { registerTerminalCleanup, unregisterTerminalCleanup } from "@/lib/terminalCleanup";
 
+const CHUNK_SIZE = 64 * 1024;
+
 export const SSHPane = ({
   connectionId,
   windowId,
@@ -122,6 +124,8 @@ export const SSHPane = ({
   const suppressTouchFocusRef = useRef(false);
   const handlePasteImageRef = useRef<(() => void) | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const uploadAckResolveRef = useRef<(() => void) | null>(null);
+  const uploadCompleteResolveRef = useRef<((path: string) => void) | null>(null);
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 1200);
@@ -1179,6 +1183,16 @@ export const SSHPane = ({
           term.write(bytes);
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
+        } else if (msg.type === "upload_ack") {
+          uploadAckResolveRef.current?.();
+          uploadAckResolveRef.current = null;
+        } else if (msg.type === "upload_complete" && typeof msg.path === "string") {
+          uploadCompleteResolveRef.current?.(msg.path);
+          uploadCompleteResolveRef.current = null;
+        } else if (msg.type === "upload_error") {
+          uploadAckResolveRef.current = null;
+          uploadCompleteResolveRef.current?.("");
+          uploadCompleteResolveRef.current = null;
         }
       } catch (err) {
         console.warn("[SSHTerminal] Failed to process message:", err);
@@ -1258,21 +1272,75 @@ export const SSHPane = ({
       const file = e.target.files?.[0];
       e.target.value = "";
       if (!file || !file.type.startsWith("image/")) return;
-      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+      const ws = wsRef.current;
+      if (ws?.readyState !== WebSocket.OPEN) return;
+
+      const uploadId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      const fileName = `inf-img-${Date.now()}.${ext}`;
+
+      const acked = new Promise<void>((resolve) => {
+        uploadAckResolveRef.current = resolve;
+      });
+      const completed = new Promise<string>((resolve) => {
+        uploadCompleteResolveRef.current = resolve;
+      });
+
+      ws.send(
+        JSON.stringify({
+          type: "upload_start",
+          uploadId,
+          fileName,
+          fileSize: file.size,
+          destPath: "/tmp",
+          treatDestAsDirectory: false,
+        }),
+      );
+
+      const timeout = setTimeout(() => {
+        uploadAckResolveRef.current?.();
+        uploadCompleteResolveRef.current?.("");
+        uploadAckResolveRef.current = null;
+        uploadCompleteResolveRef.current = null;
+      }, 30000);
 
       try {
-        const arrayBuffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        const base64 = btoa(String.fromCharCode(...bytes));
+        await acked;
+        if (ws.readyState !== WebSocket.OPEN) return;
 
-        // Kitty graphics protocol: ESC _ G a=T,f=100,m=0;<base64> ESC \
-        // a=T: transmit and display, f=100: PNG format, m=0: single chunk
-        const escapeSeq = `\x1b_Ga=T,f=100,m=0;${base64}\x1b\\`;
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        for (let i = 0; i < totalChunks; i++) {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const buffer = await file.slice(start, end).arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = "";
+          for (let j = 0; j < bytes.length; j++) {
+            binary += String.fromCharCode(bytes[j]);
+          }
+          ws.send(
+            JSON.stringify({
+              type: "upload_chunk",
+              uploadId,
+              data: btoa(binary),
+              offset: start,
+            }),
+          );
+        }
+        ws.send(JSON.stringify({ type: "upload_end", uploadId }));
 
-        termInstanceRef.current?.write(escapeSeq);
-        wsRef.current.send(JSON.stringify({ type: "data", data: escapeSeq }));
-        showPasteFeedback();
-      } catch {}
+        const remotePath = await completed;
+        if (remotePath && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "data", data: `@${remotePath}` }));
+          showPasteFeedback();
+        }
+      } catch {
+      } finally {
+        clearTimeout(timeout);
+        uploadAckResolveRef.current = null;
+        uploadCompleteResolveRef.current = null;
+      }
     },
     [showPasteFeedback],
   );
