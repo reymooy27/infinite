@@ -49,7 +49,7 @@ export function QuickBar({
       <button onClick={onPaste} className={btn}>
         {pasteFeedback ? <span className="text-green-400 text-[10px]">✓</span> : <span className="text-[10px]">Paste</span>}
       </button>
-      <button onClick={onPasteImage} className={btn} title="Paste Image (⌘⇧I)">
+      <button onClick={onPasteImage} className={btn} title="Pick Image">
         {pasteFeedback ? <span className="text-green-400 text-[10px]">✓</span> : <ImageIcon size={13} />}
       </button>
       <button

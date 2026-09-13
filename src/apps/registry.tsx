@@ -121,6 +121,7 @@ export const SSHPane = ({
   const isScrolledUpRef = useRef(false);
   const suppressTouchFocusRef = useRef(false);
   const handlePasteImageRef = useRef<(() => void) | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 1200);
@@ -1248,36 +1249,33 @@ export const SSHPane = ({
     } catch {}
   }, [showPasteFeedback]);
 
-  const handlePasteImage = useCallback(async () => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-    if (!navigator.clipboard?.read) return;
+  const handlePasteImage = useCallback(() => {
+    imageInputRef.current?.click();
+  }, []);
 
-    try {
-      const items = await navigator.clipboard.read();
-      for (const item of items) {
-        const imageType = item.types.find((t) => t.startsWith("image/"));
-        if (!imageType) continue;
-        const blob = await item.getType(imageType);
-        const arrayBuffer = await blob.arrayBuffer();
+  const handleImageFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file || !file.type.startsWith("image/")) return;
+      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+      try {
+        const arrayBuffer = await file.arrayBuffer();
         const bytes = new Uint8Array(arrayBuffer);
         const base64 = btoa(String.fromCharCode(...bytes));
-        
+
         // Kitty graphics protocol: ESC _ G a=T,f=100,m=0;<base64> ESC \
         // a=T: transmit and display, f=100: PNG format, m=0: single chunk
         const escapeSeq = `\x1b_Ga=T,f=100,m=0;${base64}\x1b\\`;
-        
+
         termInstanceRef.current?.write(escapeSeq);
         wsRef.current.send(JSON.stringify({ type: "data", data: escapeSeq }));
         showPasteFeedback();
-        return;
-      }
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        wsRef.current.send(JSON.stringify({ type: "data", data: text }));
-        showPasteFeedback();
-      }
-    } catch {}
-  }, [showPasteFeedback]);
+      } catch {}
+    },
+    [showPasteFeedback],
+  );
 
   useEffect(() => {
     handlePasteImageRef.current = handlePasteImage;
@@ -1399,6 +1397,14 @@ export const SSHPane = ({
             ? { touchAction: "pan-y", overscrollBehavior: "contain" }
             : undefined
         }
+      />
+
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageFileChange}
       />
 
       {/* Mobile UI */}
