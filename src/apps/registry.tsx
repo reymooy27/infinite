@@ -1250,28 +1250,8 @@ export const SSHPane = ({
     } catch {}
   }, [showCopyFeedback, writeClipboardText]);
 
-  const handlePaste = useCallback(async () => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-    try {
-      if (!navigator.clipboard?.readText)
-        throw new Error("Clipboard read unavailable");
-      const text = await navigator.clipboard.readText();
-      if (!text) return;
-      wsRef.current.send(JSON.stringify({ type: "data", data: text }));
-      showPasteFeedback();
-    } catch {}
-  }, [showPasteFeedback]);
-
-  const handlePasteImage = useCallback(() => {
-    imageInputRef.current?.click();
-  }, []);
-
-  const handleImageFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (!file || !file.type.startsWith("image/")) return;
+  const processImageFile = useCallback(
+    async (file: File) => {
       const ws = wsRef.current;
       if (ws?.readyState !== WebSocket.OPEN) return;
 
@@ -1343,6 +1323,9 @@ export const SSHPane = ({
               body: JSON.stringify({ path: remotePath }),
             });
             if (res.ok) {
+              // Ctrl+V: opencode/claude code bind this to their paste
+              // command, which reads the remote clipboard we just set.
+              ws.send(JSON.stringify({ type: "data", data: "\x16" }));
               showPasteFeedback();
               return;
             }
@@ -1361,6 +1344,67 @@ export const SSHPane = ({
     },
     [connectionId, showPasteFeedback],
   );
+
+  const handlePaste = useCallback(async () => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imageType = item.types.find((t) => t.startsWith("image/"));
+          if (!imageType) continue;
+          const blob = await item.getType(imageType);
+          await processImageFile(
+            new File([blob], "clipboard.png", { type: imageType }),
+          );
+          return;
+        }
+      }
+    } catch {}
+
+    try {
+      if (!navigator.clipboard?.readText)
+        throw new Error("Clipboard read unavailable");
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      wsRef.current.send(JSON.stringify({ type: "data", data: text }));
+      showPasteFeedback();
+    } catch {}
+  }, [processImageFile, showPasteFeedback]);
+
+  const handlePasteImage = useCallback(() => {
+    imageInputRef.current?.click();
+  }, []);
+
+  const handleImageFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file && file.type.startsWith("image/")) void processImageFile(file);
+    },
+    [processImageFile],
+  );
+
+  useEffect(() => {
+    const container = terminalRef.current;
+    if (!container) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          e.preventDefault();
+          e.stopPropagation();
+          const file = item.getAsFile();
+          if (file) void processImageFile(file);
+          return;
+        }
+      }
+    };
+    container.addEventListener("paste", onPaste, true);
+    return () => container.removeEventListener("paste", onPaste, true);
+  }, [processImageFile]);
 
   useEffect(() => {
     handlePasteImageRef.current = handlePasteImage;
