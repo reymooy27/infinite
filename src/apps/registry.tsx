@@ -1261,6 +1261,11 @@ export const SSHPane = ({
           .toLowerCase()
           .replace(/[^a-z0-9]/g, "") || "png";
       const fileName = `inf-img-${Date.now()}.${ext}`;
+      const store = useProjectStore.getState();
+      const projectDirectory = store.projects.find(
+        (p) => p.id === store.activeProjectId,
+      )?.directory;
+      const destDir = projectDirectory || "/tmp";
 
       const acked = new Promise<void>((resolve) => {
         uploadAckResolveRef.current = resolve;
@@ -1275,7 +1280,7 @@ export const SSHPane = ({
           uploadId,
           fileName,
           fileSize: file.size,
-          destPath: `/tmp/${fileName}`,
+          destPath: `${destDir}/${fileName}`,
           treatDestAsDirectory: false,
         }),
       );
@@ -1332,7 +1337,12 @@ export const SSHPane = ({
           } catch {}
         }
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "data", data: `@${remotePath}` }));
+          ws.send(
+            JSON.stringify({
+              type: "data",
+              data: projectDirectory ? `@${fileName}` : `@${remotePath}`,
+            }),
+          );
         }
         showPasteFeedback();
       } catch {
