@@ -1265,7 +1265,9 @@ export const SSHPane = ({
       const projectDirectory = store.projects.find(
         (p) => p.id === store.activeProjectId,
       )?.directory;
-      const destDir = projectDirectory || "/tmp";
+      const destDir = projectDirectory
+        ? `${projectDirectory}/infinite-images`
+        : "/tmp";
 
       const acked = new Promise<void>((resolve) => {
         uploadAckResolveRef.current = resolve;
@@ -1340,7 +1342,9 @@ export const SSHPane = ({
           ws.send(
             JSON.stringify({
               type: "data",
-              data: projectDirectory ? `@${fileName}` : `@${remotePath}`,
+              data: projectDirectory
+                ? `@infinite-images/${fileName}`
+                : `@${remotePath}`,
             }),
           );
         }
