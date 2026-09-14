@@ -1275,7 +1275,7 @@ export const SSHPane = ({
           uploadId,
           fileName,
           fileSize: file.size,
-          destPath: "/tmp",
+          destPath: `/tmp/${fileName}`,
           treatDestAsDirectory: false,
         }),
       );

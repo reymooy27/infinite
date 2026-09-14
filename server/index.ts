@@ -554,12 +554,12 @@ app.post("/api/ssh/:connectionId/set-clipboard", async (req, res) => {
     return;
   }
   const command = [
-    `if [ -n "$WAYLAND_DISPLAY" ] && command -v wl-copy >/dev/null 2>&1; then`,
-    `wl-copy -t image/png < '${filePath}' && echo wayland`,
-    `elif [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then`,
-    `xclip -selection clipboard -t image/png -i '${filePath}' && echo x11`,
-    `elif [ "$(uname)" = "Darwin" ]; then`,
-    `osascript -e 'set the clipboard to (read (POSIX file "${filePath}") as «class PNGf»)' && echo macos`,
+    `if command -v wl-copy >/dev/null 2>&1 && wl-copy -t image/png < '${filePath}' 2>/dev/null; then`,
+    `echo wayland`,
+    `elif command -v xclip >/dev/null 2>&1 && xclip -selection clipboard -t image/png -i '${filePath}' 2>/dev/null; then`,
+    `echo x11`,
+    `elif [ "$(uname)" = "Darwin" ] && osascript -e 'set the clipboard to (read (POSIX file "${filePath}") as «class PNGf»)' 2>/dev/null; then`,
+    `echo macos`,
     `else exit 3; fi`,
   ].join(" ");
   try {
