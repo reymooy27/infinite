@@ -236,22 +236,34 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
     recognitionRef.current = recognition;
 
-    try {
-      recognition.start();
-    } catch (err) {
-      // Auto-restart can race the previous session's teardown (InvalidStateError);
-      // retry after the old session has fully released the mic.
-      setTimeout(() => {
-        if (manualStopRef.current || isListeningRef.current || recognitionRef.current !== recognition) return;
-        try {
-          recognition.start();
-        } catch (retryErr) {
-          const error = new Error(`Gagal memulai speech recognition: ${retryErr}`);
-          setError(error);
-          onError?.(error);
-          updateStatus("error");
-        }
-      }, 300);
+    const beginSession = () => {
+      try {
+        recognition.start();
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (!beginSession()) {
+      // Chrome throws InvalidStateError when the mic has not been released
+      // by the previous session yet (~hundreds of ms). One retry was not
+      // enough — users had to re-tap the mic; back off up to ~1.5s first.
+      const retry = (delay: number) => {
+        setTimeout(() => {
+          if (manualStopRef.current || isListeningRef.current || recognitionRef.current !== recognition) return;
+          if (beginSession()) return;
+          if (delay < 1200) {
+            retry(delay + 300);
+          } else {
+            const error = new Error("Gagal memulai speech recognition");
+            setError(error);
+            onError?.(error);
+            updateStatus("error");
+          }
+        }, delay);
+      };
+      retry(300);
     }
   }, [lang, interimResults, onResult, onError, updateStatus, cleanup]);
 

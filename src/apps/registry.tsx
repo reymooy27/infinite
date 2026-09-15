@@ -1453,7 +1453,8 @@ export const SSHPane = ({
   }, []);
 
   // Tap-vs-drag: pointerup with no movement = tap (opens overlay), so no onClick here.
-  const MIC_DRAG_THRESHOLD = 6;
+  // 10px = standard touch slop; 6px ate real taps as "drags" on phones.
+  const MIC_DRAG_THRESHOLD = 10;
   const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     const el = e.currentTarget;
     micDragOriginRef.current = { x: el.offsetLeft, y: el.offsetTop };
