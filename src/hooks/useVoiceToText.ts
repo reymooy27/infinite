@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { mergeFinalTranscript, normalizeTranscript } from "./transcriptMerge";
 
 interface SpeechRecognitionEvent extends Event {
   resultIndex: number;
@@ -135,44 +136,37 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
     };
 
     recognition.onresult = (event) => {
-      let newFinalText = "";
+      let incoming = "";
 
-      // Process only new results starting from resultIndex to avoid double-counting.
-      // In continuous mode, event.results accumulates all results from the start,
-      // and some browsers emit cumulative final results that include previous text.
+      // Process only new results starting from resultIndex to avoid processing
+      // results we already saw in earlier events.
       const startIndex = event.resultIndex ?? 0;
       for (let i = startIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          newFinalText += result[0].transcript + " ";
+          incoming += result[0].transcript + " ";
         }
       }
 
-      newFinalText = newFinalText.trim();
+      incoming = incoming.trim();
 
-      if (newFinalText) {
-        // Detect cumulative final results from browser (common in Chrome/Edge).
-        // If newFinalText already starts with accumulatedRef, extract only the new portion.
-        const prev = accumulatedRef.current;
-        let toAppend = newFinalText;
-        if (prev && newFinalText.startsWith(prev)) {
-          toAppend = newFinalText.slice(prev.length).trimStart();
-        }
+      if (incoming) {
+      // Chrome/Edge re-emit the whole utterance as one final result with
+      // different capitalization/punctuation; raw-string prefix checks
+      // missed that and duplicated the sentence. Normalized merge fixes it.
+      const { accumulated, appended } = mergeFinalTranscript(accumulatedRef.current, incoming);
+        accumulatedRef.current = accumulated;
 
-        accumulatedRef.current = prev
-          ? (prev + (toAppend ? " " + toAppend : ""))
-          : newFinalText;
-
-        setFinalTranscript(accumulatedRef.current);
+        setFinalTranscript(accumulated);
         setInterimTranscript("");
-        onResult?.({ transcript: toAppend || newFinalText, isFinal: true });
+        if (appended) onResult?.({ transcript: appended, isFinal: true });
       }
 
       for (let i = event.results.length - 1; i >= 0; i--) {
         if (!event.results[i].isFinal) {
           const lastInterim = event.results[i][0].transcript;
           // Only show interim if it's not already part of the accumulated final text
-          if (lastInterim && !accumulatedRef.current.includes(lastInterim)) {
+          if (lastInterim && !normalizeTranscript(accumulatedRef.current).includes(normalizeTranscript(lastInterim))) {
             setInterimTranscript(lastInterim);
             onResult?.({ transcript: lastInterim, isFinal: false });
           }
