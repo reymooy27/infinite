@@ -94,6 +94,10 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
   const cleanup = useCallback(() => {
     if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {
+      }
       recognitionRef.current.onstart = null;
       recognitionRef.current.onend = null;
       recognitionRef.current.onerror = null;
@@ -151,10 +155,10 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
       incoming = incoming.trim();
 
       if (incoming) {
-      // Chrome/Edge re-emit the whole utterance as one final result with
-      // different capitalization/punctuation; raw-string prefix checks
-      // missed that and duplicated the sentence. Normalized merge fixes it.
-      const { accumulated, appended } = mergeFinalTranscript(accumulatedRef.current, incoming);
+        // Chrome/Edge re-emit the whole utterance as one final result with
+        // different capitalization/punctuation; raw-string prefix checks
+        // missed that and duplicated the sentence. Normalized merge fixes it.
+        const { accumulated, appended } = mergeFinalTranscript(accumulatedRef.current, incoming);
         accumulatedRef.current = accumulated;
 
         setFinalTranscript(accumulated);
@@ -176,7 +180,9 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
     };
 
     recognition.onerror = (event) => {
-      if (event.error === "no-speech" && !manualStopRef.current) {
+      // no-speech/aborted also fire while a manual stop flushes trailing
+      // silence; routing them to the error screen wiped the captured transcript.
+      if (event.error === "no-speech" || event.error === "aborted") {
         setInterimTranscript("");
         return;
       }
@@ -197,7 +203,12 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
             start();
           }
         }, 100);
-      } else if (statusRef.current === "recording" || manualStopRef.current) {
+        return;
+      }
+      // onend is the spec-guaranteed last event — final results have flushed,
+      // so detaching here (instead of at stop()) never drops the utterance.
+      cleanup();
+      if (statusRef.current === "recording") {
         updateStatus("processing");
         setTimeout(() => {
           if (statusRef.current === "processing") {
@@ -221,25 +232,28 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
   const stop = useCallback(() => {
     manualStopRef.current = true;
-    if (recognitionRef.current && isListeningRef.current) {
+    // Keep handlers attached: the browser flushes the last final result
+    // before onend, and onend runs the cleanup. Detaching at stop() dropped
+    // the just-spoken utterance when the user stopped right after speaking.
+    if (!recognitionRef.current || !isListeningRef.current) cleanup();
+    else {
       try {
         recognitionRef.current.stop();
       } catch {
       }
     }
-    cleanup();
   }, [cleanup]);
 
   const stopAndEdit = useCallback(() => {
     manualStopRef.current = true;
-    if (recognitionRef.current && isListeningRef.current) {
+    updateStatus("editable");
+    if (!recognitionRef.current || !isListeningRef.current) cleanup();
+    else {
       try {
         recognitionRef.current.stop();
       } catch {
       }
     }
-    cleanup();
-    updateStatus("editable");
   }, [cleanup, updateStatus]);
 
   const reset = useCallback(() => {
