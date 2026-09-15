@@ -85,6 +85,7 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
   const statusRef = useRef<VoiceStatus>("idle");
   const manualStopRef = useRef(false);
   const accumulatedRef = useRef("");
+  const transientRef = useRef({ count: 0, at: 0 });
 
   const updateStatus = useCallback((newStatus: VoiceStatus) => {
     statusRef.current = newStatus;
@@ -186,6 +187,21 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
         setInterimTranscript("");
         return;
       }
+      // Chrome kills continuous STT sessions every ~60s (shorter on mobile)
+      // and reports mid-speech drops as a "network" error right before onend.
+      // Swallow transient ones so the onend auto-restart reopens the session
+      // transparently; give up only on 3 quick failures in a row (real offline).
+      if (event.error === "network" && !manualStopRef.current && statusRef.current === "recording") {
+        const now = Date.now();
+        const quick = now - transientRef.current.at < 8000;
+        transientRef.current = { count: quick ? transientRef.current.count + 1 : 1, at: now };
+        if (transientRef.current.count <= 2) return;
+      }
+      // A manual stop already did its job; a late error must not replace the
+      // finished transcript with the error screen.
+      if (manualStopRef.current) {
+        return;
+      }
       const err = new Error(`Speech error: ${event.error}`);
       setError(err);
       onError?.(err);
@@ -223,10 +239,19 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
     try {
       recognition.start();
     } catch (err) {
-      const error = new Error(`Gagal memulai speech recognition: ${err}`);
-      setError(error);
-      onError?.(error);
-      updateStatus("error");
+      // Auto-restart can race the previous session's teardown (InvalidStateError);
+      // retry after the old session has fully released the mic.
+      setTimeout(() => {
+        if (manualStopRef.current || isListeningRef.current || recognitionRef.current !== recognition) return;
+        try {
+          recognition.start();
+        } catch (retryErr) {
+          const error = new Error(`Gagal memulai speech recognition: ${retryErr}`);
+          setError(error);
+          onError?.(error);
+          updateStatus("error");
+        }
+      }, 300);
     }
   }, [lang, interimResults, onResult, onError, updateStatus, cleanup]);
 
