@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { mergeFinalTranscript, normalizeTranscript } from "./transcriptMerge";
 
 interface SpeechRecognitionEvent extends Event {
   resultIndex: number;
@@ -84,6 +85,7 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
   const statusRef = useRef<VoiceStatus>("idle");
   const manualStopRef = useRef(false);
   const accumulatedRef = useRef("");
+  const transientRef = useRef({ count: 0, at: 0 });
 
   const updateStatus = useCallback((newStatus: VoiceStatus) => {
     statusRef.current = newStatus;
@@ -93,6 +95,10 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
   const cleanup = useCallback(() => {
     if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {
+      }
       recognitionRef.current.onstart = null;
       recognitionRef.current.onend = null;
       recognitionRef.current.onerror = null;
@@ -135,44 +141,37 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
     };
 
     recognition.onresult = (event) => {
-      let newFinalText = "";
+      let incoming = "";
 
-      // Process only new results starting from resultIndex to avoid double-counting.
-      // In continuous mode, event.results accumulates all results from the start,
-      // and some browsers emit cumulative final results that include previous text.
+      // Process only new results starting from resultIndex to avoid processing
+      // results we already saw in earlier events.
       const startIndex = event.resultIndex ?? 0;
       for (let i = startIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          newFinalText += result[0].transcript + " ";
+          incoming += result[0].transcript + " ";
         }
       }
 
-      newFinalText = newFinalText.trim();
+      incoming = incoming.trim();
 
-      if (newFinalText) {
-        // Detect cumulative final results from browser (common in Chrome/Edge).
-        // If newFinalText already starts with accumulatedRef, extract only the new portion.
-        const prev = accumulatedRef.current;
-        let toAppend = newFinalText;
-        if (prev && newFinalText.startsWith(prev)) {
-          toAppend = newFinalText.slice(prev.length).trimStart();
-        }
+      if (incoming) {
+        // Chrome/Edge re-emit the whole utterance as one final result with
+        // different capitalization/punctuation; raw-string prefix checks
+        // missed that and duplicated the sentence. Normalized merge fixes it.
+        const { accumulated, appended } = mergeFinalTranscript(accumulatedRef.current, incoming);
+        accumulatedRef.current = accumulated;
 
-        accumulatedRef.current = prev
-          ? (prev + (toAppend ? " " + toAppend : ""))
-          : newFinalText;
-
-        setFinalTranscript(accumulatedRef.current);
+        setFinalTranscript(accumulated);
         setInterimTranscript("");
-        onResult?.({ transcript: toAppend || newFinalText, isFinal: true });
+        if (appended) onResult?.({ transcript: appended, isFinal: true });
       }
 
       for (let i = event.results.length - 1; i >= 0; i--) {
         if (!event.results[i].isFinal) {
           const lastInterim = event.results[i][0].transcript;
           // Only show interim if it's not already part of the accumulated final text
-          if (lastInterim && !accumulatedRef.current.includes(lastInterim)) {
+          if (lastInterim && !normalizeTranscript(accumulatedRef.current).includes(normalizeTranscript(lastInterim))) {
             setInterimTranscript(lastInterim);
             onResult?.({ transcript: lastInterim, isFinal: false });
           }
@@ -182,8 +181,25 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
     };
 
     recognition.onerror = (event) => {
-      if (event.error === "no-speech" && !manualStopRef.current) {
+      // no-speech/aborted also fire while a manual stop flushes trailing
+      // silence; routing them to the error screen wiped the captured transcript.
+      if (event.error === "no-speech" || event.error === "aborted") {
         setInterimTranscript("");
+        return;
+      }
+      // Chrome kills continuous STT sessions every ~60s (shorter on mobile)
+      // and reports mid-speech drops as a "network" error right before onend.
+      // Swallow transient ones so the onend auto-restart reopens the session
+      // transparently; give up only on 3 quick failures in a row (real offline).
+      if (event.error === "network" && !manualStopRef.current && statusRef.current === "recording") {
+        const now = Date.now();
+        const quick = now - transientRef.current.at < 8000;
+        transientRef.current = { count: quick ? transientRef.current.count + 1 : 1, at: now };
+        if (transientRef.current.count <= 2) return;
+      }
+      // A manual stop already did its job; a late error must not replace the
+      // finished transcript with the error screen.
+      if (manualStopRef.current) {
         return;
       }
       const err = new Error(`Speech error: ${event.error}`);
@@ -203,7 +219,12 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
             start();
           }
         }, 100);
-      } else if (statusRef.current === "recording" || manualStopRef.current) {
+        return;
+      }
+      // onend is the spec-guaranteed last event — final results have flushed,
+      // so detaching here (instead of at stop()) never drops the utterance.
+      cleanup();
+      if (statusRef.current === "recording") {
         updateStatus("processing");
         setTimeout(() => {
           if (statusRef.current === "processing") {
@@ -215,37 +236,61 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
     recognitionRef.current = recognition;
 
-    try {
-      recognition.start();
-    } catch (err) {
-      const error = new Error(`Gagal memulai speech recognition: ${err}`);
-      setError(error);
-      onError?.(error);
-      updateStatus("error");
+    const beginSession = () => {
+      try {
+        recognition.start();
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (!beginSession()) {
+      // Chrome throws InvalidStateError when the mic has not been released
+      // by the previous session yet (~hundreds of ms). One retry was not
+      // enough — users had to re-tap the mic; back off up to ~1.5s first.
+      const retry = (delay: number) => {
+        setTimeout(() => {
+          if (manualStopRef.current || isListeningRef.current || recognitionRef.current !== recognition) return;
+          if (beginSession()) return;
+          if (delay < 1200) {
+            retry(delay + 300);
+          } else {
+            const error = new Error("Gagal memulai speech recognition");
+            setError(error);
+            onError?.(error);
+            updateStatus("error");
+          }
+        }, delay);
+      };
+      retry(300);
     }
   }, [lang, interimResults, onResult, onError, updateStatus, cleanup]);
 
   const stop = useCallback(() => {
     manualStopRef.current = true;
-    if (recognitionRef.current && isListeningRef.current) {
+    // Keep handlers attached: the browser flushes the last final result
+    // before onend, and onend runs the cleanup. Detaching at stop() dropped
+    // the just-spoken utterance when the user stopped right after speaking.
+    if (!recognitionRef.current || !isListeningRef.current) cleanup();
+    else {
       try {
         recognitionRef.current.stop();
       } catch {
       }
     }
-    cleanup();
   }, [cleanup]);
 
   const stopAndEdit = useCallback(() => {
     manualStopRef.current = true;
-    if (recognitionRef.current && isListeningRef.current) {
+    updateStatus("editable");
+    if (!recognitionRef.current || !isListeningRef.current) cleanup();
+    else {
       try {
         recognitionRef.current.stop();
       } catch {
       }
     }
-    cleanup();
-    updateStatus("editable");
   }, [cleanup, updateStatus]);
 
   const reset = useCallback(() => {

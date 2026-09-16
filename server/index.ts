@@ -15,6 +15,7 @@ import {
   createSSHSocket,
   createSFTPConnection,
   ensureLocalTunnel,
+  runSSHCommand,
 } from "./lib/ssh.js";
 import {
   dockerStats,
@@ -542,6 +543,41 @@ app.post("/api/sysmon/:connectionId/kill", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to kill process";
     res.status(500).json({ ok: false, message });
+  }
+});
+
+app.post("/api/ssh/:connectionId/set-clipboard", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  const filePath = String(req.body?.path || "");
+  if (!connectionId || !filePath.startsWith("/")) {
+    res.status(400).json({ error: "Missing connectionId or path" });
+    return;
+  }
+  const command = [
+    `if command -v wl-copy >/dev/null 2>&1 && wl-copy -t image/png < '${filePath}' 2>/dev/null; then`,
+    `echo wayland`,
+    `elif command -v xclip >/dev/null 2>&1 && xclip -selection clipboard -t image/png -i '${filePath}' 2>/dev/null; then`,
+    `echo x11`,
+    `elif [ "$(uname)" = "Darwin" ] && osascript -e 'set the clipboard to (read (POSIX file "${filePath}") as «class PNGf»)' 2>/dev/null; then`,
+    `echo macos`,
+    `else exit 3; fi`,
+  ].join(" ");
+  try {
+    const result = await withConnection(req, connectionId, (connection) =>
+      runSSHCommand(connection, command, { timeoutMs: 10000 }),
+    );
+    if (result.code === 0) {
+      res.json({ ok: true, method: result.stdout.trim() });
+    } else {
+      res.status(400).json({
+        ok: false,
+        error:
+          "No clipboard tool on remote (needs wl-copy, xclip, or macOS osascript)",
+      });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to set clipboard";
+    res.status(500).json({ ok: false, error: message });
   }
 });
 

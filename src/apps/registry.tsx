@@ -11,6 +11,7 @@ import {
   Download,
   FileTerminal,
   Globe,
+  Image as ImageIcon,
   Loader2,
   Mic,
   NotepadText,
@@ -36,6 +37,8 @@ import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 import { registerTerminalCleanup, unregisterTerminalCleanup } from "@/lib/terminalCleanup";
+
+const CHUNK_SIZE = 64 * 1024;
 
 export const SSHPane = ({
   connectionId,
@@ -117,7 +120,12 @@ export const SSHPane = ({
   const pendingOsc52Ref = useRef("");
   const osc52CarryRef = useRef("");
   const osc7CarryRef = useRef("");
-
+  const isScrolledUpRef = useRef(false);
+  const suppressTouchFocusRef = useRef(false);
+  const handlePasteImageRef = useRef<(() => void) | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const uploadAckResolveRef = useRef<(() => void) | null>(null);
+  const uploadCompleteResolveRef = useRef<((path: string) => void) | null>(null);
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 1200);
@@ -140,7 +148,9 @@ export const SSHPane = ({
       buffer === term.buffer.normal
         ? buffer.viewportY
         : Math.max(0, lastKnownViewportYRef.current);
-    return Math.max(0, buffer.baseY - viewportY);
+    const offset = Math.max(0, buffer.baseY - viewportY);
+    isScrolledUpRef.current = offset > 0;
+    return offset;
   }, []);
 
   const clampViewportOffset = useCallback((offset: number) => {
@@ -266,20 +276,24 @@ export const SSHPane = ({
 
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
-    // Skip autofocus on mobile to prevent virtual keyboard
-    if (isMobile) return;
-    // Don't steal focus from inputs/textareas outside the terminal
-    // (e.g. modal forms, sidebar inputs)
-    const active = document.activeElement;
-    if (
-      active &&
-      active !== document.body &&
-      !terminalRef.current?.contains(active) &&
-      (active.tagName === "INPUT" ||
-        active.tagName === "TEXTAREA" ||
-        (active as HTMLElement).contentEditable === "true")
-    ) {
-      return;
+    // Mobile: only focus when at the live tail — scrolling up (xterm buffer
+    // or tmux copy-mode) suppresses the virtual keyboard so the user can
+    // scroll freely first.
+    if (isMobile) {
+      if (isScrolledUpRef.current) return;
+    } else {
+      // Desktop: don't steal focus from external inputs
+      const active = document.activeElement;
+      if (
+        active &&
+        active !== document.body &&
+        !terminalRef.current?.contains(active) &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          (active as HTMLElement).contentEditable === "true")
+      ) {
+        return;
+      }
     }
     termInstanceRef.current?.focus();
   }, [isMobile]);
@@ -421,6 +435,15 @@ export const SSHPane = ({
     window.addEventListener(`app-page-${windowId}`, handleScrollEvent);
     return () =>
       window.removeEventListener(`app-page-${windowId}`, handleScrollEvent);
+  }, [windowId]);
+
+  useEffect(() => {
+    const handlePasteImageEvent = () => {
+      handlePasteImageRef.current?.();
+    };
+    window.addEventListener(`app-paste-image-${windowId}`, handlePasteImageEvent);
+    return () =>
+      window.removeEventListener(`app-paste-image-${windowId}`, handlePasteImageEvent);
   }, [windowId]);
 
   useEffect(() => {
@@ -612,6 +635,9 @@ export const SSHPane = ({
 
       lastKnownViewportYRef.current = term.buffer.active.viewportY;
       viewportOffsetRef.current = getViewportOffsetFromBottom();
+      if (!isScrolledUpRef.current) {
+        suppressTouchFocusRef.current = false;
+      }
     });
 
     const observer = new ResizeObserver(() => {
@@ -761,7 +787,6 @@ export const SSHPane = ({
     let touchScrollRemainder = 0;
     let isDragSelection = false;
     let gestureMode: "pending" | "scroll" | "selection" = "pending";
-
     const getXterm = (): HTMLElement | null =>
       container.querySelector(".xterm");
 
@@ -784,6 +809,11 @@ export const SSHPane = ({
       touchStartAt = Date.now();
       isDragSelection = false;
       gestureMode = "pending";
+
+      // Termux-style: scrolling up suppresses the keyboard; a tap at the
+      // live tail focuses. Read scroll state *before* this gesture moves it.
+      suppressTouchFocusRef.current =
+        isScrolledUpRef.current && !keyboardHeight;
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -820,6 +850,7 @@ export const SSHPane = ({
           touchScrollRemainder < 0
             ? Math.ceil(touchScrollRemainder)
             : Math.floor(touchScrollRemainder);
+
         if (lines !== 0) {
           term.scrollLines(lines);
           touchScrollRemainder -= lines;
@@ -861,6 +892,22 @@ export const SSHPane = ({
     };
 
     const onTouchEnd = (e: TouchEvent) => {
+      const suppress = suppressTouchFocusRef.current;
+      const pendingTap =
+        !isDragSelection &&
+        !suppress &&
+        gestureMode === "pending";
+
+      if (pendingTap) {
+        setTimeout(() => {
+          const term = termInstanceRef.current;
+          if (!term || !isActiveRef.current) return;
+          if (!isScrolledUpRef.current) term.focus();
+        }, 50);
+      }
+
+      suppressTouchFocusRef.current = false;
+
       if (isDragSelection && e.changedTouches.length === 1) {
         const t = e.changedTouches[0];
         dispatchDoc("mouseup", {
@@ -894,7 +941,7 @@ export const SSHPane = ({
       container.removeEventListener("touchend", onTouchEnd);
       container.removeEventListener("auxclick", onAuxClick, true);
     };
-  }, [enableTouchScroll, isMobile]);
+  }, [enableTouchScroll, isMobile, autoTmux]);
 
   const sendShortcut = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -1136,6 +1183,16 @@ export const SSHPane = ({
           term.write(bytes);
         } else if (msg.type === "error" && term) {
           term.write(`\r\n${msg.message}\r\n`);
+        } else if (msg.type === "upload_ack") {
+          uploadAckResolveRef.current?.();
+          uploadAckResolveRef.current = null;
+        } else if (msg.type === "upload_complete" && typeof msg.path === "string") {
+          uploadCompleteResolveRef.current?.(msg.path);
+          uploadCompleteResolveRef.current = null;
+        } else if (msg.type === "upload_error") {
+          uploadAckResolveRef.current = null;
+          uploadCompleteResolveRef.current?.("");
+          uploadCompleteResolveRef.current = null;
         }
       } catch (err) {
         console.warn("[SSHTerminal] Failed to process message:", err);
@@ -1193,8 +1250,132 @@ export const SSHPane = ({
     } catch {}
   }, [showCopyFeedback, writeClipboardText]);
 
+  const processImageFile = useCallback(
+    async (file: File) => {
+      const ws = wsRef.current;
+      if (ws?.readyState !== WebSocket.OPEN) return;
+
+      const uploadId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const ext =
+        (file.name.split(".").pop() || "png")
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "") || "png";
+      const fileName = `inf-img-${Date.now()}.${ext}`;
+      const store = useProjectStore.getState();
+      const projectDirectory = store.projects.find(
+        (p) => p.id === store.activeProjectId,
+      )?.directory;
+      const destDir = projectDirectory
+        ? `${projectDirectory}/infinite-images`
+        : "/tmp";
+
+      const acked = new Promise<void>((resolve) => {
+        uploadAckResolveRef.current = resolve;
+      });
+      const completed = new Promise<string>((resolve) => {
+        uploadCompleteResolveRef.current = resolve;
+      });
+
+      ws.send(
+        JSON.stringify({
+          type: "upload_start",
+          uploadId,
+          fileName,
+          fileSize: file.size,
+          destPath: `${destDir}/${fileName}`,
+          treatDestAsDirectory: false,
+        }),
+      );
+
+      const timeout = setTimeout(() => {
+        uploadAckResolveRef.current?.();
+        uploadCompleteResolveRef.current?.("");
+        uploadAckResolveRef.current = null;
+        uploadCompleteResolveRef.current = null;
+      }, 30000);
+
+      try {
+        await acked;
+        if (ws.readyState !== WebSocket.OPEN) return;
+
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        for (let i = 0; i < totalChunks; i++) {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const buffer = await file.slice(start, end).arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = "";
+          for (let j = 0; j < bytes.length; j++) {
+            binary += String.fromCharCode(bytes[j]);
+          }
+          ws.send(
+            JSON.stringify({
+              type: "upload_chunk",
+              uploadId,
+              data: btoa(binary),
+              offset: start,
+            }),
+          );
+        }
+        ws.send(JSON.stringify({ type: "upload_end", uploadId }));
+
+        const remotePath = await completed;
+        if (!remotePath) return;
+        if (connectionId) {
+          try {
+            const res = await fetch(`/api/ssh/${connectionId}/set-clipboard`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: remotePath }),
+            });
+            if (res.ok) {
+              // Ctrl+V: opencode/claude code bind this to their paste
+              // command, which reads the remote clipboard we just set.
+              ws.send(JSON.stringify({ type: "data", data: "\x16" }));
+              showPasteFeedback();
+              return;
+            }
+          } catch {}
+        }
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "data",
+              data: projectDirectory
+                ? `@infinite-images/${fileName}`
+                : `@${remotePath}`,
+            }),
+          );
+        }
+        showPasteFeedback();
+      } catch {
+      } finally {
+        clearTimeout(timeout);
+        uploadAckResolveRef.current = null;
+        uploadCompleteResolveRef.current = null;
+      }
+    },
+    [connectionId, showPasteFeedback],
+  );
+
   const handlePaste = useCallback(async () => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imageType = item.types.find((t) => t.startsWith("image/"));
+          if (!imageType) continue;
+          const blob = await item.getType(imageType);
+          await processImageFile(
+            new File([blob], "clipboard.png", { type: imageType }),
+          );
+          return;
+        }
+      }
+    } catch {}
 
     try {
       if (!navigator.clipboard?.readText)
@@ -1204,7 +1385,44 @@ export const SSHPane = ({
       wsRef.current.send(JSON.stringify({ type: "data", data: text }));
       showPasteFeedback();
     } catch {}
-  }, [showPasteFeedback]);
+  }, [processImageFile, showPasteFeedback]);
+
+  const handlePasteImage = useCallback(() => {
+    imageInputRef.current?.click();
+  }, []);
+
+  const handleImageFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file && file.type.startsWith("image/")) void processImageFile(file);
+    },
+    [processImageFile],
+  );
+
+  useEffect(() => {
+    const container = terminalRef.current;
+    if (!container) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          e.preventDefault();
+          e.stopPropagation();
+          const file = item.getAsFile();
+          if (file) void processImageFile(file);
+          return;
+        }
+      }
+    };
+    container.addEventListener("paste", onPaste, true);
+    return () => container.removeEventListener("paste", onPaste, true);
+  }, [processImageFile]);
+
+  useEffect(() => {
+    handlePasteImageRef.current = handlePasteImage;
+  }, [handlePasteImage]);
 
   const handleUploadClick = useCallback(() => {
     if (!connectionId) return;
@@ -1235,7 +1453,8 @@ export const SSHPane = ({
   }, []);
 
   // Tap-vs-drag: pointerup with no movement = tap (opens overlay), so no onClick here.
-  const MIC_DRAG_THRESHOLD = 6;
+  // 10px = standard touch slop; 6px ate real taps as "drags" on phones.
+  const MIC_DRAG_THRESHOLD = 10;
   const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     const el = e.currentTarget;
     micDragOriginRef.current = { x: el.offsetLeft, y: el.offsetTop };
@@ -1324,6 +1543,14 @@ export const SSHPane = ({
         }
       />
 
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageFileChange}
+      />
+
       {/* Mobile UI */}
       {status === "connected" && isMobile && showTerminalShortcuts && (
         <>
@@ -1359,6 +1586,7 @@ export const SSHPane = ({
               onTmux={sendTmux}
               onCopy={handleCopy}
               onPaste={handlePaste}
+              onPasteImage={handlePasteImage}
               onToggleDrawer={() => setDrawerOpen((o) => !o)}
               copyFeedback={copyFeedback}
               pasteFeedback={pasteFeedback}
@@ -1575,6 +1803,39 @@ const SSHTerminal = ({
   const setActiveTerminalTab = useWindowStore((s) => s.setActiveTerminalTab);
   const focusWindow = useWindowStore((s) => s.focusWindow);
 
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    if (!mq.matches) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const update = () => {
+      if (keyboardRafRef.current !== null) {
+        cancelAnimationFrame(keyboardRafRef.current);
+      }
+      keyboardRafRef.current = requestAnimationFrame(() => {
+        const viewportBottom = Math.max(0, vv.height + vv.offsetTop);
+        const rawHeight = Math.max(0, window.innerHeight - viewportBottom);
+        const h = rawHeight < 80 ? 0 : rawHeight;
+        setKeyboardHeight((prev) => (Math.abs(prev - h) > 2 ? h : prev));
+        keyboardRafRef.current = null;
+      });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      if (keyboardRafRef.current !== null) {
+        cancelAnimationFrame(keyboardRafRef.current);
+      }
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
   const sshMeta = win ? getSSHMetadata(win) : null;
   const tabs = sshMeta?.tabs ?? [
     { id: "default", label: "Tab 1", connectionId },
@@ -1665,7 +1926,9 @@ const SSHTerminal = ({
             connectionId={tab.connectionId ?? connectionId}
             isActive={tab.id === activeTabId}
             hasNavigated={tab.hasNavigated}
+            keyboardHeight={keyboardHeight}
             refreshNonce={paneRefreshKey}
+            enableTouchScroll
           />
         ))}
       </div>
