@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.4.0](https://github.com/reymooy27/infinite/compare/infinite-v1.3.0...infinite-v1.4.0) (2026-09-16)
+
+
+### Features
+
+* drive tmux copy-mode scrolling when autoTmux is on ([b892c1f](https://github.com/reymooy27/infinite/commit/b892c1fa79ae0a628ff8edeb03a594ff44fc6a1b))
+* focus mode close shortcut, terminal image upload, voice fixes ([e4260b4](https://github.com/reymooy27/infinite/commit/e4260b43f4c3f0992cabd11b69c2e6688ceb1b89))
+* **focus:** Ctrl+Shift+Q to close tab/window ([78fe320](https://github.com/reymooy27/infinite/commit/78fe32019919e99919b1a8031971cb4d99a3246f))
+* **terminal:** add image paste via Kitty graphics protocol ([2fae06b](https://github.com/reymooy27/infinite/commit/2fae06bc1223e1bcf9eced0280116aea9369409f))
+* **terminal:** intercept image on browser Ctrl+V, auto-trigger paste ([663fbaa](https://github.com/reymooy27/infinite/commit/663fbaa2bfe9404bc079a82a33246298baf1918c))
+* **terminal:** set remote clipboard after image upload ([c22aea4](https://github.com/reymooy27/infinite/commit/c22aea43ce304732b45ab2c2d8b63efaef2a80bb))
+* **terminal:** upload images to infinite-images/ subfolder ([ed1a903](https://github.com/reymooy27/infinite/commit/ed1a90361417b5246683837d5fea23d870307009))
+* Termux-style mobile terminal scroll behavior ([3953051](https://github.com/reymooy27/infinite/commit/395305143293d22742251b64d610d982e8ea3d3f))
+
+
+### Bug Fixes
+
+* batch tmux copy-mode entry + scroll in one PTY write ([8675444](https://github.com/reymooy27/infinite/commit/86754444859d9755e22e79486d46b44df22bc57a))
+* close git/code-editor panels on outside click in focus mode ([f29867f](https://github.com/reymooy27/infinite/commit/f29867f168442e1804b8226c77c37ad69adc7cc5))
+* resolve TDZ crash in touch-scroll effect ([42a39e1](https://github.com/reymooy27/infinite/commit/42a39e13f3bf06ecb4b50428b577d7f5f4a9d5ce))
+* **terminal:** image picker uploads via SFTP, types [@path](https://github.com/path) into input ([ca74b63](https://github.com/reymooy27/infinite/commit/ca74b63fe40aa8118e21de01e8a11178565808d1))
+* **terminal:** upload destPath must be full file path; tolerant set-clipboard ([03fff9c](https://github.com/reymooy27/infinite/commit/03fff9ccebd4929f0af55ff62e6f043635a49599))
+* **terminal:** upload images into project dir for [@mention](https://github.com/mention) attach ([27c45dd](https://github.com/reymooy27/infinite/commit/27c45ddd83aabbc9641deff9e18d32322fdbca8d))
+* **voice:** flush last utterance before detaching on stop ([f2e5f10](https://github.com/reymooy27/infinite/commit/f2e5f1056ec7de25a3375f5ed512b931a76cf3b8))
+* **voice:** retry mic start and widen tap tolerance ([f6d1544](https://github.com/reymooy27/infinite/commit/f6d15447394d482b3ca3151e13b8feb580059deb))
+* **voice:** stop duplicate transcript on re-emitted results ([ed15c99](https://github.com/reymooy27/infinite/commit/ed15c99c5a19075c63c02bd89140fd39f57df48e))
+* **voice:** survive long-recording session drops ([74d25e9](https://github.com/reymooy27/infinite/commit/74d25e9a895af91a742bfd9ec53480105294488b))
+
+
+### Reverts
+
+* back to xterm-only scrolling (no tmux copy-mode) ([48bedde](https://github.com/reymooy27/infinite/commit/48bedde0c1864147f49d832c10b944032229b4fc))
+
 ## [1.3.0](https://github.com/reymooy27/infinite/compare/infinite-v1.2.0...infinite-v1.3.0) (2026-09-09)
 
 
