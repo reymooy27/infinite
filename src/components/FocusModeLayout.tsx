@@ -167,14 +167,19 @@ export default function FocusModeLayout({
     });
   };
 
-  const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
-    e.stopPropagation();
+  const closeActiveTab = () => {
     if (!activeWindow) return;
     // If this is the last tab, close the entire window (triggers tmux cleanup)
     if (tabs.length <= 1) {
       handleCloseWindow(activeWindow.id);
       return;
     }
+    closeTerminalTab(activeWindow.id, activeTabId);
+  };
+
+  const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
+    e.stopPropagation();
+    if (!activeWindow) return;
     closeTerminalTab(activeWindow.id, tabId);
   };
 
@@ -234,6 +239,9 @@ export default function FocusModeLayout({
     // Ctrl+Shift+T is browser-reserved (reopen closed tab) and can't be
     // intercepted; Enter is free everywhere.
     Enter: handleAddTab, // new terminal tab
+    // Q = quit. Ctrl+Shift+W is browser-reserved (close window) so it can't be
+    // used; Q closes the active tab, falling back to the window on the last tab.
+    KeyQ: closeActiveTab,
   };
 
   useEffect(() => {
@@ -528,6 +536,7 @@ export default function FocusModeLayout({
                             handleCloseTab(e, tab.id);
                             setTabPanelOpen(false);
                           }}
+                          title="Close tab (Ctrl+Shift+Q)"
                           className="ml-2 shrink-0 text-neutral-600 hover:text-white transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                         >
                           ×
