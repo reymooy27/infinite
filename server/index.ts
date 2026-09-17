@@ -37,6 +37,7 @@ import {
   unpauseContainer,
 } from "./lib/docker.js";
 import { getSysStats, killProcess } from "./lib/sysmon.js";
+import { listVpnProfiles, connectVpn, disconnectVpn, getVpnLog } from "./lib/vpn.js";
 import { logger } from "./lib/logger.js";
 import bookmarksRouter from "./routes/bookmarks.js";
 import notesRouter from "./routes/notes.js";
@@ -543,6 +544,62 @@ app.post("/api/sysmon/:connectionId/kill", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to kill process";
     res.status(500).json({ ok: false, message });
+  }
+});
+
+// ---------------- VPN (OpenVPN via openvpn-client@ systemd units) ----------------
+app.get("/api/vpn/:connectionId/profiles", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  if (!connectionId) {
+    res.status(400).json({ error: "Missing connectionId" });
+    return;
+  }
+  try {
+    const profiles = await withConnection(req, connectionId, (connection) => listVpnProfiles(connection));
+    res.json({ profiles });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to list VPN profiles";
+    res.status(500).json({ error: message });
+  }
+});
+
+function vpnToggleHandler(action: "connect" | "disconnect") {
+  return async (req: express.Request, res: express.Response) => {
+    const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+    if (!connectionId) {
+      res.status(400).json({ ok: false, message: "Missing connectionId" });
+      return;
+    }
+    const profile = String(req.body?.profile || "");
+    try {
+      const result = await withConnection(req, connectionId, (connection) =>
+        action === "connect" ? connectVpn(connection, profile) : disconnectVpn(connection, profile || undefined),
+      );
+      res.status(result.ok ? 200 : 400).json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : `Failed to ${action} VPN`;
+      logger.error(`[VPN] ${action} failed`, { connectionId, error: message });
+      res.status(500).json({ ok: false, message });
+    }
+  };
+}
+
+app.post("/api/vpn/:connectionId/connect", vpnToggleHandler("connect"));
+app.post("/api/vpn/:connectionId/disconnect", vpnToggleHandler("disconnect"));
+
+app.get("/api/vpn/:connectionId/log", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  if (!connectionId) {
+    res.status(400).json({ error: "Missing connectionId" });
+    return;
+  }
+  const profile = String(req.query.profile || "");
+  try {
+    const log = await withConnection(req, connectionId, (connection) => getVpnLog(connection, profile || undefined));
+    res.json({ log });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to read VPN log";
+    res.status(500).json({ error: message });
   }
 });
 

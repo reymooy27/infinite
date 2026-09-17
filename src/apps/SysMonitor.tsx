@@ -11,6 +11,7 @@ import {
   X,
   Skull,
   Plug,
+  Shield,
 } from "lucide-react";
 import { useSSHStore } from "@/stores/useSSHStore";
 import type { SSHConnection } from "@/types";
@@ -30,6 +31,14 @@ interface SysStats {
   disks: Array<{ fs: string; sizeKb: number; usedKb: number; usePct: number; mount: string }>;
   procs: Array<{ pid: number; command: string; cpu: number; mem: number; rssKb: number }>;
   ports: Array<{ proto: string; port: number; address: string; pid: number | null; process: string }>;
+  vpn: {
+    installed: boolean;
+    running: boolean;
+    tunName: string | null;
+    tunIp: string | null;
+    connectedSec: number;
+    profile: string | null;
+  };
 }
 
 const POLL_MS = 2000;
@@ -160,6 +169,12 @@ export default function SysMonitor({
   const [loading, setLoading] = useState(false);
   const [procSort, setProcSort] = useState<"cpu" | "mem">("cpu");
   const [confirm, setConfirm] = useState<{ message: string; pid: number } | null>(null);
+  const [vpnProfiles, setVpnProfiles] = useState<string[]>([]);
+  const [vpnProfile, setVpnProfile] = useState("");
+  const [vpnBusy, setVpnBusy] = useState<"connect" | "disconnect" | null>(null);
+  const [vpnError, setVpnError] = useState<{ message: string; needsSetup?: boolean; setupHint?: string } | null>(null);
+  const [vpnLog, setVpnLog] = useState<string | null>(null);
+  const [copiedHint, setCopiedHint] = useState(false);
   const inFlight = useRef(false);
 
   useEffect(() => {
@@ -177,6 +192,9 @@ export default function SysMonitor({
       setSelected(conn);
       setStats(null);
       setError(null);
+      setVpnProfile("");
+      setVpnError(null);
+      setVpnLog(null);
       onConnectionChange?.(conn?.id ?? null);
     },
     [onConnectionChange],
@@ -220,6 +238,74 @@ export default function SysMonitor({
     },
     [selectedId, load],
   );
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setVpnProfiles([]);
+    let alive = true;
+    fetch(`/api/vpn/${selectedId}/profiles`)
+      .then((r) => (r.ok ? r.json() : { profiles: [] }))
+      .then((d) => {
+        if (!alive) return;
+        const ps: string[] = d.profiles ?? [];
+        setVpnProfiles(ps);
+        setVpnProfile((cur) => cur || ps[0] || "");
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [selectedId]);
+
+  const vpnAction = useCallback(
+    async (action: "connect" | "disconnect") => {
+      if (!selectedId) return;
+      const profile = action === "connect" ? vpnProfile : stats?.vpn?.profile || "";
+      if (action === "connect" && !profile) {
+        setVpnError({ message: "No .ovpn profile found in /etc/openvpn/client on this host." });
+        return;
+      }
+      setVpnBusy(action);
+      setVpnError(null);
+      setVpnLog(null);
+      try {
+        const res = await fetch(`/api/vpn/${selectedId}/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          const e = new Error(data.message || `Failed to ${action} VPN`) as Error & {
+            needsSetup?: boolean;
+            setupHint?: string;
+          };
+          e.needsSetup = data.needsSetup;
+          e.setupHint = data.setupHint;
+          throw e;
+        }
+        void load();
+      } catch (err) {
+        const e = err as Error & { needsSetup?: boolean; setupHint?: string };
+        setVpnError({ message: e.message, needsSetup: e.needsSetup, setupHint: e.setupHint });
+      } finally {
+        setVpnBusy(null);
+      }
+    },
+    [selectedId, vpnProfile, stats?.vpn?.profile, load],
+  );
+
+  const showVpnLog = useCallback(async () => {
+    if (!selectedId) return;
+    try {
+      const q = stats?.vpn?.profile || vpnProfile;
+      const res = await fetch(`/api/vpn/${selectedId}/log${q ? `?profile=${encodeURIComponent(q)}` : ""}`);
+      const data = await res.json();
+      setVpnLog(data.log ?? data.error ?? "(no log)");
+    } catch {
+      setVpnLog("(failed to fetch log)");
+    }
+  }, [selectedId, stats?.vpn?.profile, vpnProfile]);
 
   // Poll on an interval; the fetch itself takes ~0.6s (server samples /proc
   // around a sleep), so POLL_MS is the gap between samples, not a hard cadence.
@@ -354,6 +440,109 @@ export default function SysMonitor({
                 <span className="flex-1 rounded bg-neutral-800/60 px-2 py-1.5 text-center">
                   <span className="text-blue-400">↑</span> {fmtBytesPerSec(stats.net.txBytesPerSec)}
                 </span>
+              </div>
+
+              <div className="mt-2 space-y-1.5 border-t border-neutral-800 pt-2">
+                <div className="flex items-center gap-2 text-[11px]">
+                  <Shield
+                    size={12}
+                    className={stats.vpn?.running && stats.vpn.tunIp ? "text-green-400" : "text-neutral-500"}
+                  />
+                  <span className="font-medium text-neutral-300">VPN</span>
+                  {!stats.vpn?.installed ? (
+                    <span className="text-neutral-500">OpenVPN not installed on this host</span>
+                  ) : stats.vpn.running ? (
+                    <>
+                      <span className={stats.vpn.tunIp ? "text-green-400" : "text-amber-400"}>
+                        {stats.vpn.tunIp
+                          ? `${stats.vpn.tunName} ${stats.vpn.tunIp} · ${fmtUptime(stats.vpn.connectedSec)}`
+                          : "connecting…"}
+                      </span>
+                      {stats.vpn.profile && (
+                        <span className="truncate font-mono text-[10px] text-neutral-500" title={stats.vpn.profile}>
+                          {stats.vpn.profile}
+                        </span>
+                      )}
+                      <div className="ml-auto flex shrink-0 items-center gap-1">
+                        <button
+                          onClick={() => void showVpnLog()}
+                          className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400 cursor-pointer hover:bg-neutral-800"
+                        >
+                          log
+                        </button>
+                        <button
+                          onClick={() => void vpnAction("disconnect")}
+                          disabled={vpnBusy !== null}
+                          className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-200 cursor-pointer hover:bg-neutral-800 disabled:opacity-40"
+                        >
+                          {vpnBusy === "disconnect" ? "Stopping…" : "Disconnect"}
+                        </button>
+                      </div>
+                    </>
+                  ) : vpnBusy === "connect" ? (
+                    <span className="text-amber-400">connecting…</span>
+                  ) : vpnProfiles.length === 0 ? (
+                    <span className="text-neutral-500">no .ovpn profiles in /etc/openvpn/client</span>
+                  ) : (
+                    <>
+                      <select
+                        value={vpnProfile}
+                        onChange={(e) => setVpnProfile(e.target.value)}
+                        className="max-w-[10rem] truncate rounded border border-neutral-700 bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-200"
+                      >
+                        {vpnProfiles.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => void vpnAction("connect")}
+                        disabled={vpnBusy !== null}
+                        className="ml-auto shrink-0 rounded border border-blue-600 bg-blue-600 px-2 py-0.5 text-[10px] text-white cursor-pointer hover:bg-blue-500 disabled:opacity-40"
+                      >
+                        Connect
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {vpnError && (
+                  <div className="rounded border border-red-900/60 bg-red-950/40 px-2 py-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-[10px] leading-snug text-red-300">{vpnError.message}</span>
+                      <button
+                        onClick={() => void showVpnLog()}
+                        className="shrink-0 text-[10px] text-red-300 underline cursor-pointer"
+                      >
+                        log
+                      </button>
+                    </div>
+                    {vpnError.needsSetup && vpnError.setupHint && (
+                      <div className="mt-1.5">
+                        <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-all rounded bg-neutral-950 p-1.5 font-mono text-[9px] leading-relaxed text-neutral-300">
+                          {vpnError.setupHint}
+                        </pre>
+                        <button
+                          onClick={() => {
+                            void navigator.clipboard.writeText(vpnError.setupHint ?? "");
+                            setCopiedHint(true);
+                            setTimeout(() => setCopiedHint(false), 1500);
+                          }}
+                          className="mt-1 rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:bg-neutral-800"
+                        >
+                          {copiedHint ? "Copied" : "Copy command"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {vpnLog && (
+                  <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-neutral-950 p-1.5 font-mono text-[9px] leading-relaxed text-neutral-400">
+                    {vpnLog}
+                  </pre>
+                )}
               </div>
             </Card>
 
