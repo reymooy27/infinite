@@ -77,3 +77,15 @@ model Project {
 
   @@map("projects")
 }
+
+model VpnProfile {
+  id            Int      @id @default(autoincrement())
+  connectionId  Int      @map("connection_id")
+  name          String
+  content       String
+  authEncrypted String?  @map("auth_encrypted")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([connectionId, name])
+  @@map("vpn_profiles")
+}

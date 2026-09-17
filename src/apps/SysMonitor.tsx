@@ -12,6 +12,9 @@ import {
   Skull,
   Plug,
   Shield,
+  Upload,
+  KeyRound,
+  Trash2,
 } from "lucide-react";
 import { useSSHStore } from "@/stores/useSSHStore";
 import type { SSHConnection } from "@/types";
@@ -169,12 +172,18 @@ export default function SysMonitor({
   const [loading, setLoading] = useState(false);
   const [procSort, setProcSort] = useState<"cpu" | "mem">("cpu");
   const [confirm, setConfirm] = useState<{ message: string; pid: number } | null>(null);
-  const [vpnProfiles, setVpnProfiles] = useState<string[]>([]);
+  const [vpnProfiles, setVpnProfiles] = useState<{ name: string; managed: boolean }[]>([]);
   const [vpnProfile, setVpnProfile] = useState("");
   const [vpnBusy, setVpnBusy] = useState<"connect" | "disconnect" | null>(null);
   const [vpnError, setVpnError] = useState<{ message: string; needsSetup?: boolean; setupHint?: string } | null>(null);
   const [vpnLog, setVpnLog] = useState<string | null>(null);
   const [copiedHint, setCopiedHint] = useState(false);
+  const [vpnUploading, setVpnUploading] = useState(false);
+  const [savingAuth, setSavingAuth] = useState(false);
+  const [authForm, setAuthForm] = useState({ open: false, username: "", password: "" });
+  const [delArmed, setDelArmed] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const delTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef(false);
 
   useEffect(() => {
@@ -195,6 +204,8 @@ export default function SysMonitor({
       setVpnProfile("");
       setVpnError(null);
       setVpnLog(null);
+      setAuthForm({ open: false, username: "", password: "" });
+      setDelArmed(false);
       onConnectionChange?.(conn?.id ?? null);
     },
     [onConnectionChange],
@@ -239,23 +250,22 @@ export default function SysMonitor({
     [selectedId, load],
   );
 
-  useEffect(() => {
+  const refreshProfiles = useCallback(() => {
     if (!selectedId) return;
-    setVpnProfiles([]);
-    let alive = true;
     fetch(`/api/vpn/${selectedId}/profiles`)
       .then((r) => (r.ok ? r.json() : { profiles: [] }))
       .then((d) => {
-        if (!alive) return;
-        const ps: string[] = d.profiles ?? [];
+        const ps: { name: string; managed: boolean }[] = d.profiles ?? [];
         setVpnProfiles(ps);
-        setVpnProfile((cur) => cur || ps[0] || "");
+        setVpnProfile((cur) => (ps.some((p) => p.name === cur) ? cur : ps[0]?.name ?? ""));
       })
       .catch(() => {});
-    return () => {
-      alive = false;
-    };
   }, [selectedId]);
+
+  useEffect(() => {
+    setVpnProfiles([]);
+    refreshProfiles();
+  }, [refreshProfiles]);
 
   const vpnAction = useCallback(
     async (action: "connect" | "disconnect") => {
@@ -279,15 +289,18 @@ export default function SysMonitor({
           const e = new Error(data.message || `Failed to ${action} VPN`) as Error & {
             needsSetup?: boolean;
             setupHint?: string;
+            authHint?: boolean;
           };
           e.needsSetup = data.needsSetup;
           e.setupHint = data.setupHint;
+          e.authHint = data.authHint;
           throw e;
         }
         void load();
       } catch (err) {
-        const e = err as Error & { needsSetup?: boolean; setupHint?: string };
+        const e = err as Error & { needsSetup?: boolean; setupHint?: string; authHint?: boolean };
         setVpnError({ message: e.message, needsSetup: e.needsSetup, setupHint: e.setupHint });
+        if (e.authHint) setAuthForm((f) => ({ ...f, open: true }));
       } finally {
         setVpnBusy(null);
       }
@@ -306,6 +319,72 @@ export default function SysMonitor({
       setVpnLog("(failed to fetch log)");
     }
   }, [selectedId, stats?.vpn?.profile, vpnProfile]);
+
+  const uploadProfileFile = useCallback(
+    async (file: File) => {
+      if (!selectedId) return;
+      setVpnUploading(true);
+      setVpnError(null);
+      try {
+        const content = await file.text();
+        const res = await fetch(`/api/vpn/${selectedId}/profile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, content }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) throw new Error(data.message || "Upload failed");
+        setVpnProfile(data.name || "");
+        refreshProfiles();
+        void load();
+      } catch (err) {
+        setVpnError({ message: err instanceof Error ? err.message : "Upload failed" });
+      } finally {
+        setVpnUploading(false);
+      }
+    },
+    [selectedId, refreshProfiles, load],
+  );
+
+  const saveVpnAuth = useCallback(async () => {
+    if (!selectedId || !vpnProfile) return;
+    setSavingAuth(true);
+    try {
+      const res = await fetch(`/api/vpn/${selectedId}/auth`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: vpnProfile, username: authForm.username, password: authForm.password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.message || "Failed to save credentials");
+      setAuthForm({ open: false, username: "", password: "" });
+      await vpnAction("connect");
+    } catch (err) {
+      setVpnError({ message: err instanceof Error ? err.message : "Failed to save credentials" });
+    } finally {
+      setSavingAuth(false);
+    }
+  }, [selectedId, vpnProfile, authForm.username, authForm.password, vpnAction]);
+
+  const removeVpnProfile = useCallback(async () => {
+    if (!selectedId || !vpnProfile) return;
+    try {
+      const res = await fetch(`/api/vpn/${selectedId}/profile?name=${encodeURIComponent(vpnProfile)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.message || "Failed to remove profile");
+      setVpnProfile("");
+      refreshProfiles();
+    } catch (err) {
+      setVpnError({ message: err instanceof Error ? err.message : "Failed to remove profile" });
+    } finally {
+      setDelArmed(false);
+      if (delTimer.current) clearTimeout(delTimer.current);
+    }
+  }, [selectedId, vpnProfile, refreshProfiles]);
+
+  const selectedManaged = vpnProfiles.find((p) => p.name === vpnProfile)?.managed ?? false;
 
   // Poll on an interval; the fetch itself takes ~0.6s (server samples /proc
   // around a sleep), so POLL_MS is the gap between samples, not a hard cadence.
@@ -443,6 +522,17 @@ export default function SysMonitor({
               </div>
 
               <div className="mt-2 space-y-1.5 border-t border-neutral-800 pt-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".ovpn,.conf,text/plain"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void uploadProfileFile(f);
+                    e.target.value = "";
+                  }}
+                />
                 <div className="flex items-center gap-2 text-[11px]">
                   <Shield
                     size={12}
@@ -481,31 +571,118 @@ export default function SysMonitor({
                     </>
                   ) : vpnBusy === "connect" ? (
                     <span className="text-amber-400">connecting…</span>
-                  ) : vpnProfiles.length === 0 ? (
-                    <span className="text-neutral-500">no .ovpn profiles in /etc/openvpn/client</span>
                   ) : (
                     <>
-                      <select
-                        value={vpnProfile}
-                        onChange={(e) => setVpnProfile(e.target.value)}
-                        className="max-w-[10rem] truncate rounded border border-neutral-700 bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-200"
-                      >
-                        {vpnProfiles.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => void vpnAction("connect")}
-                        disabled={vpnBusy !== null}
-                        className="ml-auto shrink-0 rounded border border-blue-600 bg-blue-600 px-2 py-0.5 text-[10px] text-white cursor-pointer hover:bg-blue-500 disabled:opacity-40"
-                      >
-                        Connect
-                      </button>
+                      {vpnProfiles.length === 0 ? (
+                        <span className="text-neutral-500">no profiles — upload a .ovpn</span>
+                      ) : (
+                        <>
+                          <select
+                            value={vpnProfile}
+                            onChange={(e) => setVpnProfile(e.target.value)}
+                            className="max-w-[9rem] truncate rounded border border-neutral-700 bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-200"
+                          >
+                            {vpnProfiles.map((p) => (
+                              <option key={p.name} value={p.name}>
+                                {p.name}
+                                {p.managed ? " (saved)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => void vpnAction("connect")}
+                            disabled={vpnBusy !== null}
+                            className="rounded border border-blue-600 bg-blue-600 px-2 py-0.5 text-[10px] text-white cursor-pointer hover:bg-blue-500 disabled:opacity-40"
+                          >
+                            Connect
+                          </button>
+                        </>
+                      )}
+                      <div className="ml-auto flex shrink-0 items-center gap-1">
+                        {vpnProfiles.length > 0 && selectedManaged && (
+                          <>
+                            <button
+                              onClick={() => setAuthForm((f) => ({ ...f, open: !f.open }))}
+                              title="VPN credentials (auth-user-pass)"
+                              className={`flex h-6 w-6 items-center justify-center rounded border cursor-pointer ${
+                                authForm.open
+                                  ? "border-blue-500 text-blue-400"
+                                  : "border-neutral-700 text-neutral-400 hover:bg-neutral-800"
+                              }`}
+                            >
+                              <KeyRound size={11} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (delArmed) {
+                                  void removeVpnProfile();
+                                  return;
+                                }
+                                setDelArmed(true);
+                                if (delTimer.current) clearTimeout(delTimer.current);
+                                delTimer.current = setTimeout(() => setDelArmed(false), 3000);
+                              }}
+                              title={delArmed ? "Click again to confirm" : "Remove profile"}
+                              className={`flex h-6 shrink-0 items-center justify-center rounded border px-1.5 text-[9px] cursor-pointer ${
+                                delArmed
+                                  ? "border-red-600 bg-red-600/20 text-red-400"
+                                  : "border-neutral-700 text-neutral-400 hover:bg-neutral-800 hover:text-red-400"
+                              }`}
+                            >
+                              {delArmed ? "Sure?" : <Trash2 size={11} />}
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={vpnUploading}
+                          title="Upload .ovpn profile"
+                          className="flex h-6 w-6 items-center justify-center rounded border border-neutral-700 text-neutral-400 cursor-pointer hover:bg-neutral-800 disabled:opacity-40"
+                        >
+                          <Upload size={11} className={vpnUploading ? "animate-pulse" : ""} />
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>
+
+                {authForm.open && (
+                  <div className="space-y-1.5 rounded border border-neutral-800 bg-neutral-900/70 p-2">
+                    <p className="text-[10px] leading-snug text-neutral-500">
+                      {vpnProfile} needs a username/password (auth-user-pass). Stored encrypted; written to the
+                      host on connect.
+                    </p>
+                    <input
+                      autoFocus
+                      value={authForm.username}
+                      onChange={(e) => setAuthForm((f) => ({ ...f, username: e.target.value }))}
+                      placeholder="username"
+                      className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-[11px] text-neutral-200 placeholder-neutral-600 outline-none focus:border-blue-500"
+                    />
+                    <input
+                      type="password"
+                      value={authForm.password}
+                      onChange={(e) => setAuthForm((f) => ({ ...f, password: e.target.value }))}
+                      placeholder="password"
+                      className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-[11px] text-neutral-200 placeholder-neutral-600 outline-none focus:border-blue-500"
+                    />
+                    <div className="flex justify-end gap-1.5">
+                      <button
+                        onClick={() => setAuthForm({ open: false, username: "", password: "" })}
+                        className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:bg-neutral-800"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => void saveVpnAuth()}
+                        disabled={savingAuth}
+                        className="rounded bg-blue-600 px-2 py-0.5 text-[10px] text-white cursor-pointer hover:bg-blue-500 disabled:opacity-40"
+                      >
+                        {savingAuth ? "Saving…" : "Save & connect"}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {vpnError && (
                   <div className="rounded border border-red-900/60 bg-red-950/40 px-2 py-1.5">

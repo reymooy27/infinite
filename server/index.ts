@@ -37,7 +37,15 @@ import {
   unpauseContainer,
 } from "./lib/docker.js";
 import { getSysStats, killProcess } from "./lib/sysmon.js";
-import { listVpnProfiles, connectVpn, disconnectVpn, getVpnLog } from "./lib/vpn.js";
+import {
+  listProfiles,
+  connectVpn,
+  disconnectVpn,
+  getVpnLog,
+  saveProfile,
+  saveProfileAuth,
+  deleteProfile,
+} from "./lib/vpn.js";
 import { logger } from "./lib/logger.js";
 import bookmarksRouter from "./routes/bookmarks.js";
 import notesRouter from "./routes/notes.js";
@@ -555,7 +563,7 @@ app.get("/api/vpn/:connectionId/profiles", async (req, res) => {
     return;
   }
   try {
-    const profiles = await withConnection(req, connectionId, (connection) => listVpnProfiles(connection));
+    const profiles = await withConnection(req, connectionId, (connection) => listProfiles(connection));
     res.json({ profiles });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to list VPN profiles";
@@ -600,6 +608,61 @@ app.get("/api/vpn/:connectionId/log", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to read VPN log";
     res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/vpn/:connectionId/profile", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  if (!connectionId) {
+    res.status(400).json({ ok: false, message: "Missing connectionId" });
+    return;
+  }
+  const { filename, content } = req.body ?? {};
+  try {
+    const result = await withConnection(req, connectionId, (connection) =>
+      saveProfile(connection, String(filename || ""), String(content ?? "")),
+    );
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to save profile";
+    logger.error("[VPN] save profile failed", { connectionId, error: message });
+    res.status(500).json({ ok: false, message });
+  }
+});
+
+app.post("/api/vpn/:connectionId/auth", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  if (!connectionId) {
+    res.status(400).json({ ok: false, message: "Missing connectionId" });
+    return;
+  }
+  const { name, username, password } = req.body ?? {};
+  try {
+    const result = await withConnection(req, connectionId, (connection) =>
+      saveProfileAuth(connection, String(name || ""), String(username ?? ""), String(password ?? "")),
+    );
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to save credentials";
+    logger.error("[VPN] save auth failed", { connectionId, error: message });
+    res.status(500).json({ ok: false, message });
+  }
+});
+
+app.delete("/api/vpn/:connectionId/profile", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  const name = String(req.query.name || "");
+  if (!connectionId || !name) {
+    res.status(400).json({ ok: false, message: "Missing connectionId or name" });
+    return;
+  }
+  try {
+    const result = await withConnection(req, connectionId, (connection) => deleteProfile(connection, name));
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to delete profile";
+    logger.error("[VPN] delete profile failed", { connectionId, error: message });
+    res.status(500).json({ ok: false, message });
   }
 });
 

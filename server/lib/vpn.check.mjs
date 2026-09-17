@@ -63,4 +63,38 @@ assert.deepStrictEqual(parseVpn({ VPN_INSTALLED: ["NO"] }), {
   installed: false, running: false, tunName: null, tunIp: null, connectedSec: 0, profile: null,
 });
 
+// --- slugifyProfile (mirror of vpn.ts) ---
+const PROFILE_RE = /^[A-Za-z0-9._-]{1,64}$/;
+function slugifyProfile(filename) {
+  const base = String(filename).replace(/^.*[\\/]/, "").replace(/\.ovpn$/i, "");
+  const slug = base.replace(/\s+/g, "-").replace(/[^A-Za-z0-9._-]/g, "");
+  return slug && PROFILE_RE.test(slug) ? slug : null;
+}
+
+assert.strictEqual(slugifyProfile("My VPN 2.ovpn"), "My-VPN-2");
+assert.strictEqual(slugifyProfile("/a/b/proton_nl.ovpn"), "proton_nl");
+assert.strictEqual(slugifyProfile("we!rd.ovpn"), "werd");
+assert.strictEqual(slugifyProfile(".ovpn"), null);
+assert.strictEqual(slugifyProfile("x".repeat(65) + ".ovpn"), null);
+
+// --- ensureAuthLine (mirror of vpn.ts) ---
+const P = "/etc/openvpn/client/p.auth";
+function ensureAuthLine(content, authPath) {
+  if (/^[ \t]*auth-user-pass[ \t]+\S/m.test(content)) return content;
+  let replaced = false;
+  const lines = content.split("\n").map((l) => {
+    if (!replaced && /^[ \t]*auth-user-pass[ \t]*$/.test(l)) {
+      replaced = true;
+      return `auth-user-pass ${authPath}`;
+    }
+    return l;
+  });
+  return replaced ? lines.join("\n") : `${content.replace(/\s+$/, "")}\nauth-user-pass ${authPath}\n`;
+}
+
+assert.strictEqual(ensureAuthLine("client\nremote a 1194", P), "client\nremote a 1194\nauth-user-pass /etc/openvpn/client/p.auth\n");
+assert.strictEqual(ensureAuthLine("client\nauth-user-pass\nremote a", P), "client\nauth-user-pass /etc/openvpn/client/p.auth\nremote a");
+assert.strictEqual(ensureAuthLine("client\nauth-user-pass /custom/x.sh", P), "client\nauth-user-pass /custom/x.sh");
+assert.strictEqual(ensureAuthLine("remote a\n\n", P), "remote a\nauth-user-pass /etc/openvpn/client/p.auth\n");
+
 console.log("vpn.check: all assertions passed");
