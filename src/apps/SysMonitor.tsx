@@ -172,7 +172,8 @@ export default function SysMonitor({
   const [loading, setLoading] = useState(false);
   const [procSort, setProcSort] = useState<"cpu" | "mem">("cpu");
   const [confirm, setConfirm] = useState<{ message: string; pid: number } | null>(null);
-  const [vpnProfiles, setVpnProfiles] = useState<{ name: string; managed: boolean }[]>([]);
+  const [vpnProfiles, setVpnProfiles] = useState<{ name: string; managed: boolean; fromDir: boolean }[]>([]);
+  const [vpnDir, setVpnDir] = useState("");
   const [vpnProfile, setVpnProfile] = useState("");
   const [vpnBusy, setVpnBusy] = useState<"connect" | "disconnect" | null>(null);
   const [vpnError, setVpnError] = useState<{ message: string; needsSetup?: boolean; setupHint?: string } | null>(null);
@@ -253,10 +254,11 @@ export default function SysMonitor({
   const refreshProfiles = useCallback(() => {
     if (!selectedId) return;
     fetch(`/api/vpn/${selectedId}/profiles`)
-      .then((r) => (r.ok ? r.json() : { profiles: [] }))
+      .then((r) => (r.ok ? r.json() : { profiles: [], dir: "" }))
       .then((d) => {
-        const ps: { name: string; managed: boolean }[] = d.profiles ?? [];
+        const ps: { name: string; managed: boolean; fromDir: boolean }[] = d.profiles ?? [];
         setVpnProfiles(ps);
+        setVpnDir(d.dir ?? "");
         setVpnProfile((cur) => (ps.some((p) => p.name === cur) ? cur : ps[0]?.name ?? ""));
       })
       .catch(() => {});
@@ -358,13 +360,14 @@ export default function SysMonitor({
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.message || "Failed to save credentials");
       setAuthForm({ open: false, username: "", password: "" });
+      refreshProfiles();
       await vpnAction("connect");
     } catch (err) {
       setVpnError({ message: err instanceof Error ? err.message : "Failed to save credentials" });
     } finally {
       setSavingAuth(false);
     }
-  }, [selectedId, vpnProfile, authForm.username, authForm.password, vpnAction]);
+  }, [selectedId, vpnProfile, authForm.username, authForm.password, refreshProfiles, vpnAction]);
 
   const removeVpnProfile = useCallback(async () => {
     if (!selectedId || !vpnProfile) return;
@@ -384,7 +387,10 @@ export default function SysMonitor({
     }
   }, [selectedId, vpnProfile, refreshProfiles]);
 
-  const selectedManaged = vpnProfiles.find((p) => p.name === vpnProfile)?.managed ?? false;
+  const selectedProfile = vpnProfiles.find((p) => p.name === vpnProfile);
+  const selectedManaged = selectedProfile?.managed ?? false;
+  // dir profiles can also take credentials (saved as a managed copy on submit)
+  const selectedCredable = (selectedProfile?.managed ?? false) || (selectedProfile?.fromDir ?? false);
 
   // Poll on an interval; the fetch itself takes ~0.6s (server samples /proc
   // around a sleep), so POLL_MS is the gap between samples, not a hard cadence.
@@ -585,7 +591,7 @@ export default function SysMonitor({
                             {vpnProfiles.map((p) => (
                               <option key={p.name} value={p.name}>
                                 {p.name}
-                                {p.managed ? " (saved)" : ""}
+                                {p.managed ? " (saved)" : p.fromDir ? " (dir)" : ""}
                               </option>
                             ))}
                           </select>
@@ -599,7 +605,7 @@ export default function SysMonitor({
                         </>
                       )}
                       <div className="ml-auto flex shrink-0 items-center gap-1">
-                        {vpnProfiles.length > 0 && selectedManaged && (
+                        {vpnProfiles.length > 0 && selectedCredable && (
                           <>
                             <button
                               onClick={() => setAuthForm((f) => ({ ...f, open: !f.open }))}
@@ -612,6 +618,7 @@ export default function SysMonitor({
                             >
                               <KeyRound size={11} />
                             </button>
+                            {selectedManaged && (
                             <button
                               onClick={() => {
                                 if (delArmed) {
@@ -631,12 +638,13 @@ export default function SysMonitor({
                             >
                               {delArmed ? "Sure?" : <Trash2 size={11} />}
                             </button>
+                            )}
                           </>
                         )}
                         <button
                           onClick={() => fileInputRef.current?.click()}
                           disabled={vpnUploading}
-                          title="Upload .ovpn profile"
+                          title={vpnDir ? `Upload .ovpn (or drop files into ${vpnDir} on the server)` : "Upload .ovpn profile"}
                           className="flex h-6 w-6 items-center justify-center rounded border border-neutral-700 text-neutral-400 cursor-pointer hover:bg-neutral-800 disabled:opacity-40"
                         >
                           <Upload size={11} className={vpnUploading ? "animate-pulse" : ""} />

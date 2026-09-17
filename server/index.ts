@@ -45,6 +45,7 @@ import {
   saveProfile,
   saveProfileAuth,
   deleteProfile,
+  PROFILE_DIR,
 } from "./lib/vpn.js";
 import { logger } from "./lib/logger.js";
 import bookmarksRouter from "./routes/bookmarks.js";
@@ -564,7 +565,7 @@ app.get("/api/vpn/:connectionId/profiles", async (req, res) => {
   }
   try {
     const profiles = await withConnection(req, connectionId, (connection) => listProfiles(connection));
-    res.json({ profiles });
+    res.json({ profiles, dir: PROFILE_DIR });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to list VPN profiles";
     res.status(500).json({ error: message });

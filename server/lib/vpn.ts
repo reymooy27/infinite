@@ -1,3 +1,6 @@
+import os from "node:os";
+import path from "node:path";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { prisma } from "./prisma.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { runSSHCommand, sftpPutFile, type SSHConnection } from "./ssh.js";
@@ -22,6 +25,7 @@ export interface VpnResult {
 export interface VpnProfileEntry {
   name: string;
   managed: boolean;
+  fromDir: boolean;
 }
 
 // Safe as single shell argument and (after escaping) systemd unit instance.
@@ -30,6 +34,11 @@ const CONFIG_DIR = "/etc/openvpn/client";
 const TMP_PREFIX = "/tmp/.infinite-vpn-";
 // Comfortably below the global 100kb express.json() limit.
 const MAX_PROFILE_BYTES = 64 * 1024;
+
+// Drop-in folder on the machine running Infinite: every .ovpn here shows up
+// in the picker tagged (dir) and is read fresh at connect time.
+export const PROFILE_DIR =
+  process.env.VPN_PROFILE_DIR || path.join(os.homedir(), ".infinite", "vpn-profiles");
 
 function secret(): string {
   const s = process.env.ENCRYPTION_SECRET;
@@ -96,13 +105,39 @@ async function listHostProfiles(connection: SSHConnection): Promise<string[]> {
   return [...new Set(names)];
 }
 
+async function listDirProfiles(): Promise<string[]> {
+  await mkdir(PROFILE_DIR, { recursive: true }).catch(() => undefined);
+  try {
+    const files = await readdir(PROFILE_DIR);
+    return files
+      .filter((f) => f.endsWith(".ovpn"))
+      .map((f) => f.slice(0, -".ovpn".length))
+      .filter((n) => PROFILE_RE.test(n));
+  } catch {
+    return [];
+  }
+}
+
+async function readDirProfile(name: string): Promise<string | null> {
+  if (!PROFILE_RE.test(name)) return null;
+  try {
+    return await readFile(path.join(PROFILE_DIR, `${name}.ovpn`), "utf8");
+  } catch {
+    return null;
+  }
+}
+
 export async function listProfiles(connection: SSHConnection): Promise<VpnProfileEntry[]> {
-  const [hostNames, rows] = await Promise.all([
+  const [hostNames, rows, dirNames] = await Promise.all([
     listHostProfiles(connection).catch(() => [] as string[]),
     prisma.vpnProfile.findMany({ where: { connectionId: connection.id }, select: { name: true } }),
+    listDirProfiles(),
   ]);
   const managed = new Set(rows.map((r) => r.name));
-  return [...new Set([...hostNames, ...managed])].sort().map((name) => ({ name, managed: managed.has(name) }));
+  const inDir = new Set(dirNames);
+  return [...new Set([...hostNames, ...managed, ...dirNames])]
+    .sort()
+    .map((name) => ({ name, managed: managed.has(name), fromDir: !managed.has(name) && inDir.has(name) }));
 }
 
 export async function saveProfile(
@@ -144,14 +179,20 @@ export async function saveProfileAuth(
     where: { connectionId_name: { connectionId: connection.id, name } },
     select: { id: true },
   });
-  if (!row) {
-    return { ok: false, message: "Credentials can only be attached to profiles uploaded through Infinite." };
+  const authEncrypted = encrypt(`${u}\n${p}`, secret());
+  if (row) {
+    await prisma.vpnProfile.update({ where: { id: row.id }, data: { authEncrypted } });
+    return { ok: true, message: `Credentials saved for "${name}"` };
   }
-  await prisma.vpnProfile.update({
-    where: { id: row.id },
-    data: { authEncrypted: encrypt(`${u}\n${p}`, secret()) },
-  });
-  return { ok: true, message: `Credentials saved for "${name}"` };
+  const dirContent = await readDirProfile(name);
+  if (dirContent === null || Buffer.byteLength(dirContent) > MAX_PROFILE_BYTES) {
+    return {
+      ok: false,
+      message: "Credentials can only be attached to profiles uploaded through Infinite or kept in the profiles directory.",
+    };
+  }
+  await prisma.vpnProfile.create({ data: { connectionId: connection.id, name, content: dirContent, authEncrypted } });
+  return { ok: true, message: `Credentials saved for "${name}" (stored, from local dir)` };
 }
 
 export async function deleteProfile(connection: SSHConnection, name: string): Promise<VpnResult> {
@@ -180,15 +221,31 @@ async function materialize(connection: SSHConnection, name: string): Promise<Vpn
   const row = await prisma.vpnProfile.findUnique({
     where: { connectionId_name: { connectionId: connection.id, name } },
   });
-  if (!row) return null;
-
-  const authPath = `${CONFIG_DIR}/${name}.auth`;
-  let content = row.content;
-  let auth: string | null = null;
-  if (row.authEncrypted) {
-    auth = decrypt(row.authEncrypted, secret());
-    content = ensureAuthLine(content, authPath);
+  if (!row) {
+    const dirContent = await readDirProfile(name);
+    if (dirContent === null) return null; // host-side file, nothing for us to push
+    if (Buffer.byteLength(dirContent) > MAX_PROFILE_BYTES) return { ok: false, message: "Profile in local directory exceeds 64KB" };
+    if ((await listHostProfiles(connection).catch((): string[] => [])).includes(name)) {
+      return { ok: false, message: `"${name}" already exists on the host — rename the local-dir file to push its version` };
+    }
+    return install(connection, name, dirContent, null);
   }
+
+  const auth = row.authEncrypted ? decrypt(row.authEncrypted, secret()) : null;
+  return install(connection, name, row.content, auth);
+}
+
+// Push profile (+ optional credentials drop-in) to the host and clean up the
+// 0600 SFTP temp files. Credential bytes never travel as command arguments.
+// Returns null on success.
+async function install(
+  connection: SSHConnection,
+  name: string,
+  rawContent: string,
+  auth: string | null,
+): Promise<VpnResult | null> {
+  const authPath = `${CONFIG_DIR}/${name}.auth`;
+  const content = auth ? ensureAuthLine(rawContent, authPath) : rawContent;
 
   const tmp = TMP_PREFIX + name;
   try {
