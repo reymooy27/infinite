@@ -989,6 +989,8 @@ export const SSHPane = ({
     const ws = wsRef.current;
     if (ws?.readyState !== WebSocket.OPEN || !completion) return;
     ws.send(JSON.stringify({ type: "data", data: completion }));
+    suggestBufRef.current = "";
+    setSuggestInput("");
   }, []);
 
   const tmuxButtons = useMemo(() => {
