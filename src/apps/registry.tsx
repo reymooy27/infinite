@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
+import { CommandSuggest } from "@/components/CommandSuggest";
+import { recordCommand } from "@/lib/commandSuggestions";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import TerminalNextButton from "@/components/TerminalNextButton";
@@ -76,6 +78,8 @@ export const SSHPane = ({
     return window.matchMedia("(max-width: 767px)").matches;
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [suggestInput, setSuggestInput] = useState("");
+  const suggestBufRef = useRef("");
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
   const [micPos, setMicPos] = useState<{ x: number; y: number } | null>(null);
   const micDragStartRef = useRef({ x: 0, y: 0 });
@@ -579,6 +583,26 @@ export const SSHPane = ({
         askedNotify = true;
         void Notification.requestPermission();
       }
+      // Suggestion tracking mirrors the prompt line locally: printable chars
+      // append, backspace deletes, Enter commits; arrow/control escapes are
+      // dropped so they can't poison the buffer.
+      {
+        let buf = suggestBufRef.current;
+        if (data === "\r" || data === "\n") {
+          recordCommand(buf);
+          buf = "";
+        } else if (data === "\x7f" || data === "\x08") {
+          buf = buf.slice(0, -1);
+        } else if (data === "\x03" || data === "\x15" || data === "\x04") {
+          buf = "";
+        } else if (data.length === 1 && data >= " " && data !== "\x7f") {
+          buf = (buf + data).slice(-200);
+        }
+        if (buf !== suggestBufRef.current) {
+          suggestBufRef.current = buf;
+          setSuggestInput(buf);
+        }
+      }
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "data", data }));
       }
@@ -958,6 +982,21 @@ export const SSHPane = ({
         }
       }, 80);
     }
+  }, []);
+
+  // Run a suggested command: clear the current prompt line (Ctrl+U), then
+  // type the full command and press Enter.
+  const handleSuggestSelect = useCallback((cmd: string) => {
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "data", data: "\x15" }));
+    setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: "data", data: cmd }));
+      ws.send(JSON.stringify({ type: "data", data: "\r" }));
+    }, 60);
+    suggestBufRef.current = "";
+    setSuggestInput("");
   }, []);
 
   const tmuxButtons = useMemo(() => {
@@ -1581,20 +1620,21 @@ export const SSHPane = ({
               bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
             }}
           >
-            <QuickBar
-              onSend={sendShortcut}
-              onTmux={sendTmux}
-              onCopy={handleCopy}
-              onPaste={handlePaste}
-              onPasteImage={handlePasteImage}
-              onToggleDrawer={() => setDrawerOpen((o) => !o)}
-              copyFeedback={copyFeedback}
-              pasteFeedback={pasteFeedback}
-              drawerOpen={drawerOpen}
-            />
-          </div>
-        </>
-      )}
+          <QuickBar
+            onSend={sendShortcut}
+            onTmux={sendTmux}
+            onCopy={handleCopy}
+            onPaste={handlePaste}
+            onPasteImage={handlePasteImage}
+            onToggleDrawer={() => setDrawerOpen((o) => !o)}
+            copyFeedback={copyFeedback}
+            pasteFeedback={pasteFeedback}
+            drawerOpen={drawerOpen}
+          />
+          <CommandSuggest input={suggestInput} onSelect={handleSuggestSelect} />
+        </div>
+      </>
+    )}
       {status === "connected" &&
         isMobile &&
         showTerminalShortcuts &&
@@ -1611,6 +1651,7 @@ export const SSHPane = ({
       {/* Desktop UI */}
       {status === "connected" && !isMobile && showTerminalShortcuts && (
         <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
+          <CommandSuggest input={suggestInput} onSelect={handleSuggestSelect} />
           <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
             <button
               onClick={() => sendShortcut("\x03")}
