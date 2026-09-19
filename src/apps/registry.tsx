@@ -984,19 +984,11 @@ export const SSHPane = ({
     }
   }, []);
 
-  // Run a suggested command: clear the current prompt line (Ctrl+U), then
-  // type the full command and press Enter.
-  const handleSuggestSelect = useCallback((cmd: string) => {
+  // Complete the current input with the remaining characters of a suggestion.
+  const handleSuggestComplete = useCallback((completion: string) => {
     const ws = wsRef.current;
-    if (ws?.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: "data", data: "\x15" }));
-    setTimeout(() => {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ type: "data", data: cmd }));
-      ws.send(JSON.stringify({ type: "data", data: "\r" }));
-    }, 60);
-    suggestBufRef.current = "";
-    setSuggestInput("");
+    if (ws?.readyState !== WebSocket.OPEN || !completion) return;
+    ws.send(JSON.stringify({ type: "data", data: completion }));
   }, []);
 
   const tmuxButtons = useMemo(() => {
@@ -1631,7 +1623,7 @@ export const SSHPane = ({
             pasteFeedback={pasteFeedback}
             drawerOpen={drawerOpen}
           />
-          <CommandSuggest input={suggestInput} onSelect={handleSuggestSelect} />
+          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
         </div>
       </>
     )}
@@ -1651,7 +1643,7 @@ export const SSHPane = ({
       {/* Desktop UI */}
       {status === "connected" && !isMobile && showTerminalShortcuts && (
         <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
-          <CommandSuggest input={suggestInput} onSelect={handleSuggestSelect} />
+          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
           <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
             <button
               onClick={() => sendShortcut("\x03")}
