@@ -1,17 +1,18 @@
 // Termius-style command suggestion strip for the SSH terminal.
+// Shows only in canvas SSH windows, not in focus mode or other app terminals.
 // Sits above the quick bar / bottom edge; tap to complete the current input.
 import { suggest } from "@/lib/commandSuggestions";
 
 export function CommandSuggest({
   input,
   onComplete,
-  disabled,
+  visible,
 }: {
   input: string;
   onComplete: (completion: string) => void;
-  disabled?: boolean;
+  visible?: boolean;
 }) {
-  const list = disabled || !input.trim() ? [] : suggest(input, 5);
+  const list = !visible || !input.trim() ? [] : suggest(input, 5);
   if (list.length === 0) return null;
 
   return (

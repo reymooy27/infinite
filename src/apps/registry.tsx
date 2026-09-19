@@ -52,6 +52,7 @@ export const SSHPane = ({
   refreshNonce,
   enableTouchScroll = false,
   isModalOpen = false,
+  showSuggest = true,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -62,6 +63,7 @@ export const SSHPane = ({
   refreshNonce?: number;
   enableTouchScroll?: boolean;
   isModalOpen?: boolean;
+  showSuggest?: boolean;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -1623,7 +1625,7 @@ export const SSHPane = ({
             pasteFeedback={pasteFeedback}
             drawerOpen={drawerOpen}
           />
-          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
+          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} visible={showSuggest} />
         </div>
       </>
     )}
@@ -1643,7 +1645,7 @@ export const SSHPane = ({
       {/* Desktop UI */}
       {status === "connected" && !isMobile && showTerminalShortcuts && (
         <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
-          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
+          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} visible={showSuggest} />
           <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
             <button
               onClick={() => sendShortcut("\x03")}
