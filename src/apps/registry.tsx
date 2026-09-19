@@ -1522,9 +1522,7 @@ export const SSHPane = ({
   );
 
   const mobileBottomInset = isMobile
-    ? (keyboardHeight ?? 0) +
-      (showTerminalShortcuts ? 56 : 0) +
-      (suggestInput.trim() ? 32 : 0)
+    ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
     : 0;
 
   const translateVoice = useCallback(async (text: string) => {
@@ -1627,7 +1625,6 @@ export const SSHPane = ({
                 drawerOpen={drawerOpen}
               />
             )}
-            <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
           </div>
         </>
       )}
@@ -1644,10 +1641,34 @@ export const SSHPane = ({
           />
         )}
 
+      {status === "connected" && (
+        <div
+          className={isMobile ? "absolute left-1 right-1 z-30" : "absolute left-2 right-2 z-40"}
+          style={
+            isMobile
+              ? {
+                  bottom: keyboardHeight
+                    ? `${keyboardHeight + (showTerminalShortcuts ? 68 : 4)}px`
+                    : showTerminalShortcuts
+                      ? "4.25rem"
+                      : "0.25rem",
+                }
+              : {
+                  bottom: showTerminalShortcuts
+                    ? showTmuxShortcuts
+                      ? "8.5rem"
+                      : "4.5rem"
+                    : "0.5rem",
+                }
+          }
+        >
+          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
+        </div>
+      )}
+
       {/* Desktop UI */}
       {status === "connected" && !isMobile && (
         <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
-          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
           {showTerminalShortcuts && (
             <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
             <button
