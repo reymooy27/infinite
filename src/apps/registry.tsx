@@ -52,7 +52,6 @@ export const SSHPane = ({
   refreshNonce,
   enableTouchScroll = false,
   isModalOpen = false,
-  showSuggest = true,
 }: {
   connectionId?: number;
   windowId?: string;
@@ -63,7 +62,6 @@ export const SSHPane = ({
   refreshNonce?: number;
   enableTouchScroll?: boolean;
   isModalOpen?: boolean;
-  showSuggest?: boolean;
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<XTerminal | null>(null);
@@ -1585,7 +1583,7 @@ export const SSHPane = ({
       />
 
       {/* Mobile UI */}
-      {status === "connected" && isMobile && showTerminalShortcuts && (
+      {status === "connected" && isMobile && (
         <>
           <button
             onPointerDown={handleMicPointerDown}
@@ -1614,21 +1612,23 @@ export const SSHPane = ({
               bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
             }}
           >
-          <QuickBar
-            onSend={sendShortcut}
-            onTmux={sendTmux}
-            onCopy={handleCopy}
-            onPaste={handlePaste}
-            onPasteImage={handlePasteImage}
-            onToggleDrawer={() => setDrawerOpen((o) => !o)}
-            copyFeedback={copyFeedback}
-            pasteFeedback={pasteFeedback}
-            drawerOpen={drawerOpen}
-          />
-          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} visible={showSuggest} />
-        </div>
-      </>
-    )}
+            {showTerminalShortcuts && (
+              <QuickBar
+                onSend={sendShortcut}
+                onTmux={sendTmux}
+                onCopy={handleCopy}
+                onPaste={handlePaste}
+                onPasteImage={handlePasteImage}
+                onToggleDrawer={() => setDrawerOpen((o) => !o)}
+                copyFeedback={copyFeedback}
+                pasteFeedback={pasteFeedback}
+                drawerOpen={drawerOpen}
+              />
+            )}
+            <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
+          </div>
+        </>
+      )}
       {status === "connected" &&
         isMobile &&
         showTerminalShortcuts &&
@@ -1643,10 +1643,11 @@ export const SSHPane = ({
         )}
 
       {/* Desktop UI */}
-      {status === "connected" && !isMobile && showTerminalShortcuts && (
+      {status === "connected" && !isMobile && (
         <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
-          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} visible={showSuggest} />
-          <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
+          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
+          {showTerminalShortcuts && (
+            <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
             <button
               onClick={() => sendShortcut("\x03")}
               className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
@@ -1780,7 +1781,8 @@ export const SSHPane = ({
             >
               <Download size={12} />
             </button>
-          </div>
+            </div>
+          )}
           {showTmuxShortcuts && tmuxButtons}
         </div>
       )}
