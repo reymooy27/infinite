@@ -628,7 +628,6 @@ export default function FocusModeLayout({
                   refreshNonce={paneRefreshKey}
                   isModalOpen={gitPanelOpen || fileExplorerOpen}
                   enableTouchScroll
-                  showSuggest={false}
                 />
               ))}
             </>
