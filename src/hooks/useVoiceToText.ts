@@ -296,6 +296,7 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
   const stopAndEdit = useCallback(() => {
     manualStopRef.current = true;
+    sessionActiveRef.current = false;
     updateStatus("editable");
     if (!recognitionRef.current || !isListeningRef.current) cleanup();
     else {
@@ -308,6 +309,7 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
   const reset = useCallback(() => {
     manualStopRef.current = true;
+    sessionActiveRef.current = false;
     cleanup();
     setFinalTranscript("");
     setInterimTranscript("");
