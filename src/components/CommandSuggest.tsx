@@ -6,13 +6,11 @@ import { suggest } from "@/lib/commandSuggestions";
 export function CommandSuggest({
   input,
   onComplete,
-  visible,
 }: {
   input: string;
   onComplete: (completion: string) => void;
-  visible?: boolean;
 }) {
-  const list = !visible || !input.trim() ? [] : suggest(input, 5);
+  const list = !input.trim() ? [] : suggest(input, 5);
   if (list.length === 0) return null;
 
   return (

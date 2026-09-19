@@ -1522,7 +1522,9 @@ export const SSHPane = ({
   );
 
   const mobileBottomInset = isMobile
-    ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
+    ? (keyboardHeight ?? 0) +
+      (showTerminalShortcuts ? 56 : 0) +
+      (suggestInput.trim() ? 32 : 0)
     : 0;
 
   const translateVoice = useCallback(async (text: string) => {

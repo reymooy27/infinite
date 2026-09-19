@@ -3,6 +3,18 @@
 const STORAGE_KEY = "infinite.cmd-suggestions";
 const MAX_ENTRIES = 200;
 
+const COMMON_COMMANDS = [
+  "ls", "pwd", "cd", "cat", "grep", "sudo", "top", "ps", "htop", "df",
+  "du", "tail", "less", "rm", "cp", "mv", "mkdir", "touch", "chmod", "git",
+  "git status", "git log", "git pull", "git push", "docker", "docker ps",
+  "docker compose", "npm", "npm run dev", "npm install", "pm2", "pm2 list",
+  "pm2 restart", "systemctl", "journalctl", "nginx -t", "curl", "wget",
+  "apt", "apt update", "apt upgrade", "apt install", "ssh", "scp", "rsync",
+  "tar", "find", "which", "whoami", "env", "history", "clear", "echo",
+  "free", "ip", "ping", "ss", "netstat", "tmux", "tmux ls", "vim", "nano",
+  "make", "nvm", "node", "python3", "pip", "kubectl", "helm",
+];
+
 export interface CommandSuggestion {
   cmd: string;
   count: number;
@@ -53,15 +65,12 @@ export function recordCommand(cmd: string) {
 /** Top `limit` commands that start with `prefix` (case-insensitive). */
 export function suggest(prefix: string, limit = 5): CommandSuggestion[] {
   const p = prefix.toLowerCase();
-  return load()
+  const matches = load()
     .filter((e) => e.cmd.toLowerCase().startsWith(p))
     .sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed)
     .slice(0, limit);
-}
-
-/** Top `limit` most-used commands — shown when the user hasn't typed anything. */
-export function topCommands(limit = 5): CommandSuggestion[] {
-  return [...load()]
-    .sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed)
-    .slice(0, limit);
+  if (matches.length > 0) return matches;
+  return COMMON_COMMANDS.filter((c) => c.toLowerCase().startsWith(p))
+    .slice(0, limit)
+    .map((cmd) => ({ cmd, count: 0, lastUsed: 0 }));
 }
