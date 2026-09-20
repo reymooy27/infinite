@@ -130,6 +130,10 @@ export const SSHPane = ({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const uploadAckResolveRef = useRef<(() => void) | null>(null);
   const uploadCompleteResolveRef = useRef<((path: string) => void) | null>(null);
+  // Snapshot restore is deferred until we know the server won't replay. A live
+  // server session replays richer raw PTY bytes (?replay=1), so writing the
+  // 200-line rendered snapshot too would double the content on screen.
+  const pendingSnapshotRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 1200);
@@ -562,15 +566,20 @@ export const SSHPane = ({
     requestAnimationFrame(focusTerminal);
 
     const cached = getBuffer(bufferKeyRef.current);
-    if (cached && cached.lines.length > 0) {
-      viewportOffsetRef.current = clampViewportOffset(
-        cached.scrollOffsetFromBottom,
-      );
-      term.write(cached.lines.join("\r\n"), () => {
-        scheduleViewportRestore(cached.scrollOffsetFromBottom);
-      });
-    }
     deleteBuffer(bufferKeyRef.current);
+    if (cached && cached.lines.length > 0) {
+      // Server replay is the source of truth when a live session exists; the
+      // snapshot is last-resort for a session the server no longer has.
+      pendingSnapshotRef.current = setTimeout(() => {
+        pendingSnapshotRef.current = null;
+        viewportOffsetRef.current = clampViewportOffset(
+          cached.scrollOffsetFromBottom,
+        );
+        term.write(cached.lines.join("\r\n"), () => {
+          scheduleViewportRestore(cached.scrollOffsetFromBottom);
+        });
+      }, 400);
+    }
 
     let bellTitle = "Terminal";
     let askedNotify = false;
@@ -704,6 +713,10 @@ export const SSHPane = ({
     return () => {
       cancelAnimationFrame(kickRaf);
       clearInterval(saveTimer);
+      if (pendingSnapshotRef.current) {
+        clearTimeout(pendingSnapshotRef.current);
+        pendingSnapshotRef.current = null;
+      }
       // Save buffer before unmount so content persists across project switches
       snapshotTerminalBuffer();
       observer.disconnect();
@@ -1194,6 +1207,10 @@ export const SSHPane = ({
 
     ws.onmessage = (e) => {
       if (!isCurrentSocket()) return;
+      if (pendingSnapshotRef.current) {
+        clearTimeout(pendingSnapshotRef.current);
+        pendingSnapshotRef.current = null;
+      }
       try {
         if (e.data instanceof ArrayBuffer) {
           if (term) {
