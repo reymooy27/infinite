@@ -74,3 +74,28 @@ export function suggest(prefix: string, limit = 5): CommandSuggestion[] {
     .slice(0, limit)
     .map((cmd) => ({ cmd, count: 0, lastUsed: 0 }));
 }
+
+/**
+ * Heuristic: does this last-visible terminal line look like a plain shell
+ * prompt (vs. a TUI input box like opencode / claude code)?
+ *
+ * Matches `user@host:` (bash/zsh default, incl. root & conda-wrapped),
+ * oh-my-zsh `➜`, starship/fish `❯`, conda `(base)`, and bare `"$ "` / `# ` /
+ * `"% "` minimal prompts.
+ *
+ * ponytail: deliberately does NOT match a bare `>` — that's the input-prompt
+ * character TUIs (opencode, claude code) use, so matching it would re-enable
+ * suggestions exactly where we want them off. Exotic prompts that use `>` or
+ * no recognizable signature simply get no suggestions; the upgrade path is a
+ * per-user prompt-regex in Settings.
+ */
+export function isShellPromptLine(line: string): boolean {
+  const l = line.trimEnd();
+  if (l === "") return false;
+  if (/[\w.-]+@[\w.-]+:/.test(l)) return true; // user@host:
+  if (/^[❯➜]|^\(base\)/.test(l)) return true; // oh-my-zsh / starship / fish / conda
+  // Bare prompt char followed by whitespace OR end-of-line (no input typed yet).
+  // ponytail: (?:\s|$) covers both "prompt with space" and "trimmed prompt line".
+  if (/^[$#%](?:\s|$)/.test(l)) return true; // minimal bare-prompt chars
+  return false;
+}

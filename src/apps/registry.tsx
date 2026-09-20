@@ -21,7 +21,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
 import { CommandSuggest } from "@/components/CommandSuggest";
-import { recordCommand } from "@/lib/commandSuggestions";
+import { recordCommand, isShellPromptLine } from "@/lib/commandSuggestions";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import TerminalNextButton from "@/components/TerminalNextButton";
@@ -585,22 +585,35 @@ export const SSHPane = ({
       }
       // Suggestion tracking mirrors the prompt line locally: printable chars
       // append, backspace deletes, Enter commits; arrow/control escapes are
-      // dropped so they can't poison the buffer.
+      // dropped so they can't poison the buffer. Gated to shell prompts only —
+      // a TUI (opencode, claude code) re-renders its own input line, so
+      // mirroring desyncs and shows stale/foreign suggestions.
       {
-        let buf = suggestBufRef.current;
-        if (data === "\r" || data === "\n") {
-          recordCommand(buf);
-          buf = "";
-        } else if (data === "\x7f" || data === "\x08") {
-          buf = buf.slice(0, -1);
-        } else if (data === "\x03" || data === "\x15" || data === "\x04") {
-          buf = "";
-        } else if (data.length === 1 && data >= " " && data !== "\x7f") {
-          buf = (buf + data).slice(-200);
-        }
-        if (buf !== suggestBufRef.current) {
-          suggestBufRef.current = buf;
-          setSuggestInput(buf);
+        const lastLine =
+          term.buffer.active
+            .getLine(term.buffer.active.length - 1)
+            ?.translateToString()
+            .trimEnd() ?? "";
+        if (isShellPromptLine(lastLine)) {
+          let buf = suggestBufRef.current;
+          if (data === "\r" || data === "\n") {
+            recordCommand(buf);
+            buf = "";
+          } else if (data === "\x7f" || data === "\x08") {
+            buf = buf.slice(0, -1);
+          } else if (data === "\x03" || data === "\x15" || data === "\x04") {
+            buf = "";
+          } else if (data.length === 1 && data >= " " && data !== "\x7f") {
+            buf = (buf + data).slice(-200);
+          }
+          if (buf !== suggestBufRef.current) {
+            suggestBufRef.current = buf;
+            setSuggestInput(buf);
+          }
+        } else if (suggestBufRef.current !== "") {
+          // Left the shell prompt (TUI or output) — drop the stale mirror.
+          suggestBufRef.current = "";
+          setSuggestInput("");
         }
       }
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -987,10 +1000,13 @@ export const SSHPane = ({
   // Complete the current input with the remaining characters of a suggestion.
   const handleSuggestComplete = useCallback((completion: string) => {
     const ws = wsRef.current;
-    if (ws?.readyState !== WebSocket.OPEN || !completion) return;
-    ws.send(JSON.stringify({ type: "data", data: completion }));
+    // Always dismiss the popup, even when the pick is an exact match of what's
+    // already typed (completion === "") — otherwise it would never close.
     suggestBufRef.current = "";
     setSuggestInput("");
+    if (ws?.readyState === WebSocket.OPEN && completion) {
+      ws.send(JSON.stringify({ type: "data", data: completion }));
+    }
   }, []);
 
   const tmuxButtons = useMemo(() => {
