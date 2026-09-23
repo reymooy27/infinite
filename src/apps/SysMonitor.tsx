@@ -170,7 +170,7 @@ export default function SysMonitor({
   const [stats, setStats] = useState<SysStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [procSort, setProcSort] = useState<"cpu" | "mem">("cpu");
+  const [procSort, setProcSort] = useState<"cpu" | "mem">("mem");
   const [confirm, setConfirm] = useState<{ message: string; pid: number } | null>(null);
   const [vpnProfiles, setVpnProfiles] = useState<{ name: string; managed: boolean; fromDir: boolean }[]>([]);
   const [vpnDir, setVpnDir] = useState("");

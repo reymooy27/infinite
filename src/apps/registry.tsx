@@ -89,6 +89,7 @@ export const SSHPane = ({
     (s) => s.showTerminalShortcuts,
   );
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
+  const focusMode = useSettingsStore((s) => s.focusMode);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const autoTmux = useSettingsStore((s) => s.autoTmux);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
@@ -1556,9 +1557,10 @@ export const SSHPane = ({
     [openVoiceOverlay],
   );
 
-  const mobileBottomInset = isMobile
-    ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
-    : 0;
+  const mobileBottomInset =
+    isMobile && focusMode
+      ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
+      : 0;
 
   const translateVoice = useCallback(async (text: string) => {
     try {
@@ -1618,7 +1620,7 @@ export const SSHPane = ({
       />
 
       {/* Mobile UI */}
-      {status === "connected" && isMobile && (
+      {status === "connected" && isMobile && focusMode && (
         <>
           <button
             onPointerDown={handleMicPointerDown}
@@ -1665,6 +1667,7 @@ export const SSHPane = ({
       )}
       {status === "connected" &&
         isMobile &&
+        focusMode &&
         showTerminalShortcuts &&
         drawerOpen && (
           <ShortcutDrawer
