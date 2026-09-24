@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.5.0](https://github.com/reymooy27/infinite/compare/infinite-v1.4.0...infinite-v1.5.0) (2026-09-24)
+
+
+### Features
+
+* gate mobile SSH UI behind focusMode ([05a6367](https://github.com/reymooy27/infinite/commit/05a636740b50fe8c9531b1cc0e4808fe57e6ca54))
+* **suggest:** common-command fallback, mobile inset padding ([4ceafe9](https://github.com/reymooy27/infinite/commit/4ceafe9184d5e8655475d3dc43379a336e2e0bd4))
+* **suggest:** hide in focus mode, only in canvas SSH window ([8633ab3](https://github.com/reymooy27/infinite/commit/8633ab30c799b8ba1e48b7892894f50ebad1a2e4))
+* **suggest:** Termius-style floating popup in terminal ([c3243ee](https://github.com/reymooy27/infinite/commit/c3243eeea7853c3ee534716c142637b6fc752420))
+* **sysmon:** OpenVPN toggle in network card ([23f2e4b](https://github.com/reymooy27/infinite/commit/23f2e4b64d9db709b4216aa895390005baddf48d))
+* **terminal:** Termius-style command suggestions strip ([f49dac6](https://github.com/reymooy27/infinite/commit/f49dac6432c8702dc83563a8899edcc39aa63366))
+* **vpn:** local profile directory picker ([9b07708](https://github.com/reymooy27/infinite/commit/9b0770803aa715287805e2293b43dd0e9a712f45))
+* **vpn:** profile upload, delete & auth-user-pass ([d1a220e](https://github.com/reymooy27/infinite/commit/d1a220ee0f34e3af7c987fd5b095f1feeab90871))
+
+
+### Bug Fixes
+
+* **suggest:** complete instead of execute, show only on input ([c9bac73](https://github.com/reymooy27/infinite/commit/c9bac73d533cb88f911771bb796671edd769df9a))
+* **suggest:** dismiss popup after selection ([bd944af](https://github.com/reymooy27/infinite/commit/bd944af01ec4b7ee2cc9c864fc4177309ad4d116))
+* **suggest:** gate suggestions to shell prompts ([a3bdb08](https://github.com/reymooy27/infinite/commit/a3bdb08887843669f024408f423510c2d01784e6))
+* **suggest:** show in mobile focus mode too ([dcafb65](https://github.com/reymooy27/infinite/commit/dcafb65aacbade7a24cfefcc74702b0000738c18))
+* **terminal:** stop duplicate chat on session re-attach ([4811e86](https://github.com/reymooy27/infinite/commit/4811e86b219f8e19abe7e5c117b8c1344a0d278d))
+* **voice:** recover session when onstart never fires ([0dae5e6](https://github.com/reymooy27/infinite/commit/0dae5e6d9c1023745fbd2a647673e46dc07ecdae))
+
 ## [1.4.0](https://github.com/reymooy27/infinite/compare/infinite-v1.3.0...infinite-v1.4.0) (2026-09-16)
 
 
