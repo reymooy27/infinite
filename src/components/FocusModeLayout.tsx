@@ -80,6 +80,10 @@ export default function FocusModeLayout({
   const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyboardRafRef = useRef<number | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
+  // Horizontal swipe-to-switch-terminal (mobile): touchstart/touchend positions
+  // + a short cooldown so one gesture can't fire twice.
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const swipeCooldownRef = useRef(0);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const tabPanelRef = useRef<HTMLDivElement>(null);
   const tabToggleBtnRef = useRef<HTMLButtonElement>(null);
@@ -195,6 +199,34 @@ export default function FocusModeLayout({
     setActiveTerminalTab(prevTerminal.windowId, prevTerminal.tabId);
     setFocusModeWindowId(prevTerminal.windowId);
     focusWindow(prevTerminal.windowId);
+  };
+
+  const anyPanelOpen =
+    gitPanelOpen ||
+    fileExplorerOpen ||
+    dockerOpen ||
+    sysMonOpen ||
+    codeEditorOpen ||
+    tabPanelOpen ||
+    settingsOpen;
+
+  const handleSwipeStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    swipeStartRef.current = { x: t.clientX, y: t.clientY };
+  };
+
+  const handleSwipeEnd = (e: React.TouchEvent) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start || anyPanelOpen) return;
+    if (Date.now() - swipeCooldownRef.current < 300) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    swipeCooldownRef.current = Date.now();
+    if (dx < 0) handleNextWindow();
+    else handlePrevWindow();
   };
 
   const handlePage = (action: "pageup" | "pagedown") => {
@@ -613,7 +645,11 @@ export default function FocusModeLayout({
       )}
 
       <div className="relative flex flex-1 min-h-0">
-        <div className="relative flex-1 min-h-0">
+        <div
+          className="relative flex-1 min-h-0"
+          onTouchStart={handleSwipeStart}
+          onTouchEnd={handleSwipeEnd}
+        >
           {activeWindow ? (
             <>
               {tabs.map((tab) => (
