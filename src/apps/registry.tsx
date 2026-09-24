@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
+import { CommandSuggest } from "@/components/CommandSuggest";
+import { recordCommand, isShellPromptLine } from "@/lib/commandSuggestions";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import TerminalNextButton from "@/components/TerminalNextButton";
@@ -76,6 +78,8 @@ export const SSHPane = ({
     return window.matchMedia("(max-width: 767px)").matches;
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [suggestInput, setSuggestInput] = useState("");
+  const suggestBufRef = useRef("");
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
   const [micPos, setMicPos] = useState<{ x: number; y: number } | null>(null);
   const micDragStartRef = useRef({ x: 0, y: 0 });
@@ -85,6 +89,7 @@ export const SSHPane = ({
     (s) => s.showTerminalShortcuts,
   );
   const showTmuxShortcuts = useSettingsStore((s) => s.showTmuxShortcuts);
+  const focusMode = useSettingsStore((s) => s.focusMode);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
   const autoTmux = useSettingsStore((s) => s.autoTmux);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
@@ -126,6 +131,10 @@ export const SSHPane = ({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const uploadAckResolveRef = useRef<(() => void) | null>(null);
   const uploadCompleteResolveRef = useRef<((path: string) => void) | null>(null);
+  // Snapshot restore is deferred until we know the server won't replay. A live
+  // server session replays richer raw PTY bytes (?replay=1), so writing the
+  // 200-line rendered snapshot too would double the content on screen.
+  const pendingSnapshotRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showCopyFeedback = useCallback(() => {
     setCopyFeedback(true);
     setTimeout(() => setCopyFeedback(false), 1200);
@@ -558,15 +567,20 @@ export const SSHPane = ({
     requestAnimationFrame(focusTerminal);
 
     const cached = getBuffer(bufferKeyRef.current);
-    if (cached && cached.lines.length > 0) {
-      viewportOffsetRef.current = clampViewportOffset(
-        cached.scrollOffsetFromBottom,
-      );
-      term.write(cached.lines.join("\r\n"), () => {
-        scheduleViewportRestore(cached.scrollOffsetFromBottom);
-      });
-    }
     deleteBuffer(bufferKeyRef.current);
+    if (cached && cached.lines.length > 0) {
+      // Server replay is the source of truth when a live session exists; the
+      // snapshot is last-resort for a session the server no longer has.
+      pendingSnapshotRef.current = setTimeout(() => {
+        pendingSnapshotRef.current = null;
+        viewportOffsetRef.current = clampViewportOffset(
+          cached.scrollOffsetFromBottom,
+        );
+        term.write(cached.lines.join("\r\n"), () => {
+          scheduleViewportRestore(cached.scrollOffsetFromBottom);
+        });
+      }, 400);
+    }
 
     let bellTitle = "Terminal";
     let askedNotify = false;
@@ -578,6 +592,39 @@ export const SSHPane = ({
       if (!askedNotify && "Notification" in window && Notification.permission === "default") {
         askedNotify = true;
         void Notification.requestPermission();
+      }
+      // Suggestion tracking mirrors the prompt line locally: printable chars
+      // append, backspace deletes, Enter commits; arrow/control escapes are
+      // dropped so they can't poison the buffer. Gated to shell prompts only —
+      // a TUI (opencode, claude code) re-renders its own input line, so
+      // mirroring desyncs and shows stale/foreign suggestions.
+      {
+        const lastLine =
+          term.buffer.active
+            .getLine(term.buffer.active.length - 1)
+            ?.translateToString()
+            .trimEnd() ?? "";
+        if (isShellPromptLine(lastLine)) {
+          let buf = suggestBufRef.current;
+          if (data === "\r" || data === "\n") {
+            recordCommand(buf);
+            buf = "";
+          } else if (data === "\x7f" || data === "\x08") {
+            buf = buf.slice(0, -1);
+          } else if (data === "\x03" || data === "\x15" || data === "\x04") {
+            buf = "";
+          } else if (data.length === 1 && data >= " " && data !== "\x7f") {
+            buf = (buf + data).slice(-200);
+          }
+          if (buf !== suggestBufRef.current) {
+            suggestBufRef.current = buf;
+            setSuggestInput(buf);
+          }
+        } else if (suggestBufRef.current !== "") {
+          // Left the shell prompt (TUI or output) — drop the stale mirror.
+          suggestBufRef.current = "";
+          setSuggestInput("");
+        }
       }
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "data", data }));
@@ -667,6 +714,10 @@ export const SSHPane = ({
     return () => {
       cancelAnimationFrame(kickRaf);
       clearInterval(saveTimer);
+      if (pendingSnapshotRef.current) {
+        clearTimeout(pendingSnapshotRef.current);
+        pendingSnapshotRef.current = null;
+      }
       // Save buffer before unmount so content persists across project switches
       snapshotTerminalBuffer();
       observer.disconnect();
@@ -960,6 +1011,18 @@ export const SSHPane = ({
     }
   }, []);
 
+  // Complete the current input with the remaining characters of a suggestion.
+  const handleSuggestComplete = useCallback((completion: string) => {
+    const ws = wsRef.current;
+    // Always dismiss the popup, even when the pick is an exact match of what's
+    // already typed (completion === "") — otherwise it would never close.
+    suggestBufRef.current = "";
+    setSuggestInput("");
+    if (ws?.readyState === WebSocket.OPEN && completion) {
+      ws.send(JSON.stringify({ type: "data", data: completion }));
+    }
+  }, []);
+
   const tmuxButtons = useMemo(() => {
     const tmux = quickBarSlots.filter((s) => s.isTmux);
     if (tmux.length === 0) return null;
@@ -1145,6 +1208,10 @@ export const SSHPane = ({
 
     ws.onmessage = (e) => {
       if (!isCurrentSocket()) return;
+      if (pendingSnapshotRef.current) {
+        clearTimeout(pendingSnapshotRef.current);
+        pendingSnapshotRef.current = null;
+      }
       try {
         if (e.data instanceof ArrayBuffer) {
           if (term) {
@@ -1490,9 +1557,10 @@ export const SSHPane = ({
     [openVoiceOverlay],
   );
 
-  const mobileBottomInset = isMobile
-    ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
-    : 0;
+  const mobileBottomInset =
+    isMobile && focusMode
+      ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
+      : 0;
 
   const translateVoice = useCallback(async (text: string) => {
     try {
@@ -1552,7 +1620,7 @@ export const SSHPane = ({
       />
 
       {/* Mobile UI */}
-      {status === "connected" && isMobile && showTerminalShortcuts && (
+      {status === "connected" && isMobile && focusMode && (
         <>
           <button
             onPointerDown={handleMicPointerDown}
@@ -1581,22 +1649,25 @@ export const SSHPane = ({
               bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
             }}
           >
-            <QuickBar
-              onSend={sendShortcut}
-              onTmux={sendTmux}
-              onCopy={handleCopy}
-              onPaste={handlePaste}
-              onPasteImage={handlePasteImage}
-              onToggleDrawer={() => setDrawerOpen((o) => !o)}
-              copyFeedback={copyFeedback}
-              pasteFeedback={pasteFeedback}
-              drawerOpen={drawerOpen}
-            />
+            {showTerminalShortcuts && (
+              <QuickBar
+                onSend={sendShortcut}
+                onTmux={sendTmux}
+                onCopy={handleCopy}
+                onPaste={handlePaste}
+                onPasteImage={handlePasteImage}
+                onToggleDrawer={() => setDrawerOpen((o) => !o)}
+                copyFeedback={copyFeedback}
+                pasteFeedback={pasteFeedback}
+                drawerOpen={drawerOpen}
+              />
+            )}
           </div>
         </>
       )}
       {status === "connected" &&
         isMobile &&
+        focusMode &&
         showTerminalShortcuts &&
         drawerOpen && (
           <ShortcutDrawer
@@ -1608,10 +1679,36 @@ export const SSHPane = ({
           />
         )}
 
+      {status === "connected" && (
+        <div
+          className={isMobile ? "absolute left-1 right-1 z-30" : "absolute left-2 right-2 z-40"}
+          style={
+            isMobile
+              ? {
+                  bottom: keyboardHeight
+                    ? `${keyboardHeight + (showTerminalShortcuts ? 68 : 4)}px`
+                    : showTerminalShortcuts
+                      ? "4.25rem"
+                      : "0.25rem",
+                }
+              : {
+                  bottom: showTerminalShortcuts
+                    ? showTmuxShortcuts
+                      ? "8.5rem"
+                      : "4.5rem"
+                    : "0.5rem",
+                }
+          }
+        >
+          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
+        </div>
+      )}
+
       {/* Desktop UI */}
-      {status === "connected" && !isMobile && showTerminalShortcuts && (
+      {status === "connected" && !isMobile && (
         <div className="absolute bottom-2 left-2 right-2 z-40 flex flex-col gap-1.5">
-          <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
+          {showTerminalShortcuts && (
+            <div className="flex items-center gap-1 px-2 py-1.5 bg-neutral-900/80 backdrop-blur-sm border border-neutral-700 rounded-lg">
             <button
               onClick={() => sendShortcut("\x03")}
               className="flex-1 h-7 px-1 flex items-center justify-center rounded-md text-[10px] text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors cursor-pointer font-mono"
@@ -1745,7 +1842,8 @@ export const SSHPane = ({
             >
               <Download size={12} />
             </button>
-          </div>
+            </div>
+          )}
           {showTmuxShortcuts && tmuxButtons}
         </div>
       )}

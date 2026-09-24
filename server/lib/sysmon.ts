@@ -19,6 +19,14 @@ export interface SysStats {
   disks: Array<{ fs: string; sizeKb: number; usedKb: number; usePct: number; mount: string }>;
   procs: Array<{ pid: number; command: string; cpu: number; mem: number; rssKb: number }>;
   ports: Array<{ proto: string; port: number; address: string; pid: number | null; process: string }>;
+  vpn: {
+    installed: boolean;
+    running: boolean;
+    tunName: string | null;
+    tunIp: string | null;
+    connectedSec: number;
+    profile: string | null;
+  };
 }
 
 const SLEEP_SEC = 0.6;
@@ -43,6 +51,11 @@ function buildScript(sortKey: "cpu" | "mem"): string {
     // Listening sockets. `ss` is on modern distros; fall back to netstat. -p needs
     // privileges to see PID/name of *other* users' sockets, so those may be blank.
     "echo @@PORTS", "ss -tulnp 2>/dev/null || netstat -tulnp 2>/dev/null",
+    // VPN probe — cheap and sudo-free so it can ride every poll. Truth is the
+    // tun/tap interface; the openvpn process gives age + profile name.
+    "echo @@VPN_INSTALLED", "command -v openvpn >/dev/null 2>&1 && echo YES || echo NO",
+    "echo @@VPN_PROC", "ps -o pid=,etimes=,args= -C openvpn 2>/dev/null | head -n 3",
+    "echo @@VPN_TUN", "ip -o addr show 2>/dev/null | awk '$2 ~ /^(tun|tap)[0-9]+$/ && $3 == \"inet\" {print $2, $4; exit}'",
   ].join("; ");
 }
 
@@ -189,7 +202,7 @@ export async function getSysStats(
       command: c.slice(4).join(" "),
     }));
 
-  return { cpu: { total, cores }, load, uptimeSec, mem, net, disks, procs, ports: parsePorts(s.PORTS ?? []) };
+  return { cpu: { total, cores }, load, uptimeSec, mem, net, disks, procs, ports: parsePorts(s.PORTS ?? []), vpn: parseVpn(s) };
 }
 
 // Parse `ss -tulnp` (preferred) or `netstat -tulnp` listening sockets into a
@@ -233,6 +246,31 @@ function parsePorts(lines: string[]): SysStats["ports"] {
     out.push({ proto: proto.startsWith("udp") ? "udp" : "tcp", port, address, pid, process });
   }
   return out.sort((a, b) => a.port - b.port);
+}
+
+// pid etimes args — etimes is process age, which we show as connection time
+// (ponytail: not wall-clock tunnel establishment; good enough for a badge).
+function parseVpn(s: Record<string, string[]>): SysStats["vpn"] {
+  const installed = (s.VPN_INSTALLED?.[0] ?? "").trim() === "YES";
+  let running = false;
+  let connectedSec = 0;
+  let profile: string | null = null;
+  const proc = (s.VPN_PROC ?? []).map((l) => l.trim()).find(Boolean) ?? "";
+  const m = proc.match(/^(\d+)\s+(\d+)\s+(.*)$/);
+  if (m) {
+    running = true;
+    connectedSec = Number(m[2]) || 0;
+    profile = m[3].match(/([\w.-]+)\.ovpn/)?.[1] ?? null;
+  }
+  const tun = (s.VPN_TUN?.[0] ?? "").trim().match(/^(\S+)\s+(\d+\.\d+\.\d+\.\d+)/);
+  return {
+    installed,
+    running,
+    tunName: tun ? tun[1] : null,
+    tunIp: tun ? tun[2] : null,
+    connectedSec,
+    profile,
+  };
 }
 
 // Kill a process by PID. signal defaults to TERM (graceful); pass "KILL" for -9.

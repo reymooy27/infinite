@@ -84,6 +84,8 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
   const isListeningRef = useRef(false);
   const statusRef = useRef<VoiceStatus>("idle");
   const manualStopRef = useRef(false);
+  // Session was requested (start() called); onstart may not have fired yet.
+  const sessionActiveRef = useRef(false);
   const accumulatedRef = useRef("");
   const transientRef = useRef({ count: 0, at: 0 });
 
@@ -106,6 +108,7 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
       recognitionRef.current = null;
     }
     isListeningRef.current = false;
+    sessionActiveRef.current = false;
   }, []);
 
   const start = useCallback(() => {
@@ -211,9 +214,14 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
     recognition.onend = () => {
       isListeningRef.current = false;
-      if (statusRef.current === "recording" && !manualStopRef.current) {
-        // Auto-restart on silence timeout (browser stops after ~30-60s silence).
-        // Use setTimeout + ref to call the start callback (creates fresh recognition).
+      const expected = statusRef.current === "recording" || sessionActiveRef.current;
+      if (expected && !manualStopRef.current) {
+        // Auto-restart on silence timeout (browser stops after ~30-60s silence),
+        // and on any onend while the session was expected (covers the case where
+        // onstart never fired, e.g. mic still busy — previously a dead end).
+        if (statusRef.current !== "recording") {
+          updateStatus("recording");
+        }
         setTimeout(() => {
           if (statusRef.current === "recording" && !manualStopRef.current) {
             start();
@@ -251,11 +259,12 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
       // enough — users had to re-tap the mic; back off up to ~1.5s first.
       const retry = (delay: number) => {
         setTimeout(() => {
-          if (manualStopRef.current || isListeningRef.current || recognitionRef.current !== recognition) return;
+          if (manualStopRef.current || !sessionActiveRef.current || recognitionRef.current !== recognition) return;
           if (beginSession()) return;
           if (delay < 1200) {
             retry(delay + 300);
           } else {
+            sessionActiveRef.current = false;
             const error = new Error("Gagal memulai speech recognition");
             setError(error);
             onError?.(error);
@@ -264,11 +273,15 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
         }, delay);
       };
       retry(300);
+      sessionActiveRef.current = true;
+      return;
     }
+    sessionActiveRef.current = true;
   }, [lang, interimResults, onResult, onError, updateStatus, cleanup]);
 
   const stop = useCallback(() => {
     manualStopRef.current = true;
+    sessionActiveRef.current = false;
     // Keep handlers attached: the browser flushes the last final result
     // before onend, and onend runs the cleanup. Detaching at stop() dropped
     // the just-spoken utterance when the user stopped right after speaking.
@@ -283,6 +296,7 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
   const stopAndEdit = useCallback(() => {
     manualStopRef.current = true;
+    sessionActiveRef.current = false;
     updateStatus("editable");
     if (!recognitionRef.current || !isListeningRef.current) cleanup();
     else {
@@ -295,6 +309,7 @@ export function useVoiceToText(options: UseVoiceToTextOptions = {}) {
 
   const reset = useCallback(() => {
     manualStopRef.current = true;
+    sessionActiveRef.current = false;
     cleanup();
     setFinalTranscript("");
     setInterimTranscript("");

@@ -1338,3 +1338,25 @@ export function createSFTPConnection(
 
   return conn;
 }
+
+// One-shot SFTP text-file write, reusing the shared client config (used by the
+// VPN profile store; credentials never travel as command arguments).
+export function sftpPutFile(connection: SSHConnection, remotePath: string, data: string): Promise<void> {
+  return connectSSH(connection).then(
+    (conn) =>
+      new Promise<void>((resolve, reject) => {
+        conn.sftp((err, sftp) => {
+          if (err) {
+            conn.end();
+            reject(err);
+            return;
+          }
+          sftp.writeFile(remotePath, Buffer.from(data, "utf8"), { mode: 0o600 }, (writeErr) => {
+            conn.end();
+            if (writeErr) reject(writeErr);
+            else resolve();
+          });
+        });
+      }),
+  );
+}
