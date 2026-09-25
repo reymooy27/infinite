@@ -155,6 +155,7 @@ interface ActiveTunnel {
 const sessions = new Map<string, ActiveSession>();
 const pendingSessionStarts = new Map<string, PendingSessionStart>();
 const tunnels = new Map<string, ActiveTunnel>();
+const tunnelCreations = new Map<string, Promise<ActiveTunnel>>();
 const SESSION_TIMEOUT = 1000 * 60 * 60 * 8; // 8 hours
 const CHUNK_SIZE = 64 * 1024; // 64KB for file transfer chunks
 const MAX_RECENT_OUTPUT_BYTES = 256 * 1024;
@@ -480,6 +481,26 @@ export async function ensureLocalTunnel(
     };
   }
 
+  // Single-flight: one page load fires dozens of parallel proxy requests;
+  // without this each opens its own SSH connection and sshd drops the
+  // surplus, desyncing ssh2 badly enough to crash the process.
+  let creating = tunnelCreations.get(key);
+  if (!creating) {
+    creating = createTunnel(connection, key, targetHost, targetPort).finally(() =>
+      tunnelCreations.delete(key),
+    );
+    tunnelCreations.set(key, creating);
+  }
+  const tunnel = await creating;
+  return { localPort: tunnel.localPort, url: `http://127.0.0.1:${tunnel.localPort}` };
+}
+
+async function createTunnel(
+  connection: SSHConnection,
+  key: string,
+  targetHost: string,
+  targetPort: number,
+): Promise<ActiveTunnel> {
   const conn = await connectSSH(connection);
   const server = net.createServer((socket) => {
     conn.forwardOut(
@@ -495,7 +516,7 @@ export async function ensureLocalTunnel(
             targetPort,
             error: err.message,
           });
-          socket.destroy(err);
+          socket.destroy();
           return;
         }
 
@@ -535,6 +556,14 @@ export async function ensureLocalTunnel(
   };
   tunnels.set(key, tunnel);
 
+  conn.on("error", (err: Error) => {
+    logger.error("[SSH] Tunnel connection error", { key, error: err.message });
+    tunnels.delete(key);
+    try {
+      server.close();
+    } catch {}
+  });
+
   conn.on("close", () => {
     tunnels.delete(key);
     server.close();
@@ -552,10 +581,7 @@ export async function ensureLocalTunnel(
     localPort: address.port,
   });
 
-  return {
-    localPort: address.port,
-    url: `http://127.0.0.1:${address.port}`,
-  };
+  return tunnel;
 }
 
 function readNextChunk(

@@ -921,3 +921,14 @@ function shutdown(signal: string) {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+// A stray ssh2/socket stream error must not take down every live SSH session;
+// without these the process aborts on the next desynced tunnel packet.
+process.on("uncaughtException", (err) =>
+  logger.error("[Fatal] Uncaught exception", { error: err.stack || err.message }),
+);
+process.on("unhandledRejection", (reason) =>
+  logger.error("[Fatal] Unhandled rejection", {
+    error: String((reason as Error)?.stack || reason),
+  }),
+);
