@@ -1633,6 +1633,8 @@ export const SSHPane = ({
             onPointerMove={handleMicPointerMove}
             onPointerUp={handleMicPointerUp}
             onPointerCancel={handleMicPointerUp}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
             className={`absolute z-30 mb-2 w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white shadow-xl transition-colors active:scale-95 touch-none cursor-grab active:cursor-grabbing ${
               micPos ? "" : "left-1/2 -translate-x-1/2"
             }`}
