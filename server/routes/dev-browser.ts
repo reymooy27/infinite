@@ -60,8 +60,21 @@ function copyResponseHeaders(source: http.IncomingHttpHeaders): Record<string, s
   return headers;
 }
 
+// Rewrite root-absolute URLs so they stay under the proxy/tunnel prefix.
+// Anchoring <base> on the proxy path fixes relative URLs; these patterns catch
+// the root-absolute ones (/assets/…, import "/src/…", url(/font.woff)).
+function rewriteRootPaths(body: string, proxyBasePath: string): string {
+  return body
+    .replace(/(\b(?:src|href|poster|data-src)\s*=\s*["'])\/(?!\/)/g, `$1${proxyBasePath}/`)
+    .replace(/(\bfrom\s+["'])\/(?!\/)/g, `$1${proxyBasePath}/`)
+    .replace(/(\bimport\(\s*["'])\/(?!\/)/g, `$1${proxyBasePath}/`)
+    .replace(/(\bimport\s+["'])\/(?!\/)/g, `$1${proxyBasePath}/`)
+    .replace(/(url\(\s*["'])\/(?!\/)/g, `$1${proxyBasePath}/`)
+    .replace(/(url\()\/(?!\/)/g, `$1${proxyBasePath}/`);
+}
+
 function injectProxyScript(html: string, targetOrigin: string, proxyBasePath: string): string {
-  const baseTag = `<base href="${targetOrigin}/">`;
+  const baseTag = `<base href="${proxyBasePath}/">`;
   const script = `<script>
 (function() {
   if (window.__devBrowserProxy) return;
@@ -97,23 +110,33 @@ function injectProxyScript(html: string, targetOrigin: string, proxyBasePath: st
     parent.postMessage({
       source: "dev-browser-route",
       displayUrl: displayUrlFromLocation(window.location),
-      targetUrl: window.location.pathname + window.location.search + window.location.hash
+      // Parent feeds this straight into the iframe src, so it must stay a
+      // proxy-prefixed path even while the visible location is stripped.
+      targetUrl: PROXY_BASE + normalizePath(window.location.pathname) + window.location.search + window.location.hash
     }, "*");
   }
 
   var originalPushState = history.pushState;
   history.pushState = function(state, title, url) {
-    var nextUrl = url == null ? url : toProxyUrl(url);
-    originalPushState.call(this, state, title, nextUrl);
+    // Pass clean paths through: SPA routers match on location.pathname and
+    // would never see a route under the proxy prefix.
+    originalPushState.call(this, state, title, url);
     notifyParent();
   };
 
   var originalReplaceState = history.replaceState;
   history.replaceState = function(state, title, url) {
-    var nextUrl = url == null ? url : toProxyUrl(url);
-    originalReplaceState.call(this, state, title, nextUrl);
+    originalReplaceState.call(this, state, title, url);
     notifyParent();
   };
+
+  // Hide the proxy prefix from the app's router before its scripts run.
+  // ponytail: reloading a rewritten path leaves the proxy (server serves this
+  // app instead); upgrade path = path-rewrite middleware keyed on a cookie.
+  var initPath = normalizePath(window.location.pathname);
+  if (initPath !== window.location.pathname) {
+    originalReplaceState.call(history, history.state, "", initPath + window.location.search + window.location.hash);
+  }
 
   var originalFetch = window.fetch;
   window.fetch = function(input, init) {
@@ -188,6 +211,7 @@ function handleProxy(req: Request, res: Response) {
 
   const requestHeaders = copyRequestHeaders(req);
   requestHeaders.host = upstreamUrl.host;
+  delete requestHeaders["accept-encoding"];
 
   const isHttps = upstreamUrl.protocol === "https:";
   const transport = isHttps ? https : http;
@@ -226,11 +250,42 @@ function handleProxy(req: Request, res: Response) {
         });
         upstreamRes.on("end", () => {
           const proxyBasePath = `/api/dev-browser/proxy/${token}`;
-          const injected = injectProxyScript(html, origin.origin, proxyBasePath);
+          const injected = injectProxyScript(
+            rewriteRootPaths(html, proxyBasePath),
+            origin.origin,
+            proxyBasePath,
+          );
           headers["content-type"] = "text/html; charset=utf-8";
           delete headers["content-length"];
           res.writeHead(upstreamRes.statusCode || 200, headers);
           res.end(injected);
+        });
+        return;
+      }
+
+      // JS/CSS bodies carry root-absolute specifiers too (module imports,
+      // @font-face). Buffer small files and rewrite; stream large ones.
+      const isRewritableBody =
+        /javascript|ecmascript/.test(contentType) || contentType.includes("text/css");
+      const proxyBasePath = `/api/dev-browser/proxy/${token}`;
+      if (isRewritableBody) {
+        let body = "";
+        let tooLarge = false;
+        upstreamRes.on("data", (chunk: Buffer) => {
+          if (tooLarge) return;
+          body += chunk.toString("utf8");
+          if (body.length > 2 * 1024 * 1024) {
+            tooLarge = true;
+            res.writeHead(upstreamRes.statusCode || 200, headers);
+            res.write(body);
+            upstreamRes.pipe(res);
+          }
+        });
+        upstreamRes.on("end", () => {
+          if (tooLarge) return;
+          delete headers["content-length"];
+          res.writeHead(upstreamRes.statusCode || 200, headers);
+          res.end(rewriteRootPaths(body, proxyBasePath));
         });
         return;
       }

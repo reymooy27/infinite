@@ -99,7 +99,10 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests, try again later" },
 });
-app.use("/api", apiLimiter);
+const PROXY_CONTENT_PATH = /^\/api\/(dev-browser\/proxy|tunnels)\//;
+app.use("/api", (req, res, next) =>
+  PROXY_CONTENT_PATH.test(req.originalUrl) ? next() : apiLimiter(req, res, next),
+);
 
 // Domain routes
 app.use("/api/bookmarks", bookmarksRouter);
