@@ -82,7 +82,8 @@ export const SSHPane = ({
   const [suggestInput, setSuggestInput] = useState("");
   const suggestBufRef = useRef("");
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
-  const [micPos, setMicPos] = useState<{ x: number; y: number } | null>(null);
+  const micPos = useSettingsStore((s) => s.micButtonPos);
+  const setMicPos = useSettingsStore((s) => s.setMicButtonPos);
   const micDragStartRef = useRef({ x: 0, y: 0 });
   const micDragOriginRef = useRef({ x: 0, y: 0 });
   const micDragMovedRef = useRef(false);
