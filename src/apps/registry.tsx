@@ -288,25 +288,24 @@ export const SSHPane = ({
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
     if (isSwipeSuppressed()) return;
+    // Never yank focus from a field the user is typing into (dev-browser URL
+    // bar, inputs in other windows); xterm's helper textarea lives inside
+    // terminalRef and is the terminal itself.
+    const active = document.activeElement;
+    if (
+      active &&
+      active !== document.body &&
+      !terminalRef.current?.contains(active) &&
+      (active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        (active as HTMLElement).contentEditable === "true")
+    ) {
+      return;
+    }
     // Mobile: only focus when at the live tail — scrolling up (xterm buffer
     // or tmux copy-mode) suppresses the virtual keyboard so the user can
     // scroll freely first.
-    if (isMobile) {
-      if (isScrolledUpRef.current) return;
-    } else {
-      // Desktop: don't steal focus from external inputs
-      const active = document.activeElement;
-      if (
-        active &&
-        active !== document.body &&
-        !terminalRef.current?.contains(active) &&
-        (active.tagName === "INPUT" ||
-          active.tagName === "TEXTAREA" ||
-          (active as HTMLElement).contentEditable === "true")
-      ) {
-        return;
-      }
-    }
+    if (isMobile && isScrolledUpRef.current) return;
     termInstanceRef.current?.focus();
   }, [isMobile]);
 
@@ -2076,6 +2075,7 @@ export const registry: Record<AppId, AppDefinition> = {
       connectionId?: number;
       windowId?: string;
       initialUrl?: string;
+      sshHost?: string;
     }>,
     defaultWidth: 1024,
     defaultHeight: 768,
