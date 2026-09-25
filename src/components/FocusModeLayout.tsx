@@ -21,6 +21,7 @@ import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import TerminalPrevButton from "@/components/TerminalPrevButton";
 import { getBrowserId } from "@/lib/browserId";
+import { markSwipe } from "@/lib/swipeGuard";
 import {
   getNextSSHTerminalTarget,
   getPrevSSHTerminalTarget,
@@ -242,6 +243,10 @@ export default function FocusModeLayout({
     const dy = t.clientY - start.y;
     if (Math.abs(dx) < 70 || Math.abs(dx) < 2 * Math.abs(dy)) return;
     swipeCooldownRef.current = Date.now();
+    // Swiping must never pop the keyboard — here or in the freshly-mounted
+    // pane (registry's focusTerminal checks lib/swipeGuard).
+    markSwipe();
+    (document.activeElement as HTMLElement | null)?.blur();
     if (dx < 0) handleNextWindow();
     else handlePrevWindow();
   };

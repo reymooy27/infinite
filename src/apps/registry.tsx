@@ -39,6 +39,7 @@ import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 import { registerTerminalCleanup, unregisterTerminalCleanup } from "@/lib/terminalCleanup";
+import { isSwipeSuppressed } from "@/lib/swipeGuard";
 
 const CHUNK_SIZE = 64 * 1024;
 
@@ -285,6 +286,7 @@ export const SSHPane = ({
 
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
+    if (isSwipeSuppressed()) return;
     // Mobile: only focus when at the live tail — scrolling up (xterm buffer
     // or tmux copy-mode) suppresses the virtual keyboard so the user can
     // scroll freely first.
@@ -928,6 +930,10 @@ export const SSHPane = ({
             detail: 1,
           }),
         );
+        // xterm focuses its textarea on mousedown, which pops the virtual
+        // keyboard mid-drag (selection or swipe-to-switch). Selection reads
+        // the buffer, not focus; a tap still focuses normally.
+        if (isMobile) termInstanceRef.current?.blur();
       }
 
       if (isDragSelection) {
