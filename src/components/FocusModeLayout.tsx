@@ -187,8 +187,24 @@ export default function FocusModeLayout({
     closeTerminalTab(activeWindow.id, tabId);
   };
 
+  // WAAPI slide on pane wrapper (never remounts xterm); dir: 1=from right, -1=from left
+  const paneAreaRef = useRef<HTMLDivElement>(null);
+  const slidePane = (dir: 1 | -1) => {
+    const el = paneAreaRef.current;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (!el?.animate) return;
+    el.animate(
+      [
+        { transform: `translateX(${dir * 40}px)`, opacity: 0.5 },
+        { transform: "translateX(0)", opacity: 1 },
+      ],
+      { duration: 180, easing: "ease-out" },
+    );
+  };
+
   const handleNextWindow = () => {
     if (!nextTerminal) return;
+    slidePane(1);
     setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
     setFocusModeWindowId(nextTerminal.windowId);
     focusWindow(nextTerminal.windowId);
@@ -196,6 +212,7 @@ export default function FocusModeLayout({
 
   const handlePrevWindow = () => {
     if (!prevTerminal) return;
+    slidePane(-1);
     setActiveTerminalTab(prevTerminal.windowId, prevTerminal.tabId);
     setFocusModeWindowId(prevTerminal.windowId);
     focusWindow(prevTerminal.windowId);
@@ -646,6 +663,7 @@ export default function FocusModeLayout({
 
       <div className="relative flex flex-1 min-h-0">
         <div
+          ref={paneAreaRef}
           className="relative flex-1 min-h-0"
           onTouchStart={handleSwipeStart}
           onTouchEnd={handleSwipeEnd}

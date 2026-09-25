@@ -1648,6 +1648,8 @@ export const SSHPane = ({
             style={{
               bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
             }}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
           >
             {showTerminalShortcuts && (
               <QuickBar
