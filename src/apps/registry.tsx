@@ -40,6 +40,7 @@ import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 import { registerTerminalCleanup, unregisterTerminalCleanup } from "@/lib/terminalCleanup";
 import { isSwipeSuppressed } from "@/lib/swipeGuard";
+import { isProjectSwitchSuppressingFocus } from "@/lib/switchFocusGuard";
 
 const CHUNK_SIZE = 64 * 1024;
 
@@ -288,6 +289,7 @@ export const SSHPane = ({
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
     if (isSwipeSuppressed()) return;
+    if (isProjectSwitchSuppressingFocus()) return;
     // Never yank focus from a field the user is typing into (dev-browser URL
     // bar, inputs in other windows); xterm's helper textarea lives inside
     // terminalRef and is the terminal itself.

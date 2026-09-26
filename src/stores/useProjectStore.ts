@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "@/lib/api";
+import { markProjectSwitch } from "@/lib/switchFocusGuard";
 import type { Project } from "@/types";
 
 const RECENT_PROJECTS_KEY = "infinite-recent-projects";
@@ -141,6 +142,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   switchProject: async (id) => {
     const { activeProjectId } = get();
     if (id === activeProjectId) return;
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    markProjectSwitch();
 
     const { useWindowStore } = await import("@/stores/useWindowStore");
     // Snapshot is taken synchronously inside saveProjectCanvas before its
