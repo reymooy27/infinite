@@ -92,6 +92,12 @@ body {
   height: 0 !important;
 }
 
+/* iOS zooms the whole page when a focused input has font-size < 16px;
+   the xterm helper textarea inherits the (small) terminal font size. */
+.xterm-helpers textarea.xterm-helper-textarea {
+  font-size: 16px !important;
+}
+
 .xterm .xterm-viewport {
   overflow: hidden !important;
   width: 100% !important;
