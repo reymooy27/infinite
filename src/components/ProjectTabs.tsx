@@ -19,15 +19,15 @@ export default function ProjectTabs() {
     .slice(0, MAX_TABS);
 
   return (
-    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 max-w-[85vw] overflow-x-auto rounded-lg border border-neutral-700 bg-neutral-900/90 px-1.5 py-1 shadow-xl">
+    <div className="flex items-center gap-0.5 min-w-0 max-w-[45vw] overflow-x-auto">
       {tabs.map((p) => (
         <button
           key={p.id}
           onClick={() => void switchProject(p.id)}
           title={p.directory ? `${p.name} — ${p.directory}` : p.name}
-          className={`shrink-0 max-w-44 truncate rounded-md px-2.5 py-1 text-xs transition-colors cursor-pointer ${
+          className={`shrink-0 max-w-36 truncate rounded px-2 py-0.5 text-xs transition-colors cursor-pointer ${
             p.id === activeProjectId
-              ? "bg-neutral-700 text-white"
+              ? "bg-neutral-800 text-white"
               : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
           }`}
         >

@@ -17,6 +17,7 @@ import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import FileExplorer from "@/components/FileExplorer";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
+import ProjectTabs from "@/components/ProjectTabs";
 import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import TerminalPrevButton from "@/components/TerminalPrevButton";
@@ -436,6 +437,8 @@ export default function FocusModeLayout({
             ↩ {previousProjectName}
           </button>
         )}
+
+        <ProjectTabs />
 
         <div className="flex-1" />
 
