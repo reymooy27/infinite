@@ -66,6 +66,10 @@ export default function FocusModeLayout({
   const codeEditorOpen = useCodeEditorStore((s) => s.open);
   const toggleCodeEditorPanel = useCodeEditorStore((s) => s.togglePanel);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const previousProjectName = useProjectStore((s) => {
+    if (!s.previousProjectId) return null;
+    return s.projects.find((p) => p.id === s.previousProjectId)?.name ?? null;
+  });
   const focusWindow = useWindowStore((s) => s.focusWindow);
   const closeWindow = useWindowStore((s) => s.closeWindow);
 
@@ -422,6 +426,16 @@ export default function FocusModeLayout({
             onOpenSection={onOpenSection}
           />
         </div>
+
+        {previousProjectName && (
+          <button
+            onClick={() => void useProjectStore.getState().toggleLastProject()}
+            title={`Back to "${previousProjectName}" (Ctrl+Shift+O)`}
+            className="shrink-0 max-w-44 truncate px-2 py-0.5 rounded border border-neutral-800 text-xs text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            ↩ {previousProjectName}
+          </button>
+        )}
 
         <div className="flex-1" />
 

@@ -3,8 +3,9 @@ import { api } from "@/lib/api";
 import type { Project } from "@/types";
 
 const RECENT_PROJECTS_KEY = "infinite-recent-projects";
+const PREVIOUS_PROJECT_KEY = "infinite-previous-project";
 
-function readRecentProjectIds(): string[] {
+export function readRecentProjectIds(): string[] {
   if (typeof window === "undefined") return [];
 
   try {
@@ -24,9 +25,19 @@ function markProjectOpened(projectId: string) {
   localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(nextIds.slice(0, 100)));
 }
 
+function readPreviousProjectId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(PREVIOUS_PROJECT_KEY);
+  } catch {
+    return null;
+  }
+}
+
 interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
+  previousProjectId: string | null;
   loading: boolean;
   error: string | null;
 
@@ -35,12 +46,14 @@ interface ProjectState {
   deleteProject: (id: string) => Promise<void>;
   renameProject: (id: string, name: string, directory?: string) => Promise<void>;
   switchProject: (id: string) => Promise<void>;
+  toggleLastProject: () => Promise<void>;
   saveCurrentProject: () => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   activeProjectId: null,
+  previousProjectId: readPreviousProjectId(),
   loading: false,
   error: null,
 
@@ -130,16 +143,35 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (id === activeProjectId) return;
 
     const { useWindowStore } = await import("@/stores/useWindowStore");
+    // Snapshot is taken synchronously inside saveProjectCanvas before its
+    // first await, so firing it without awaiting cannot race loadProjectCanvas.
+    // ponytail: save failures only reach console.error; upgrade path is to
+    // await Promise.allSettled and surface a toast on rejection.
     if (activeProjectId) {
-      await useWindowStore.getState().saveProjectCanvas(activeProjectId);
+      void useWindowStore.getState().saveProjectCanvas(activeProjectId);
     }
 
-    set({ activeProjectId: id });
+    set({ activeProjectId: id, previousProjectId: activeProjectId });
     if (typeof window !== "undefined") {
       localStorage.setItem("infinite-active-project", id);
+      if (activeProjectId) {
+        localStorage.setItem(PREVIOUS_PROJECT_KEY, activeProjectId);
+      }
     }
     markProjectOpened(id);
     await useWindowStore.getState().loadProjectCanvas(id);
+  },
+
+  toggleLastProject: async () => {
+    const { activeProjectId, previousProjectId, projects } = get();
+    const exists = (id: string | null) =>
+      !!id && id !== activeProjectId && projects.some((p) => p.id === id);
+
+    const target = exists(previousProjectId)
+      ? previousProjectId
+      : readRecentProjectIds().find((id) => exists(id)) ?? null;
+
+    if (target) await get().switchProject(target);
   },
 
   saveCurrentProject: async () => {

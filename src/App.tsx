@@ -13,6 +13,7 @@ import NavigationBlockModal from "@/components/NavigationBlockModal";
 import NavigationIndicator from "@/components/NavigationIndicator";
 import Sidebar from "@/components/Sidebar";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
+import ProjectTabs from "@/components/ProjectTabs";
 import WindowFrame from "@/components/WindowFrame";
 import { getVisibleSSHWindows } from "@/lib/sshWindowNavigation";
 import { useNavigationBlockStore } from "@/stores/useNavigationBlockStore";
@@ -174,6 +175,9 @@ export default function App() {
         if (e.key === "p" || e.key === "P") {
           e.preventDefault();
           setSwitcherOpen((prev) => !prev);
+        } else if (e.key === "o" || e.key === "O") {
+          e.preventDefault();
+          void useProjectStore.getState().toggleLastProject();
         } else if (e.key === "f" || e.key === "F") {
           e.preventDefault();
           useSettingsStore.getState().setFocusMode(!useSettingsStore.getState().focusMode);
@@ -264,6 +268,7 @@ export default function App() {
               );
             })}
           <NavigationIndicator />
+          <ProjectTabs />
           <ProjectSwitcher
             isOpen={switcherOpen}
             onOpenChange={setSwitcherOpen}
