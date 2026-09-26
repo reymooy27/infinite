@@ -393,7 +393,7 @@ export default function FocusModeLayout({
         clearTimeout(keyboardTimerRef.current);
         keyboardTimerRef.current = setTimeout(
           () => {
-            setKeyboardHeight((prev) => (Math.abs(prev - h) > 2 ? h : prev));
+            setKeyboardHeight((prev) => (Math.abs(prev - h) > 24 ? h : prev));
           },
           h === 0 ? 140 : 180,
         );

@@ -265,9 +265,6 @@ export const SSHPane = ({
       suppressViewportTrackingUntilRef.current = performance.now() + 320;
 
       fit.fit();
-      if (term.rows > 0) {
-        term.refresh(0, term.rows - 1);
-      }
       if (recreateCanvas && term.cols > 0 && term.rows > 0) {
         term.resize(term.cols + 1, term.rows);
         term.resize(term.cols - 1, term.rows);
@@ -799,23 +796,13 @@ export const SSHPane = ({
     lastKnownViewportYRef.current = term.buffer.active.viewportY;
     suppressViewportTrackingUntilRef.current = performance.now() + 400;
 
+    // ResizeObserver on the container already runs fit+viewport-restore when
+    // the keyboard padding changes the pane height — only suppress tracking
+    // and refocus here, no second resize chain.
     requestAnimationFrame(() => {
-      handleTerminalResize();
-      if (pendingViewportRestoreRef.current !== null) {
-        scheduleViewportRestore(pendingViewportRestoreRef.current);
-      }
-      requestAnimationFrame(() => {
-        if (!isModalOpenRef.current) focusTerminal();
-      });
+      if (!isModalOpenRef.current) focusTerminal();
     });
-  }, [
-    focusTerminal,
-    getViewportOffsetFromBottom,
-    handleTerminalResize,
-    isMobile,
-    keyboardHeight,
-    scheduleViewportRestore,
-  ]);
+  }, [focusTerminal, getViewportOffsetFromBottom, isMobile, keyboardHeight]);
 
   useEffect(() => {
     if (!refreshNonce) return;
