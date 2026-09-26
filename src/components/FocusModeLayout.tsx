@@ -528,7 +528,7 @@ export default function FocusModeLayout({
                   : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
               }`}
             >
-              <span className="max-w-[8rem] truncate">
+              <span className="w-32 truncate">
                 {tabs.find((t) => t.id === activeTabId)?.title ??
                   tabs.find((t) => t.id === activeTabId)?.label ??
                   "Tab"}
