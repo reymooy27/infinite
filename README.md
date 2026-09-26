@@ -1,49 +1,23 @@
 # Infinite
 
-> Browser-based spatial workspace for developers: infinite canvas, draggable
-> SSH terminals, dev browser windows, and project context, all in one
-> place.
-
-Infinite is a browser-based spatial workspace for development tools. It gives you an infinite canvas with draggable windows for SSH sessions, notes, a dev browser, and project context.
+> A browser-based spatial workspace: an infinite canvas with draggable windows
+> for SSH terminals, a dev browser, notes, and project context.
 
 ## What It Does
 
-- Infinite canvas with pan/zoom and persistent window layouts
-- SSH connections inside draggable, multi-tab xterm.js windows
-- Optional SSH relay **agent** for private networks, Tailscale, or LAN-only hosts
-- **Dev browser** (tunnels a localhost port on an SSH host)
-- **File transfer** (SFTP upload/download) over a saved SSH connection
-- **Docker manager** — control containers/images/volumes on a remote host over SSH
-- **System monitor** — btop-style live CPU/memory/swap/network/disk gauges,
-  a sortable process table (by CPU or memory, with real RSS in MB/GB), and a
-  listening-ports table — kill any process or free a stuck port over SSH
-- **Git view** — status tree, diff viewer, and commit/push/pull/stash per project
-  (with commit file tree, GitHub redirect buttons, and AI-generated commit
-  messages)
-- **Code editor** — VS Code-like Monaco editor (syntax highlight, autocomplete,
-  multi-cursor) with save, git diff overlay, and recursive file filter across
-  expanded subfolders
-- **9router usage analytics** — read-only dashboard of AI/LLM traffic
-  (requests, tokens, cost, breakdown by model/provider/key/endpoint,
-  plus an Error Log of failed requests) pulled live from a
-  [9router](https://9router.dev) service
-- **Notes**, **bookmarks**, and **projects** for project-oriented workspace state
-- **Canvas navigation aids** — off-screen window compass and a "next
-  terminal" switcher for many open windows
-- **Terminal customization** — font size, background color, on-screen
-  shortcut buttons, and a configurable mobile quick bar (unlimited slots
-  with sensible terminal defaults)
-- **Focus mode** — distraction-free layout with the terminal, git sidebar, and
-  Docker toggle, plus `j`/`k` line-by-line history navigation that
-  follows scrollback (`Ctrl+Shift+K` resets to live)
-- **tmux support** — auto-attach a persistent tmux session on SSH connect, plus
-  on-screen tmux keypad (next/prev window, new, split vertical/horizontal,
-  zoom, kill) configurable via Settings
-- Mobile **quick bar** and **shortcut drawer** for terminal/tmux key pads,
-  plus **voice input** (mic-to-text) and **file search** for touch devices
-- Global **keyboard shortcuts** (Cmd palette, panel toggle, theme, etc.)
-- All state persisted in a local SQLite file — no external database required
-- **Docker support** — multi-container setup with nginx frontend + Node.js backend
+- **Canvas** — infinite pan/zoom, draggable/resizable windows, persistent layouts
+- **SSH terminals** — multi-tab xterm.js with tmux support
+- **Relay agent** — reach private-network, Tailscale, or LAN-only SSH hosts
+- **Dev browser** — tunnel a localhost port on the SSH host
+- **File transfer** — SFTP upload/download over a saved connection
+- **Docker manager** — control containers, images, and volumes over SSH
+- **System monitor** — btop-style CPU/memory/net/disk; kill processes or free ports
+- **Git view** — status, diff, commit/push/pull, AI commit messages
+- **Code editor** — Monaco with git diff overlay
+- **Usage analytics** — live [9router](https://9router.dev) dashboard (requests, tokens, cost, errors)
+- **Projects, notes & bookmarks** — workspace state in a local SQLite file
+- **Focus mode & mobile UX** — quick bar, tmux keypad, voice input, shortcuts
+- **Docker deploy** — nginx frontend + Node.js backend
 
 ## Stack
 
