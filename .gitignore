@@ -42,3 +42,4 @@ graphify-out/
 .omo/
 server-build/
 translator.check.mjs
+demo/
