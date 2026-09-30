@@ -12,7 +12,10 @@ interface ConsoleEntry {
 interface DevBrowserProps {
   windowId?: string;
   connectionId?: number;
+  /** URL-bar prefill only; never auto-navigates. */
   initialUrl?: string;
+  /** Bound SSH host; its URLs tunnel like localhost. */
+  sshHost?: string;
 }
 
 interface HistoryEntry {
@@ -43,6 +46,7 @@ export default function DevBrowser({
   windowId,
   connectionId,
   initialUrl,
+  sshHost,
 }: DevBrowserProps) {
   const storageKey = windowId
     ? `${LAST_URL_STORAGE_KEY}:${windowId}`
@@ -54,7 +58,7 @@ export default function DevBrowser({
   const [url, setUrl] = useState("");
   const [inputUrl, setInputUrl] = useState(() => {
     if (typeof window === "undefined") return "";
-    return window.localStorage.getItem(storageKey) ?? "";
+    return window.localStorage.getItem(storageKey) || initialUrl || "";
   });
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -363,10 +367,15 @@ export default function DevBrowser({
 
       const displayUrl = targetUrl;
       const parsed = new URL(targetUrl);
+      // The bound SSH host's own IP is tunneled too, so "http://<host>:<port>"
+      // reaches a dev server listening on the remote loopback.
+      // ponytail: always forwards to remote 127.0.0.1; upgrade path is a
+      // second attempt with the real hostname if the service binds elsewhere.
       const isLocalhostParsed =
         parsed.hostname === "localhost" ||
         parsed.hostname === "127.0.0.1" ||
-        parsed.hostname === "0.0.0.0";
+        parsed.hostname === "0.0.0.0" ||
+        (Boolean(connectionId) && Boolean(sshHost) && parsed.hostname === sshHost);
 
       if (isLocalhostParsed) {
         const buildProxyTarget = (origin: string) => {
@@ -536,14 +545,6 @@ export default function DevBrowser({
     navigateToUrl(chosen);
   };
 
-  useEffect(() => {
-    if (!initialUrl) return;
-    const timeoutId = window.setTimeout(() => {
-      navigateToUrl(initialUrl);
-    }, 0);
-    return () => window.clearTimeout(timeoutId);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const pinUrl =
     historyIndex >= 0 ? history[historyIndex]?.displayUrl : inputUrl.trim() || null;
   const currentDisplayUrl =
@@ -629,7 +630,9 @@ export default function DevBrowser({
       {/* URL bar */}
       <form
         onSubmit={handleNavigate}
-        className="flex items-center gap-2 px-3 py-2 bg-neutral-950 border-b border-neutral-800"
+        onPointerDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        className="flex items-center gap-2 px-3 py-2 bg-neutral-950 border-b border-neutral-800 [touch-action:manipulation]"
       >
         <button
           type="button"

@@ -122,6 +122,8 @@ export function ShortcutDrawer({
 
   return createPortal(
     <div
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
       className="fixed z-[500] bg-neutral-900/95 backdrop-blur-sm border border-neutral-700 rounded-xl overflow-hidden shadow-2xl"
       style={{ top: pos.top, left: pos.left, width: pos.width }}
     >

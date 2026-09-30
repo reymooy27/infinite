@@ -122,9 +122,15 @@ export default function SSHPanel() {
     });
   };
 
-  const handleOpenDevBrowser = (conn: { id: number; name: string }) => {
+  const handleOpenDevBrowser = (conn: {
+    id: number;
+    name: string;
+    host: string;
+  }) => {
     useWindowStore.getState().openApp("devBrowser", undefined, undefined, {
       connectionId: conn.id,
+      sshHost: conn.host,
+      initialUrl: `http://${conn.host}:`,
       title: `${conn.name} Dev Browser`,
     });
   };

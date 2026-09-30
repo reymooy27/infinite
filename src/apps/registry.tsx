@@ -39,6 +39,8 @@ import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
 import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 import { registerTerminalCleanup, unregisterTerminalCleanup } from "@/lib/terminalCleanup";
+import { isSwipeSuppressed } from "@/lib/swipeGuard";
+import { isProjectSwitchSuppressingFocus } from "@/lib/switchFocusGuard";
 
 const CHUNK_SIZE = 64 * 1024;
 
@@ -81,7 +83,8 @@ export const SSHPane = ({
   const [suggestInput, setSuggestInput] = useState("");
   const suggestBufRef = useRef("");
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
-  const [micPos, setMicPos] = useState<{ x: number; y: number } | null>(null);
+  const micPos = useSettingsStore((s) => s.micButtonPos);
+  const setMicPos = useSettingsStore((s) => s.setMicButtonPos);
   const micDragStartRef = useRef({ x: 0, y: 0 });
   const micDragOriginRef = useRef({ x: 0, y: 0 });
   const micDragMovedRef = useRef(false);
@@ -262,9 +265,6 @@ export const SSHPane = ({
       suppressViewportTrackingUntilRef.current = performance.now() + 320;
 
       fit.fit();
-      if (term.rows > 0) {
-        term.refresh(0, term.rows - 1);
-      }
       if (recreateCanvas && term.cols > 0 && term.rows > 0) {
         term.resize(term.cols + 1, term.rows);
         term.resize(term.cols - 1, term.rows);
@@ -285,25 +285,26 @@ export const SSHPane = ({
 
   const focusTerminal = useCallback(() => {
     if (!isActiveRef.current) return;
+    if (isSwipeSuppressed()) return;
+    if (isProjectSwitchSuppressingFocus()) return;
+    // Never yank focus from a field the user is typing into (dev-browser URL
+    // bar, inputs in other windows); xterm's helper textarea lives inside
+    // terminalRef and is the terminal itself.
+    const active = document.activeElement;
+    if (
+      active &&
+      active !== document.body &&
+      !terminalRef.current?.contains(active) &&
+      (active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        (active as HTMLElement).contentEditable === "true")
+    ) {
+      return;
+    }
     // Mobile: only focus when at the live tail — scrolling up (xterm buffer
     // or tmux copy-mode) suppresses the virtual keyboard so the user can
     // scroll freely first.
-    if (isMobile) {
-      if (isScrolledUpRef.current) return;
-    } else {
-      // Desktop: don't steal focus from external inputs
-      const active = document.activeElement;
-      if (
-        active &&
-        active !== document.body &&
-        !terminalRef.current?.contains(active) &&
-        (active.tagName === "INPUT" ||
-          active.tagName === "TEXTAREA" ||
-          (active as HTMLElement).contentEditable === "true")
-      ) {
-        return;
-      }
-    }
+    if (isMobile && isScrolledUpRef.current) return;
     termInstanceRef.current?.focus();
   }, [isMobile]);
 
@@ -795,23 +796,13 @@ export const SSHPane = ({
     lastKnownViewportYRef.current = term.buffer.active.viewportY;
     suppressViewportTrackingUntilRef.current = performance.now() + 400;
 
+    // ResizeObserver on the container already runs fit+viewport-restore when
+    // the keyboard padding changes the pane height — only suppress tracking
+    // and refocus here, no second resize chain.
     requestAnimationFrame(() => {
-      handleTerminalResize();
-      if (pendingViewportRestoreRef.current !== null) {
-        scheduleViewportRestore(pendingViewportRestoreRef.current);
-      }
-      requestAnimationFrame(() => {
-        if (!isModalOpenRef.current) focusTerminal();
-      });
+      if (!isModalOpenRef.current) focusTerminal();
     });
-  }, [
-    focusTerminal,
-    getViewportOffsetFromBottom,
-    handleTerminalResize,
-    isMobile,
-    keyboardHeight,
-    scheduleViewportRestore,
-  ]);
+  }, [focusTerminal, getViewportOffsetFromBottom, isMobile, keyboardHeight]);
 
   useEffect(() => {
     if (!refreshNonce) return;
@@ -928,6 +919,10 @@ export const SSHPane = ({
             detail: 1,
           }),
         );
+        // xterm focuses its textarea on mousedown, which pops the virtual
+        // keyboard mid-drag (selection or swipe-to-switch). Selection reads
+        // the buffer, not focus; a tap still focuses normally.
+        if (isMobile) termInstanceRef.current?.blur();
       }
 
       if (isDragSelection) {
@@ -1627,6 +1622,8 @@ export const SSHPane = ({
             onPointerMove={handleMicPointerMove}
             onPointerUp={handleMicPointerUp}
             onPointerCancel={handleMicPointerUp}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
             className={`absolute z-30 mb-2 w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white shadow-xl transition-colors active:scale-95 touch-none cursor-grab active:cursor-grabbing ${
               micPos ? "" : "left-1/2 -translate-x-1/2"
             }`}
@@ -1648,6 +1645,8 @@ export const SSHPane = ({
             style={{
               bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
             }}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
           >
             {showTerminalShortcuts && (
               <QuickBar
@@ -2065,6 +2064,7 @@ export const registry: Record<AppId, AppDefinition> = {
       connectionId?: number;
       windowId?: string;
       initialUrl?: string;
+      sshHost?: string;
     }>,
     defaultWidth: 1024,
     defaultHeight: 768,

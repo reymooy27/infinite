@@ -17,10 +17,12 @@ import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
 import FileExplorer from "@/components/FileExplorer";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
+import ProjectTabs from "@/components/ProjectTabs";
 import SettingsPanel from "@/components/SettingsPanel";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import TerminalPrevButton from "@/components/TerminalPrevButton";
 import { getBrowserId } from "@/lib/browserId";
+import { markSwipe } from "@/lib/swipeGuard";
 import {
   getNextSSHTerminalTarget,
   getPrevSSHTerminalTarget,
@@ -65,6 +67,10 @@ export default function FocusModeLayout({
   const codeEditorOpen = useCodeEditorStore((s) => s.open);
   const toggleCodeEditorPanel = useCodeEditorStore((s) => s.togglePanel);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const previousProjectName = useProjectStore((s) => {
+    if (!s.previousProjectId) return null;
+    return s.projects.find((p) => p.id === s.previousProjectId)?.name ?? null;
+  });
   const focusWindow = useWindowStore((s) => s.focusWindow);
   const closeWindow = useWindowStore((s) => s.closeWindow);
 
@@ -187,8 +193,24 @@ export default function FocusModeLayout({
     closeTerminalTab(activeWindow.id, tabId);
   };
 
+  // WAAPI slide on pane wrapper (never remounts xterm); dir: 1=from right, -1=from left
+  const paneAreaRef = useRef<HTMLDivElement>(null);
+  const slidePane = (dir: 1 | -1) => {
+    const el = paneAreaRef.current;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (!el?.animate) return;
+    el.animate(
+      [
+        { transform: `translateX(${dir * 40}px)`, opacity: 0.5 },
+        { transform: "translateX(0)", opacity: 1 },
+      ],
+      { duration: 180, easing: "ease-out" },
+    );
+  };
+
   const handleNextWindow = () => {
     if (!nextTerminal) return;
+    slidePane(1);
     setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
     setFocusModeWindowId(nextTerminal.windowId);
     focusWindow(nextTerminal.windowId);
@@ -196,6 +218,7 @@ export default function FocusModeLayout({
 
   const handlePrevWindow = () => {
     if (!prevTerminal) return;
+    slidePane(-1);
     setActiveTerminalTab(prevTerminal.windowId, prevTerminal.tabId);
     setFocusModeWindowId(prevTerminal.windowId);
     focusWindow(prevTerminal.windowId);
@@ -225,6 +248,10 @@ export default function FocusModeLayout({
     const dy = t.clientY - start.y;
     if (Math.abs(dx) < 70 || Math.abs(dx) < 2 * Math.abs(dy)) return;
     swipeCooldownRef.current = Date.now();
+    // Swiping must never pop the keyboard — here or in the freshly-mounted
+    // pane (registry's focusTerminal checks lib/swipeGuard).
+    markSwipe();
+    (document.activeElement as HTMLElement | null)?.blur();
     if (dx < 0) handleNextWindow();
     else handlePrevWindow();
   };
@@ -366,7 +393,7 @@ export default function FocusModeLayout({
         clearTimeout(keyboardTimerRef.current);
         keyboardTimerRef.current = setTimeout(
           () => {
-            setKeyboardHeight((prev) => (Math.abs(prev - h) > 2 ? h : prev));
+            setKeyboardHeight((prev) => (Math.abs(prev - h) > 24 ? h : prev));
           },
           h === 0 ? 140 : 180,
         );
@@ -400,6 +427,18 @@ export default function FocusModeLayout({
             onOpenSection={onOpenSection}
           />
         </div>
+
+        {previousProjectName && (
+          <button
+            onClick={() => void useProjectStore.getState().toggleLastProject()}
+            title={`Back to "${previousProjectName}" (Ctrl+Shift+O)`}
+            className="shrink-0 max-w-44 truncate px-2 py-0.5 rounded border border-neutral-800 text-xs text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            ↩ {previousProjectName}
+          </button>
+        )}
+
+        <ProjectTabs />
 
         <div className="flex-1" />
 
@@ -489,7 +528,7 @@ export default function FocusModeLayout({
                   : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
               }`}
             >
-              <span className="max-w-[8rem] truncate">
+              <span className="w-32 truncate">
                 {tabs.find((t) => t.id === activeTabId)?.title ??
                   tabs.find((t) => t.id === activeTabId)?.label ??
                   "Tab"}
@@ -646,6 +685,7 @@ export default function FocusModeLayout({
 
       <div className="relative flex flex-1 min-h-0">
         <div
+          ref={paneAreaRef}
           className="relative flex-1 min-h-0"
           onTouchStart={handleSwipeStart}
           onTouchEnd={handleSwipeEnd}

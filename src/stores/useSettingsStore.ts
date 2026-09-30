@@ -68,6 +68,7 @@ interface SettingsState {
   ninerouterModel: string;
   focusMode: boolean;
   focusModeWindowId: string | null;
+  micButtonPos: { x: number; y: number } | null;
   setShowTerminalShortcuts: (value: boolean) => void;
   setShowTmuxShortcuts: (value: boolean) => void;
   setAutoTmux: (value: boolean) => void;
@@ -79,6 +80,7 @@ interface SettingsState {
   setNinerouterModel: (value: string) => void;
   setFocusMode: (value: boolean) => void;
   setFocusModeWindowId: (id: string | null) => void;
+  setMicButtonPos: (pos: { x: number; y: number } | null) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -95,6 +97,7 @@ export const useSettingsStore = create<SettingsState>()(
       ninerouterModel: "gpt-4o-mini",
       focusMode: false,
       focusModeWindowId: null,
+      micButtonPos: null,
       setShowTerminalShortcuts: (value) =>
         set({ showTerminalShortcuts: value }),
       setShowTmuxShortcuts: (value) => set({ showTmuxShortcuts: value }),
@@ -111,6 +114,7 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) =>
           state.focusModeWindowId === id ? state : { focusModeWindowId: id },
         ),
+      setMicButtonPos: (pos) => set({ micButtonPos: pos }),
     }),
     {
       name: "infinite-settings",

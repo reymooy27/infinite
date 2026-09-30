@@ -152,6 +152,212 @@ function Card({
   );
 }
 
+interface CleanupRow {
+  id: string;
+  sizeKb: number;
+  detail?: string;
+}
+
+interface CleanupResultRow {
+  id: string;
+  ok: boolean;
+  message: string;
+  beforeKb: number;
+  afterKb: number;
+  reclaimedKb: number;
+}
+
+const CLEANUP_LABELS: Record<string, string> = {
+  trash: "Trash",
+  tmp: "Temp files",
+  pkgcache: "Package cache",
+  logs: "Logs & journal",
+};
+
+function DiskCleanup({
+  connectionId,
+  onCleaned,
+}: {
+  connectionId: number;
+  onCleaned: () => void;
+}) {
+  const [rows, setRows] = useState<CleanupRow[] | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [results, setResults] = useState<CleanupResultRow[]>([]);
+
+  const scan = useCallback(async () => {
+    setBusy(true);
+    setMsg(null);
+    setResults([]);
+    try {
+      const res = await fetch(`/api/sysmon/${connectionId}/disk-cleanup`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Scan failed");
+      setRows(data.targets ?? []);
+    } catch (err) {
+      setMsg({ tone: "err", text: err instanceof Error ? err.message : "Scan failed" });
+    } finally {
+      setBusy(false);
+    }
+  }, [connectionId]);
+
+  useEffect(() => {
+    void scan();
+  }, [scan]);
+
+  const clean = useCallback(async () => {
+    setBusy(true);
+    setConfirming(false);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/sysmon/${connectionId}/disk-cleanup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targets: picked }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Cleanup failed");
+      setRows(data.scan ?? []);
+      setResults(data.results ?? []);
+      setPicked([]);
+      onCleaned();
+    } catch (err) {
+      setMsg({ tone: "err", text: err instanceof Error ? err.message : "Cleanup failed" });
+    } finally {
+      setBusy(false);
+    }
+  }, [connectionId, picked, onCleaned]);
+
+  const selectedKb = (rows ?? []).filter((r) => picked.includes(r.id)).reduce((a, r) => a + r.sizeKb, 0);
+  const hasWork = selectedKb > 0;
+  const totalFreed = results.reduce((a, r) => a + (r.reclaimedKb ?? 0), 0);
+
+  return (
+    <Card
+      icon={<Trash2 size={13} />}
+      title="Disk cleanup"
+      right={
+        <button
+          onClick={() => void scan()}
+          disabled={busy}
+          className="flex items-center gap-1 rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:bg-neutral-800 disabled:opacity-40"
+        >
+          <RefreshCw size={10} className={busy ? "animate-spin" : ""} />
+          Scan
+        </button>
+      }
+    >
+      {!rows ? (
+        <div className="text-[11px] text-neutral-500">Scanning…</div>
+      ) : rows.every((r) => r.sizeKb === 0) ? (
+        <div className="text-[11px] text-neutral-500">Nothing to reclaim on this host.</div>
+      ) : (
+        <div className="space-y-1">
+          {rows.map((r) => (
+            <label
+              key={r.id}
+              className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-neutral-800/60"
+            >
+              <input
+                type="checkbox"
+                checked={picked.includes(r.id)}
+                onChange={(e) =>
+                  setPicked((cur) => (e.target.checked ? [...cur, r.id] : cur.filter((x) => x !== r.id)))
+                }
+                className="h-3 w-3 shrink-0 accent-blue-500"
+              />
+              <span className="w-24 shrink-0 truncate text-[11px] text-neutral-300">
+                {CLEANUP_LABELS[r.id] ?? r.id}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[10px] text-neutral-500" title={r.detail}>
+                {r.detail}
+              </span>
+              <span className="w-16 shrink-0 text-right font-mono text-[10px] text-neutral-400">
+                {fmtKb(r.sizeKb)}
+              </span>
+            </label>
+          ))}
+
+          <div className="mt-2 flex items-center justify-between gap-2 border-t border-neutral-800 pt-2">
+            <span className="text-[10px] text-neutral-500">
+              {picked.length} selected · {fmtKb(selectedKb)} reclaimable
+            </span>
+            {confirming ? (
+              <span className="flex items-center gap-1">
+                <button
+                  onClick={() => setConfirming(false)}
+                  className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:bg-neutral-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void clean()}
+                  className="rounded bg-red-600 px-2 py-0.5 text-[10px] text-white cursor-pointer hover:bg-red-500"
+                >
+                  Delete {fmtKb(selectedKb)}
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirming(true)}
+                disabled={!hasWork || busy}
+                className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-300 cursor-pointer hover:bg-neutral-800 disabled:opacity-40"
+              >
+                Clean
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {results.length > 0 && (
+        <div className="mt-2 border-t border-neutral-800 pt-2">
+          <div className="mb-1 flex items-center justify-between text-[10px]">
+            <span className="uppercase tracking-wide text-neutral-500">After cleanup</span>
+            <span className={totalFreed > 0 ? "text-emerald-400" : "text-amber-400"}>
+              {totalFreed > 0 ? `Freed ${fmtKb(totalFreed)}` : "Nothing reclaimed"}
+            </span>
+          </div>
+          <div className="space-y-0.5">
+            {results.map((r) => (
+              <div key={r.id} className="flex items-center gap-2 text-[10px]">
+                <span className="w-24 shrink-0 truncate text-neutral-400">
+                  {CLEANUP_LABELS[r.id] ?? r.id}
+                </span>
+                <span
+                  className={`w-14 shrink-0 text-right font-mono ${
+                    r.reclaimedKb > 0 ? "text-emerald-400" : "text-neutral-600"
+                  }`}
+                >
+                  {r.reclaimedKb > 0 ? `-${fmtKb(r.reclaimedKb)}` : "—"}
+                </span>
+                <span className="w-28 shrink-0 text-right font-mono text-neutral-600">
+                  {fmtKb(r.beforeKb)} → {fmtKb(r.afterKb)}
+                </span>
+                <span
+                  className={`min-w-0 flex-1 truncate ${r.ok ? "text-neutral-500" : "text-amber-400"}`}
+                  title={r.message}
+                >
+                  {r.message}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {msg && (
+        <div className={`mt-2 text-[10px] ${msg.tone === "ok" ? "text-emerald-400" : "text-amber-400"}`}>
+          {msg.text}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function SysMonitor({
   connectionId,
   onClose,
@@ -748,6 +954,11 @@ export default function SysMonitor({
                 </div>
               </Card>
             )}
+
+            <DiskCleanup
+              connectionId={selectedId}
+              onCleaned={() => void load()}
+            />
 
             <Card
               icon={<Activity size={13} />}

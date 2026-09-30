@@ -453,6 +453,7 @@ export default function WindowFrame({
             windowId: id,
             connectionId: win?.metadata?.connectionId,
             initialUrl: win?.metadata?.initialUrl,
+            sshHost: win?.metadata?.sshHost,
           })}
         </div>
 
@@ -581,6 +582,7 @@ export default function WindowFrame({
           windowId: id,
           connectionId: win?.metadata?.connectionId,
           initialUrl: win?.metadata?.initialUrl,
+            sshHost: win?.metadata?.sshHost,
         })}
       </div>
       {/* Visual resize handle for mobile */}

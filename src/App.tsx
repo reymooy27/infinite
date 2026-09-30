@@ -174,6 +174,10 @@ export default function App() {
         if (e.key === "p" || e.key === "P") {
           e.preventDefault();
           setSwitcherOpen((prev) => !prev);
+        } else if (e.key === "o" || e.key === "O") {
+          if (!useSettingsStore.getState().focusMode) return;
+          e.preventDefault();
+          void useProjectStore.getState().toggleLastProject();
         } else if (e.key === "f" || e.key === "F") {
           e.preventDefault();
           useSettingsStore.getState().setFocusMode(!useSettingsStore.getState().focusMode);
