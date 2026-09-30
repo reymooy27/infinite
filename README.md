@@ -83,9 +83,22 @@ CPU% and network rates are true deltas, not cumulative counters.
   process with a graceful **SIGTERM** or a forced **SIGKILL (-9)**.
 - **Listening ports** — every TCP/UDP listener (`ss`, falling back to
   `netstat`) with its owning process; kill a process to free a stuck port.
+- **Disk cleanup** — scan what is reclaimable, then delete only what you tick:
+  the user's freedesktop **Trash**, `/tmp` + `/var/tmp` files **older than 7
+  days**, the **package-manager cache** (`apt`/`dnf`/`yum`/`pacman`, whichever
+  the host has), and **logs** (journal vacuum to 50M plus truncated *rotated*
+  logs — an active `*.log` is never touched). Every row shows its size, the
+  "Clean" button turns into an explicit delete confirmation, and each target
+  then reports **what it actually did** (`4 item(s) removed`, `no Trash
+  directory at …`, apt's own permission error) alongside `before → after` and
+  the freed amount, which is **measured by re-scanning**, not predicted. A
+  target that had nothing to give says so instead of claiming success. Nothing
+  is deleted before you select it.
 
 Open it from the Dock, the Focus Mode monitor toggle, or as a slide-in panel.
 Process/port ownership for other users' sockets requires privileges on the host.
+The package cache and journal entries usually need root, so those two report a
+permission error instead of failing silently.
 
 ### Git view
 

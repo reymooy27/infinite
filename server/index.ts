@@ -37,6 +37,7 @@ import {
   unpauseContainer,
 } from "./lib/docker.js";
 import { getSysStats, killProcess } from "./lib/sysmon.js";
+import { scanDiskCleanup, runDiskCleanup, isCleanupTarget, type CleanupTarget } from "./lib/diskcleanup.js";
 import {
   listProfiles,
   connectVpn,
@@ -556,6 +557,48 @@ app.post("/api/sysmon/:connectionId/kill", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to kill process";
     res.status(500).json({ ok: false, message });
+  }
+});
+
+// Reclaimable space per category. Read-only — nothing here deletes anything.
+app.get("/api/sysmon/:connectionId/disk-cleanup", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  if (!connectionId) {
+    res.status(400).json({ error: "Missing connectionId" });
+    return;
+  }
+  try {
+    const targets = await withConnection(req, connectionId, (connection) => scanDiskCleanup(connection));
+    res.json({ targets });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to scan disk cleanup";
+    logger.error("[DiskCleanup] scan failed", { connectionId, error: message });
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/sysmon/:connectionId/disk-cleanup", async (req, res) => {
+  const connectionId = parseInt(String(req.params.connectionId || "0"), 10);
+  if (!connectionId) {
+    res.status(400).json({ error: "Missing connectionId" });
+    return;
+  }
+  // The body is untrusted: anything that is not a known target id is dropped
+  // rather than passed along, so a caller can only ever *select* a cleanup that
+  // already exists in the command table.
+  const raw = Array.isArray(req.body?.targets) ? req.body.targets : [];
+  const targets = raw.filter(isCleanupTarget) as CleanupTarget[];
+  if (targets.length === 0) {
+    res.status(400).json({ error: "No valid cleanup targets" });
+    return;
+  }
+  try {
+    const result = await withConnection(req, connectionId, (connection) => runDiskCleanup(connection, targets));
+    res.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to run disk cleanup";
+    logger.error("[DiskCleanup] run failed", { connectionId, error: message });
+    res.status(500).json({ error: message });
   }
 });
 
