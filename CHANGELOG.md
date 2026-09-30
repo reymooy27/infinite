@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.6.0](https://github.com/reymooy27/infinite/compare/infinite-v1.5.0...infinite-v1.6.0) (2026-09-30)
+
+
+### Features
+
+* **projects:** quick switch via toggle & tabs ([58ac81b](https://github.com/reymooy27/infinite/commit/58ac81b66c3216c15d7964cb22c805d86ad65810))
+* quick project switch, disk cleanup, mobile & tunnel fixes ([61f02fc](https://github.com/reymooy27/infinite/commit/61f02fc40f83b8891043d563680a79bb5726539d))
+* **sysmon:** disk cleanup with measured reclaim ([8e0f159](https://github.com/reymooy27/infinite/commit/8e0f159c42696562f70b7f0922f91080282bcd9a))
+
+
+### Bug Fixes
+
+* **dev-browser:** render tunneled vite apps ([04291b8](https://github.com/reymooy27/infinite/commit/04291b8f918217d79c2826bd0222d3c85a5254da))
+* **devbrowser:** keep URL-bar focus, prefill SSH host, tunnel its IP ([9a6caf7](https://github.com/reymooy27/infinite/commit/9a6caf7db0f10417a116e62fd482ee57ca629eed))
+* **focus:** fixed-width terminal switcher ([8f46e1f](https://github.com/reymooy27/infinite/commit/8f46e1f21ca31edfb8946ed8bd8d82fe0802e8a4))
+* **focus:** mic drag no longer swipes ([3f2847f](https://github.com/reymooy27/infinite/commit/3f2847f71758d848a51e210d9b25b4d17d1ccd41))
+* **focus:** stop quickbar swipe conflict ([5917e35](https://github.com/reymooy27/infinite/commit/5917e35f3dff0ef9a32ff5a45f13b6802b51c832))
+* **focus:** swipe never opens keyboard ([f6c7383](https://github.com/reymooy27/infinite/commit/f6c7383973f9527159d44d3e6920f579e51ae1ca))
+* **mobile:** native keyboard resize, no iOS focus zoom ([3934c9e](https://github.com/reymooy27/infinite/commit/3934c9e11924d820ee78dd6b2ec36b7c967f7abd))
+* **mobile:** smooth keyboard open/close for terminal ([3e25178](https://github.com/reymooy27/infinite/commit/3e251784a2030e5edaad7cdb6fcbbc22aaa4438f))
+* **projects:** no keyboard pop on project switch ([6a4a30c](https://github.com/reymooy27/infinite/commit/6a4a30ceca51e6a8a2ba0196eb4421bd33487569))
+* share mic button position across all terminals ([324d2ca](https://github.com/reymooy27/infinite/commit/324d2ca7cad6f81cd73d31e03e92fdf858df9411))
+* **ssh:** single-flight tunnels, survive channel errors ([0db2111](https://github.com/reymooy27/infinite/commit/0db21113475d975bb1a233b80f5c48ed42b717a6))
+
 ## [1.5.0](https://github.com/reymooy27/infinite/compare/infinite-v1.4.0...infinite-v1.5.0) (2026-09-24)
 
 
