@@ -60,6 +60,7 @@ import filesRouter from "./routes/files.js";
 import pushRouter from "./routes/push.js";
 import translatorRouter from "./routes/translator.js";
 import voiceRouter from "./routes/voice.js";
+import opencodeRouter from "./routes/opencode.js";
 
 const LOCAL_USER_ID = "local-user";
 
@@ -100,7 +101,7 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests, try again later" },
 });
-const PROXY_CONTENT_PATH = /^\/api\/(dev-browser\/proxy|tunnels)\//;
+const PROXY_CONTENT_PATH = /^\/api\/(dev-browser\/proxy|tunnels|opencode\/[^/]+\/proxy)\//;
 app.use("/api", (req, res, next) =>
   PROXY_CONTENT_PATH.test(req.originalUrl) ? next() : apiLimiter(req, res, next),
 );
@@ -117,6 +118,7 @@ app.use("/api/router-usage", routerUsageRouter);
 app.use("/api/push", pushRouter);
 app.use("/api/translator", translatorRouter);
 app.use("/api/voice", voiceRouter);
+app.use("/api/opencode", opencodeRouter);
 
 function resolveConfiguredPublicServerBaseUrl() {
   const configured =
