@@ -16,6 +16,7 @@ import {
   Mic,
   NotepadText,
   RefreshCw,
+  SquareTerminal,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +29,7 @@ import TerminalNextButton from "@/components/TerminalNextButton";
 import FileTransferWindow from "@/components/FileTransferModal";
 import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
+import OpenCode from "./OpenCode";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
@@ -2055,6 +2057,17 @@ export const registry: Record<AppId, AppDefinition> = {
     }>,
     defaultWidth: 800,
     defaultHeight: 600,
+  },
+  opencode: {
+    id: "opencode",
+    title: "OpenCode",
+    icon: <SquareTerminal />,
+    component: OpenCode as React.ComponentType<{
+      connectionId?: number;
+      windowId?: string;
+    }>,
+    defaultWidth: 720,
+    defaultHeight: 560,
   },
   devBrowser: {
     id: "devBrowser",
