@@ -15,8 +15,8 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
+import OpenCode from "@/apps/OpenCode";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
-import OpenCodePanel from "@/components/OpenCodePanel";
 import FileExplorer from "@/components/FileExplorer";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import ProjectTabs from "@/components/ProjectTabs";
@@ -212,6 +212,10 @@ export default function FocusModeLayout({
   };
 
   const handleNextWindow = () => {
+    if (openCodeOpen) {
+      setOpenCodeOpen(false);
+      return;
+    }
     if (!nextTerminal) return;
     slidePane(1);
     setActiveTerminalTab(nextTerminal.windowId, nextTerminal.tabId);
@@ -220,6 +224,10 @@ export default function FocusModeLayout({
   };
 
   const handlePrevWindow = () => {
+    if (openCodeOpen) {
+      setOpenCodeOpen(false);
+      return;
+    }
     if (!prevTerminal) return;
     slidePane(-1);
     setActiveTerminalTab(prevTerminal.windowId, prevTerminal.tabId);
@@ -288,7 +296,10 @@ export default function FocusModeLayout({
     },
     KeyB: toggleDockerPanel, // docker
     KeyM: toggleSysMonPanel, // system monitor
-    KeyO: () => setOpenCodeOpen((prev) => !prev), // opencode
+    KeyO: () => {
+      if (!activeProjectId) return;
+      setOpenCodeOpen((prev) => !prev);
+    }, // opencode
     KeyK: () => {
       if (!activeWindow) return;
       setPaneRefreshKey((k) => k + 1);
@@ -512,8 +523,9 @@ export default function FocusModeLayout({
 
           <button
             onClick={() => setOpenCodeOpen((prev) => !prev)}
+            disabled={!activeProjectId}
             title="OpenCode (Ctrl+Shift+O)"
-            className={`px-1.5 transition-colors cursor-pointer rounded ${
+            className={`px-1.5 transition-colors cursor-pointer rounded disabled:opacity-30 disabled:cursor-not-allowed ${
               openCodeOpen
                 ? "text-white bg-neutral-800"
                 : "text-neutral-500 hover:text-white hover:bg-neutral-800"
@@ -545,9 +557,11 @@ export default function FocusModeLayout({
               }`}
             >
               <span className="w-32 truncate">
-                {tabs.find((t) => t.id === activeTabId)?.title ??
-                  tabs.find((t) => t.id === activeTabId)?.label ??
-                  "Tab"}
+                {openCodeOpen
+                  ? "OpenCode"
+                  : (tabs.find((t) => t.id === activeTabId)?.title ??
+                    tabs.find((t) => t.id === activeTabId)?.label ??
+                    "Tab")}
               </span>
               <ChevronDown
                 size={11}
@@ -568,6 +582,7 @@ export default function FocusModeLayout({
                         key={win.id}
                         onClick={() => {
                           setFocusModeWindowId(win.id);
+                          setOpenCodeOpen(false);
                           setTabPanelOpen(false);
                         }}
                         className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
@@ -597,6 +612,24 @@ export default function FocusModeLayout({
                       </div>
                     );
                   })}
+                  {activeProjectId && (
+                    <div
+                      onClick={() => {
+                        setOpenCodeOpen(true);
+                        setTabPanelOpen(false);
+                      }}
+                      className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors ${
+                        openCodeOpen
+                          ? "bg-neutral-800 text-white"
+                          : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                      }`}
+                    >
+                      <span className="truncate">OpenCode</span>
+                      <span className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+                        OC
+                      </span>
+                    </div>
+                  )}
                   {sshWindows.length > 0 && tabs.length > 0 && (
                     <div className="border-t border-neutral-800 mt-0.5 pt-2" />
                   )}
@@ -606,6 +639,7 @@ export default function FocusModeLayout({
                       onClick={() => {
                         if (activeWindow)
                           setActiveTerminalTab(activeWindow.id, tab.id);
+                        setOpenCodeOpen(false);
                         setTabPanelOpen(false);
                       }}
                       className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
@@ -706,40 +740,48 @@ export default function FocusModeLayout({
           onTouchStart={handleSwipeStart}
           onTouchEnd={handleSwipeEnd}
         >
-          {activeWindow ? (
-            <>
-              {tabs.map((tab) => (
-                <SSHPane
-                  key={tab.id}
-                  tabId={tab.id}
-                  windowId={activeWindow.id}
-                  connectionId={tab.connectionId ?? connectionId}
-                  isActive={tab.id === activeTabId}
-                  hasNavigated={tab.hasNavigated}
-                  keyboardHeight={keyboardHeight}
-                  refreshNonce={paneRefreshKey}
-                  isModalOpen={gitPanelOpen || fileExplorerOpen}
-                  enableTouchScroll
-                />
-              ))}
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-neutral-600">
-              <Terminal size={48} strokeWidth={1} />
-              <div className="text-center">
-                <p className="text-sm text-neutral-400 mb-1">
-                  No terminal open
-                </p>
-                <p className="text-xs text-neutral-600 mb-4">
-                  Add an SSH connection to get started
-                </p>
-                <button
-                  onClick={() => onOpenSection("ssh")}
-                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs rounded-lg transition-colors cursor-pointer"
-                >
-                  Open SSH Manager
-                </button>
+          {/* Hide, don't unmount: SSHPane keeps its xterm buffer + WS alive while OpenCode shows. */}
+          <div className={openCodeOpen && activeProjectId ? "hidden" : "contents"}>
+            {activeWindow ? (
+              <>
+                {tabs.map((tab) => (
+                  <SSHPane
+                    key={tab.id}
+                    tabId={tab.id}
+                    windowId={activeWindow.id}
+                    connectionId={tab.connectionId ?? connectionId}
+                    isActive={tab.id === activeTabId}
+                    hasNavigated={tab.hasNavigated}
+                    keyboardHeight={keyboardHeight}
+                    refreshNonce={paneRefreshKey}
+                    isModalOpen={gitPanelOpen || fileExplorerOpen}
+                    enableTouchScroll
+                  />
+                ))}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-neutral-600">
+                <Terminal size={48} strokeWidth={1} />
+                <div className="text-center">
+                  <p className="text-sm text-neutral-400 mb-1">
+                    No terminal open
+                  </p>
+                  <p className="text-xs text-neutral-600 mb-4">
+                    Add an SSH connection to get started
+                  </p>
+                  <button
+                    onClick={() => onOpenSection("ssh")}
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs rounded-lg transition-colors cursor-pointer"
+                  >
+                    Open SSH Manager
+                  </button>
+                </div>
               </div>
+            )}
+          </div>
+          {openCodeOpen && activeProjectId && (
+            <div className="absolute inset-0 z-40 bg-neutral-950">
+              <OpenCode fixedProjectId={activeProjectId} autoStart />
             </div>
           )}
           {activeWindow && (
@@ -796,7 +838,6 @@ export default function FocusModeLayout({
             }}
           />
         </div>
-        <OpenCodePanel open={openCodeOpen} onClose={() => setOpenCodeOpen(false)} />
       </div>
     </div>
   );

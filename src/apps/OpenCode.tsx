@@ -159,7 +159,14 @@ function ToolPartView({ part }: { part: OcPart }) {
   );
 }
 
-export default function OpenCode(_props: { windowId?: string }) {
+export default function OpenCode({
+  fixedProjectId,
+  autoStart,
+}: {
+  windowId?: string;
+  fixedProjectId?: string;
+  autoStart?: boolean;
+}) {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -175,6 +182,8 @@ export default function OpenCode(_props: { windowId?: string }) {
   const [input, setInput] = useState("");
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
+  const projectIdRef = useRef<string | null>(null);
+  projectIdRef.current = projectId;
   const activeSessionIdRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
@@ -186,6 +195,28 @@ export default function OpenCode(_props: { windowId?: string }) {
   const track = useCallback((ctrl: AbortController) => {
     controllersRef.current.add(ctrl);
     return ctrl;
+  }, []);
+
+  const startServer = useCallback(async () => {
+    setStarting(true);
+    setError(null);
+    try {
+      await ocReq(`/api/opencode/${encodeURIComponent(projectIdRef.current ?? "")}/start`, {
+        method: "POST",
+      });
+      setRunning(true);
+      return true;
+    } catch (err) {
+      const e = err as Error & { status?: number };
+      if (e.status === 409) {
+        setRunning(true);
+        return true;
+      }
+      setError(e.message || "Failed to start");
+      return false;
+    } finally {
+      setStarting(false);
+    }
   }, []);
 
   const fetchSessions = useCallback(
@@ -282,6 +313,42 @@ export default function OpenCode(_props: { windowId?: string }) {
     if (!projectId || !running || !activeSessionId) return;
     void fetchMessages(projectId, activeSessionId);
   }, [projectId, running, activeSessionId, fetchMessages]);
+
+  // Fixed-project mode (focus mode): the panel follows the active project,
+  // no selector, and starts opencode serve by itself.
+  const lastFixedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!fixedProjectId || lastFixedRef.current === fixedProjectId) return;
+    lastFixedRef.current = fixedProjectId;
+    setProjectId(fixedProjectId);
+    setActiveSessionId(null);
+    activeSessionIdRef.current = null;
+    autoSelectedRef.current = false;
+    setMessages([]);
+    setSessions([]);
+    setPermission(null);
+  }, [fixedProjectId]);
+
+  const autoStartedRef = useRef<string | null>(null);
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (!autoStart || !projectId || autoStartedRef.current === projectId) return;
+    autoStartedRef.current = projectId;
+    if (running) return;
+    void (async () => {
+      if (await startServer()) {
+        const data = await fetchSessions(projectId);
+        if (data.length === 0) void newSession();
+      }
+    })();
+  }, [autoStart, projectId, running, startServer, fetchSessions]);
+
+  useEffect(() => {
+    if (!autoStart || autoSelectedRef.current) return;
+    if (!running || !projectId || sessions.length === 0) return;
+    autoSelectedRef.current = true;
+    selectSession(sessions[0].id);
+  }, [autoStart, running, projectId, sessions]);
 
   // SSE: refetch on part updates (debounced), idle, and permission prompts.
   // Reconnects with a fixed 3s backoff; closed on unmount / project change.
@@ -402,19 +469,9 @@ export default function OpenCode(_props: { windowId?: string }) {
       setPermission(null);
       return;
     }
-    setStarting(true);
-    setError(null);
-    try {
-      await ocReq(`/api/opencode/${encodeURIComponent(projectId)}/start`, {
-        method: "POST",
-      });
-      setRunning(true);
+    if (await startServer()) {
       const data = await fetchSessions(projectId);
       if (data.length > 0) selectSession(data[0].id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start");
-    } finally {
-      setStarting(false);
     }
   };
 
@@ -517,27 +574,33 @@ export default function OpenCode(_props: { windowId?: string }) {
 
   return (
     <div className="w-full h-full flex flex-col bg-neutral-950 text-neutral-100">
-      {/* Top bar: project picker + power */}
+      {/* Top bar: project name (fixed) or picker + power */}
       <div className="flex items-center gap-2 p-2 border-b border-neutral-700 shrink-0">
-        <select
-          className="flex-1 bg-neutral-800 text-sm px-2 py-1 rounded border border-neutral-600 outline-none cursor-pointer"
-          value={projectId ?? ""}
-          onChange={(e) => {
-            setProjectId(e.target.value || null);
-            setActiveSessionId(null);
-            activeSessionIdRef.current = null;
-            setMessages([]);
-            setSessions([]);
-            setPermission(null);
-          }}
-        >
-          {projects.length === 0 && <option value="">No projects</option>}
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        {fixedProjectId ? (
+          <span className="flex-1 text-sm px-2 py-1 truncate text-neutral-200">
+            {projects.find((p) => p.id === fixedProjectId)?.name ?? "OpenCode"}
+          </span>
+        ) : (
+          <select
+            className="flex-1 bg-neutral-800 text-sm px-2 py-1 rounded border border-neutral-600 outline-none cursor-pointer"
+            value={projectId ?? ""}
+            onChange={(e) => {
+              setProjectId(e.target.value || null);
+              setActiveSessionId(null);
+              activeSessionIdRef.current = null;
+              setMessages([]);
+              setSessions([]);
+              setPermission(null);
+            }}
+          >
+            {projects.length === 0 && <option value="">No projects</option>}
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
         <span
           className={`w-2 h-2 rounded-full shrink-0 ${running ? "bg-green-500" : "bg-neutral-600"}`}
           title={running ? "Running" : "Stopped"}

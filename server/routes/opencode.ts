@@ -8,7 +8,7 @@ import { logger } from "../lib/logger.js";
 const LOCAL_USER_ID = "local-user";
 const PORT_RANGE_START = 4791;
 const PORT_RANGE_END = 4891;
-const READY_TIMEOUT_MS = 30_000;
+const READY_TIMEOUT_MS = 60_000;
 const KILL_GRACE_MS = 5_000;
 
 interface Managed {
@@ -44,10 +44,15 @@ async function findFreePort(): Promise<number | null> {
   return null;
 }
 
-async function waitUntilReady(proc: ChildProcess, port: number, timeoutMs: number): Promise<boolean> {
+async function waitUntilReady(
+  proc: ChildProcess,
+  port: number,
+  timeoutMs: number,
+  isDead: () => boolean,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    if (proc.exitCode !== null) return false;
+    if (proc.exitCode !== null || isDead()) return false;
     try {
       const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1200) });
       void res.body?.cancel();
@@ -115,15 +120,31 @@ router.post("/:projectId/start", async (req, res) => {
 
     const proc = spawn("opencode", ["serve", "--port", String(port), "--hostname", "127.0.0.1"], {
       cwd: project.directory,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    // stdio piped (not "ignore") so spawn ENOENT + crash output reach the 502 body.
+    let spawnError: string | null = null;
+    let outputTail = "";
+    const absorb = (chunk: Buffer) => {
+      outputTail = (outputTail + String(chunk)).slice(-500);
+    };
+    proc.stdout?.on("data", absorb);
+    proc.stderr?.on("data", absorb);
+    proc.on("error", (err) => {
+      spawnError = err.message;
     });
     proc.on("exit", () => managed.delete(project.id));
 
-    const ready = await waitUntilReady(proc, port, READY_TIMEOUT_MS);
+    const ready = await waitUntilReady(proc, port, READY_TIMEOUT_MS, () => spawnError !== null);
     if (!ready) {
       proc.kill("SIGKILL");
-      logger.error("[OpenCode] serve did not become ready", { projectId: project.id, port });
-      res.status(502).json({ error: "opencode serve did not become ready in time" });
+      const detail = spawnError
+        ? `failed to launch "opencode serve": ${spawnError}`
+        : outputTail
+          ? `no healthy response in time; last output: ${outputTail.trim()}`
+          : "opencode serve did not become ready in time";
+      logger.error("[OpenCode] start failed", { projectId: project.id, port, detail });
+      res.status(502).json({ error: detail });
       return;
     }
 
