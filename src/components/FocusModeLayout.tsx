@@ -12,9 +12,11 @@ import {
   Boxes,
   Activity,
   FileCode2,
+  SquareTerminal,
 } from "lucide-react";
 import { SSHPane } from "@/apps/registry";
 import FocusModeGitPanel from "@/components/FocusModeGitPanel";
+import OpenCodePanel from "@/components/OpenCodePanel";
 import FileExplorer from "@/components/FileExplorer";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import ProjectTabs from "@/components/ProjectTabs";
@@ -83,6 +85,7 @@ export default function FocusModeLayout({
   const [fileExplorerOpen, setFileExplorerOpen] = useState(false);
   const [initialFilePath, setInitialFilePath] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [openCodeOpen, setOpenCodeOpen] = useState(false);
   const keyboardTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyboardRafRef = useRef<number | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -285,6 +288,7 @@ export default function FocusModeLayout({
     },
     KeyB: toggleDockerPanel, // docker
     KeyM: toggleSysMonPanel, // system monitor
+    KeyO: () => setOpenCodeOpen((prev) => !prev), // opencode
     KeyK: () => {
       if (!activeWindow) return;
       setPaneRefreshKey((k) => k + 1);
@@ -504,6 +508,18 @@ export default function FocusModeLayout({
             }`}
           >
             <Activity size={14} />
+          </button>
+
+          <button
+            onClick={() => setOpenCodeOpen((prev) => !prev)}
+            title="OpenCode (Ctrl+Shift+O)"
+            className={`px-1.5 transition-colors cursor-pointer rounded ${
+              openCodeOpen
+                ? "text-white bg-neutral-800"
+                : "text-neutral-500 hover:text-white hover:bg-neutral-800"
+            }`}
+          >
+            <SquareTerminal size={14} />
           </button>
 
           <button
@@ -780,6 +796,7 @@ export default function FocusModeLayout({
             }}
           />
         </div>
+        <OpenCodePanel open={openCodeOpen} onClose={() => setOpenCodeOpen(false)} />
       </div>
     </div>
   );
