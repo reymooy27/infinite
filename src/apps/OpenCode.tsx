@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -24,6 +24,13 @@ interface OcSession {
   title?: string;
   cost?: number;
   time?: { created?: number; updated?: number };
+}
+
+interface OcCommand {
+  name: string;
+  description?: string;
+  source?: string;
+  hints?: string[];
 }
 
 interface OcToolState {
@@ -180,6 +187,9 @@ export default function OpenCode({
   const [permission, setPermission] = useState<OcPermission | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [commands, setCommands] = useState<OcCommand[]>([]);
+  const [dismissed, setDismissed] = useState(false);
+  const [cmdIdx, setCmdIdx] = useState(0);
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const projectIdRef = useRef<string | null>(null);
@@ -307,6 +317,21 @@ export default function OpenCode({
     if (!projectId || !running) return;
     void fetchSessions(projectId);
   }, [projectId, running, fetchSessions]);
+
+  // Load slash commands whenever the server is up; failure = no dropdown.
+  useEffect(() => {
+    if (!projectId || !running) {
+      setCommands([]);
+      return;
+    }
+    const ctrl = track(new AbortController());
+    ocReq<OcCommand[]>(`/api/opencode/${encodeURIComponent(projectId)}/proxy/command`, {
+      signal: ctrl.signal,
+    })
+      .then((d) => setCommands(Array.isArray(d) ? d : []))
+      .catch(() => setCommands([]))
+      .finally(() => controllersRef.current.delete(ctrl));
+  }, [projectId, running, track]);
 
   // Load history whenever the active session changes.
   useEffect(() => {
@@ -447,6 +472,27 @@ export default function OpenCode({
     if (projectId) void fetchMessages(projectId, id);
   };
 
+  const slashQuery = /^\/(\S*)$/.exec(input)?.[1];
+  const cmdList = useMemo(() => {
+    if (slashQuery === undefined || dismissed) return [];
+    const q = slashQuery.toLowerCase();
+    return commands
+      .filter((c) => c.name.toLowerCase().includes(q))
+      .sort((a, b) =>
+        a.name.toLowerCase().startsWith(q) === b.name.toLowerCase().startsWith(q)
+          ? a.name.localeCompare(b.name)
+          : a.name.toLowerCase().startsWith(q)
+            ? -1
+            : 1,
+      );
+  }, [slashQuery, dismissed, commands]);
+
+  const applyCommand = (c: OcCommand) => {
+    setInput(`/${c.name} `);
+    setCmdIdx(0);
+    taRef.current?.focus();
+  };
+
   const togglePower = async () => {
     if (!projectId) return;
     if (running) {
@@ -495,6 +541,8 @@ export default function OpenCode({
   const send = async () => {
     const text = input.trim();
     if (!text || !projectId || !activeSessionId || sending) return;
+    const slash = /^\/([A-Za-z0-9][\w.:-]*)(?:\s+([\s\S]*))?$/.exec(text);
+    const cmd = slash ? commands.find((c) => c.name === slash[1]) : undefined;
     setInput("");
     setError(null);
     setSending(true);
@@ -507,15 +555,26 @@ export default function OpenCode({
     setMessages((prev) => [...prev, optimistic]);
     const ctrl = track(new AbortController());
     try {
-      const res = await ocReq<OcMessageEntry>(
-        `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/message`,
-        {
-          method: "POST",
-          body: JSON.stringify({ parts: [{ type: "text", text }] }),
-          signal: ctrl.signal,
-        },
-      );
-      setMessages((prev) => [...prev.filter((m) => m.info.id !== optimisticId), res]);
+      if (cmd) {
+        await ocReq(
+          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/command`,
+          {
+            method: "POST",
+            body: JSON.stringify({ command: cmd.name, arguments: slash?.[2]?.trim() ?? "" }),
+            signal: ctrl.signal,
+          },
+        );
+      } else {
+        const res = await ocReq<OcMessageEntry>(
+          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/message`,
+          {
+            method: "POST",
+            body: JSON.stringify({ parts: [{ type: "text", text }] }),
+            signal: ctrl.signal,
+          },
+        );
+        setMessages((prev) => [...prev.filter((m) => m.info.id !== optimisticId), res]);
+      }
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
       setError(err instanceof Error ? err.message : "Failed to send");
@@ -566,6 +625,28 @@ export default function OpenCode({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (cmdList.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setCmdIdx((i) => (i + 1) % cmdList.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setCmdIdx((i) => (i - 1 + cmdList.length) % cmdList.length);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        applyCommand(cmdList[Math.min(cmdIdx, cmdList.length - 1)]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setDismissed(true);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -745,15 +826,46 @@ export default function OpenCode({
             {error && (
               <div className="text-xs text-red-400 px-1 pb-1.5">{error}</div>
             )}
-            <div className="flex items-end gap-2">
+            <div className="relative flex items-end gap-2">
+              {cmdList.length > 0 && (
+                <div className="absolute bottom-full left-0 mb-2 w-96 max-w-full max-h-60 overflow-y-auto rounded border border-neutral-600 bg-neutral-900 shadow-xl z-10">
+                  {cmdList.map((c, i) => (
+                    <button
+                      key={c.name}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyCommand(c);
+                      }}
+                      className={`flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left cursor-pointer ${
+                        i === Math.min(cmdIdx, cmdList.length - 1)
+                          ? "bg-neutral-700"
+                          : "hover:bg-neutral-800"
+                      }`}
+                    >
+                      <span className="font-mono text-sm text-neutral-100 shrink-0">
+                        /{c.name}
+                      </span>
+                      {c.description && (
+                        <span className="text-xs text-neutral-500 truncate">
+                          {c.description}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
               <textarea
                 ref={taRef}
                 rows={1}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setDismissed(false);
+                  setCmdIdx(0);
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  running ? "Message…  (Enter to send)" : "Start the server to chat…"
+                  running ? "Message…  (/ for commands, Enter to send)" : "Start the server to chat…"
                 }
                 disabled={!running || sending}
                 className="flex-1 resize-none bg-neutral-800 border border-neutral-600 rounded px-2.5 py-2 text-sm text-neutral-100 outline-none placeholder-neutral-500 disabled:opacity-50"
