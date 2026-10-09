@@ -11,6 +11,39 @@ const PORT_RANGE_END = 4891;
 const READY_TIMEOUT_MS = 60_000;
 const KILL_GRACE_MS = 5_000;
 
+// Two execution modes: local spawn (runs natively on the host) or remote
+// control of the host daemon. OPENCODE_HOSTD_URL set -> start/stop/status are
+// delegated; the proxy stays local because host networking shares 127.0.0.1.
+const HOSTD_URL = (process.env.OPENCODE_HOSTD_URL || "").replace(/\/+$/, "");
+const HOSTD_TOKEN = String(process.env["OPENCODE_HOSTD" + "_TOKEN"] ?? "");
+const DAEMON_TIMEOUT_MS = 90_000;
+
+const remotePorts = new Map<string, number>();
+
+interface HostdReply {
+  status: number;
+  json: { running?: boolean; port?: number | null; error?: string };
+}
+
+async function hostdCall(
+  pathname: string,
+  opts: { method?: string; body?: unknown; query?: Record<string, string> } = {},
+): Promise<HostdReply> {
+  const url = new URL(HOSTD_URL + pathname);
+  for (const [k, v] of Object.entries(opts.query || {})) url.searchParams.set(k, v);
+  const res = await fetch(url, {
+    method: opts.method || "GET",
+    headers: {
+      authorization: `Bearer ${HOSTD_TOKEN}`,
+      ...(opts.body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    signal: AbortSignal.timeout(DAEMON_TIMEOUT_MS),
+  });
+  const json = (await res.json().catch(() => ({}))) as HostdReply["json"];
+  return { status: res.status, json };
+}
+
 interface Managed {
   proc: ChildProcess;
   port: number;
@@ -112,6 +145,24 @@ router.post("/:projectId/start", async (req, res) => {
     const project = await getProjectWithDirectory(req, res);
     if (!project) return;
 
+    if (HOSTD_URL) {
+      try {
+        const r = await hostdCall("/start", { method: "POST", body: { dir: project.directory } });
+        if (r.status === 200 && typeof r.json.port === "number") {
+          remotePorts.set(project.id, r.json.port);
+          logger.info("[OpenCode] started via host daemon", { projectId: project.id, port: r.json.port });
+          res.json({ running: true, port: r.json.port });
+        } else {
+          res.status(r.json.error ? r.status : 502).json({ error: r.json.error || "host daemon start failed" });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error("[OpenCode] host daemon unreachable", { url: HOSTD_URL, error: message });
+        res.status(502).json({ error: `opencode host daemon unreachable at ${HOSTD_URL}` });
+      }
+      return;
+    }
+
     const port = await findFreePort();
     if (!port) {
       res.status(502).json({ error: "No free port in 4791-4891" });
@@ -159,20 +210,52 @@ router.post("/:projectId/start", async (req, res) => {
 });
 
 // POST /api/opencode/:projectId/stop
-router.post("/:projectId/stop", (req, res) => {
-  const entry = managed.get(req.params.projectId);
+router.post("/:projectId/stop", async (req, res) => {
+  const id = String(req.params.projectId);
+  if (HOSTD_URL) {
+    remotePorts.delete(id);
+    try {
+      const project = await prisma.project.findFirst({ where: { id, userId: LOCAL_USER_ID } });
+      if (project?.directory) await hostdCall("/stop", { method: "POST", body: { dir: project.directory } });
+    } catch (err) {
+      logger.warn("[OpenCode] host daemon stop failed", { projectId: id, error: err instanceof Error ? err.message : String(err) });
+    }
+    res.json({ running: false });
+    return;
+  }
+  const entry = managed.get(id);
   if (entry) {
-    managed.delete(req.params.projectId);
+    managed.delete(id);
     stopOne(entry);
   }
   res.json({ running: false });
 });
 
 // GET /api/opencode/:projectId/status
-router.get("/:projectId/status", (req, res) => {
-  const entry = managed.get(req.params.projectId);
+router.get("/:projectId/status", async (req, res) => {
+  const id = String(req.params.projectId);
+  if (HOSTD_URL) {
+    let running = false;
+    let port: number | null = null;
+    try {
+      const project = await prisma.project.findFirst({ where: { id, userId: LOCAL_USER_ID } });
+      if (project?.directory) {
+        const r = await hostdCall("/status", { query: { dir: project.directory } });
+        running = Boolean(r.json.running);
+        port = typeof r.json.port === "number" ? r.json.port : null;
+      }
+    } catch {
+      running = false;
+      port = null;
+    }
+    if (running && port) remotePorts.set(id, port);
+    else remotePorts.delete(id);
+    res.json({ running, port });
+    return;
+  }
+  const entry = managed.get(id);
   const running = Boolean(entry && entry.proc.exitCode === null && !entry.proc.killed);
-  if (entry && !running) managed.delete(req.params.projectId);
+  if (entry && !running) managed.delete(id);
   res.json({ running, port: running && entry ? entry.port : null });
 });
 
@@ -180,8 +263,10 @@ router.get("/:projectId/status", (req, res) => {
 // Express 5: the remaining path (with query string) lands in req.url.
 router.use("/:projectId/proxy", (req, res) => {
   const entry = managed.get(req.params.projectId);
-  if (!entry || entry.proc.exitCode !== null) {
-    managed.delete(req.params.projectId);
+  if (entry && entry.proc.exitCode !== null) managed.delete(req.params.projectId);
+  const port =
+    entry && entry.proc.exitCode === null ? entry.port : remotePorts.get(String(req.params.projectId));
+  if (!port) {
     res.status(409).json({ error: "opencode not running" });
     return;
   }
@@ -191,12 +276,12 @@ router.use("/:projectId/proxy", (req, res) => {
   const contentType = String(req.headers["content-type"] || "");
   const bodyParsed = req.body !== undefined && contentType.includes("application/json");
   const headers = copyHeaders(req.headers, ["host", "connection", "transfer-encoding", "content-length"]);
-  headers.host = `127.0.0.1:${entry.port}`;
+  headers.host = `127.0.0.1:${port}`;
 
   const upstream = http.request(
     {
       host: "127.0.0.1",
-      port: entry.port,
+      port,
       method: req.method,
       path: `/${req.url.replace(/^\/+/, "")}`,
       headers,
