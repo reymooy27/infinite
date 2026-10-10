@@ -780,8 +780,14 @@ export default function FocusModeLayout({
               </div>
             )}
           </div>
-          {openCodeOpen && activeProjectId && (
-            <div className="fixed inset-0 z-[10050] flex justify-end">
+          {activeProjectId && (
+            <div
+              className={
+                openCodeOpen
+                  ? "fixed inset-0 z-[10050] flex justify-end"
+                  : "hidden"
+              }
+            >
               <div
                 className="absolute inset-0 bg-black/55 backdrop-blur-sm"
                 onClick={() => setOpenCodeOpen(false)}
