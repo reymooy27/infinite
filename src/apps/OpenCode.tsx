@@ -33,6 +33,18 @@ interface OcCommand {
   hints?: string[];
 }
 
+interface OcModel {
+  providerID: string;
+  modelID: string;
+  label: string;
+  name?: string;
+}
+
+const MODEL_HINT: OcCommand = {
+  name: "model",
+  description: "Switch model: /model <provider/model>",
+};
+
 interface OcToolState {
   status: "pending" | "running" | "completed" | "error";
   input?: unknown;
@@ -188,6 +200,9 @@ export default function OpenCode({
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [commands, setCommands] = useState<OcCommand[]>([]);
+  const [models, setModels] = useState<OcModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<OcModel | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [cmdIdx, setCmdIdx] = useState(0);
 
@@ -318,10 +333,11 @@ export default function OpenCode({
     void fetchSessions(projectId);
   }, [projectId, running, fetchSessions]);
 
-  // Load slash commands whenever the server is up; failure = no dropdown.
+  // Load slash commands + model catalog whenever the server is up.
   useEffect(() => {
     if (!projectId || !running) {
       setCommands([]);
+      setModels([]);
       return;
     }
     const ctrl = track(new AbortController());
@@ -331,6 +347,22 @@ export default function OpenCode({
       .then((d) => setCommands(Array.isArray(d) ? d : []))
       .catch(() => setCommands([]))
       .finally(() => controllersRef.current.delete(ctrl));
+    const ctrl2 = track(new AbortController());
+    ocReq<{ all?: { id: string; models?: Record<string, { name?: string }> }[] }>(
+      `/api/opencode/${encodeURIComponent(projectId)}/proxy/provider`,
+      { signal: ctrl2.signal },
+    )
+      .then((j) => {
+        const list: OcModel[] = [];
+        for (const p of j.all ?? []) {
+          for (const [mid, mm] of Object.entries(p.models ?? {})) {
+            list.push({ providerID: p.id, modelID: mid, label: `${p.id}/${mid}`, name: mm?.name });
+          }
+        }
+        setModels(list);
+      })
+      .catch(() => setModels([]))
+      .finally(() => controllersRef.current.delete(ctrl2));
   }, [projectId, running, track]);
 
   // Load history whenever the active session changes.
@@ -473,10 +505,20 @@ export default function OpenCode({
   };
 
   const slashQuery = /^\/(\S*)$/.exec(input)?.[1];
-  const cmdList = useMemo(() => {
-    if (slashQuery === undefined || dismissed) return [];
+  const modelQuery = /^\/model\s+(\S*)$/.exec(input)?.[1];
+  const cmdList = useMemo<OcCommand[]>(() => {
+    if (dismissed) return [];
+    if (modelQuery !== undefined) {
+      const q = modelQuery.toLowerCase();
+      return models
+        .filter((m) => m.label.toLowerCase().includes(q))
+        .slice(0, 30)
+        .map((m) => ({ name: `model ${m.label}`, description: m.name }));
+    }
+    if (slashQuery === undefined) return [];
     const q = slashQuery.toLowerCase();
-    return commands
+    const pool = commands.some((c) => c.name === "model") ? commands : [...commands, MODEL_HINT];
+    return pool
       .filter((c) => c.name.toLowerCase().includes(q))
       .sort((a, b) =>
         a.name.toLowerCase().startsWith(q) === b.name.toLowerCase().startsWith(q)
@@ -485,7 +527,7 @@ export default function OpenCode({
             ? -1
             : 1,
       );
-  }, [slashQuery, dismissed, commands]);
+  }, [slashQuery, modelQuery, dismissed, commands, models]);
 
   const applyCommand = (c: OcCommand) => {
     setInput(`/${c.name} `);
@@ -541,10 +583,36 @@ export default function OpenCode({
   const send = async () => {
     const text = input.trim();
     if (!text || !projectId || !activeSessionId || sending) return;
+    const mc = /^\/model(?:\s+(\S*))?$/.exec(text);
+    if (mc) {
+      setInput("");
+      const arg = (mc[1] ?? "").toLowerCase();
+      if (!arg) {
+        setNotice(
+          selectedModel
+            ? `Model: ${selectedModel.label} — change with /model <provider/model>`
+            : models.length > 0
+              ? `Using default model. Type /model <provider/model> — ${models.length} models available.`
+              : "No models loaded.",
+        );
+        return;
+      }
+      const exact = models.find((m) => m.label.toLowerCase() === arg);
+      const hits = exact ? [exact] : models.filter((m) => m.label.toLowerCase().includes(arg));
+      if (hits.length === 0) setNotice(`No model matches "${mc[1]}"`);
+      else if (exact || hits.length === 1) {
+        setSelectedModel(hits[0]);
+        setNotice(`Model → ${hits[0].label}`);
+      } else {
+        setNotice(`${hits.length} matches: ${hits.slice(0, 8).map((m) => m.label).join(", ")}`);
+      }
+      return;
+    }
     const slash = /^\/([A-Za-z0-9][\w.:-]*)(?:\s+([\s\S]*))?$/.exec(text);
     const cmd = slash ? commands.find((c) => c.name === slash[1]) : undefined;
     setInput("");
     setError(null);
+    setNotice(null);
     setSending(true);
     stickRef.current = true;
     const optimisticId = `optimistic-${Date.now()}`;
@@ -569,7 +637,12 @@ export default function OpenCode({
           `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/message`,
           {
             method: "POST",
-            body: JSON.stringify({ parts: [{ type: "text", text }] }),
+            body: JSON.stringify({
+              parts: [{ type: "text", text }],
+              ...(selectedModel
+                ? { model: { providerID: selectedModel.providerID, modelID: selectedModel.modelID } }
+                : {}),
+            }),
             signal: ctrl.signal,
           },
         );
@@ -686,6 +759,15 @@ export default function OpenCode({
           className={`w-2 h-2 rounded-full shrink-0 ${running ? "bg-green-500" : "bg-neutral-600"}`}
           title={running ? "Running" : "Stopped"}
         />
+        {selectedModel && (
+          <button
+            onClick={() => setSelectedModel(null)}
+            className="max-w-40 truncate text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-600 text-neutral-300 hover:text-white cursor-pointer"
+            title="Clear model override"
+          >
+            {selectedModel.label} ✕
+          </button>
+        )}
         <button
           onClick={() => void togglePower()}
           disabled={starting || !projectId}
@@ -703,6 +785,30 @@ export default function OpenCode({
           )}
         </button>
       </div>
+
+      {running && (
+        <div className="sm:hidden flex items-center gap-1.5 px-2 py-1.5 border-b border-neutral-700 shrink-0">
+          <select
+            value={activeSessionId ?? ""}
+            onChange={(e) => e.target.value && selectSession(e.target.value)}
+            className="flex-1 min-w-0 bg-neutral-800 text-xs px-2 py-1.5 rounded border border-neutral-600 outline-none cursor-pointer"
+          >
+            {sessions.length === 0 && <option value="">No sessions</option>}
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title || "Untitled"}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => void newSession()}
+            className="w-8 h-8 flex items-center justify-center rounded bg-neutral-800 border border-neutral-600 text-neutral-200 hover:bg-neutral-700 cursor-pointer shrink-0"
+            title="New session"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 flex">
         {/* Session list */}
@@ -823,6 +929,9 @@ export default function OpenCode({
           )}
 
           <div className="border-t border-neutral-700 p-2 shrink-0">
+            {notice && !error && (
+              <div className="text-xs text-neutral-400 px-1 pb-1.5">{notice}</div>
+            )}
             {error && (
               <div className="text-xs text-red-400 px-1 pb-1.5">{error}</div>
             )}
