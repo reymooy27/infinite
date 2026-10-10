@@ -242,7 +242,8 @@ export default function FocusModeLayout({
     sysMonOpen ||
     codeEditorOpen ||
     tabPanelOpen ||
-    settingsOpen;
+    settingsOpen ||
+    openCodeOpen;
 
   const handleSwipeStart = (e: React.TouchEvent) => {
     const t = e.touches[0];

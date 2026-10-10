@@ -10,6 +10,7 @@ import {
   Power,
   Send,
   Square,
+  X,
 } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
 import { useProjectStore } from "@/stores/useProjectStore";
@@ -181,10 +182,12 @@ function ToolPartView({ part }: { part: OcPart }) {
 export default function OpenCode({
   fixedProjectId,
   autoStart,
+  onClose,
 }: {
   windowId?: string;
   fixedProjectId?: string;
   autoStart?: boolean;
+  onClose?: () => void;
 }) {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
@@ -784,6 +787,15 @@ export default function OpenCode({
             <Power size={16} />
           )}
         </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="w-10 h-10 flex items-center justify-center rounded text-neutral-400 hover:bg-neutral-600 hover:text-white cursor-pointer shrink-0"
+            title="Close"
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       {running && (
