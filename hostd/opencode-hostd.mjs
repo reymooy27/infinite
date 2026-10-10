@@ -158,7 +158,7 @@ function killEntry(entry) {
 
 async function isLive(entry) {
   if (entry.proc) return entry.proc.exitCode === null;
-  return alive(entry.pid) && (await health(entry.port, 600));
+  return alive(entry.pid) && (await health(entry.port, 2000));
 }
 
 async function beginStart(dir) {

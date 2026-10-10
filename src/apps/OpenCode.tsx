@@ -28,6 +28,7 @@ interface OcSession {
   title?: string;
   cost?: number;
   time?: { created?: number; updated?: number };
+  model?: { id?: string; providerID?: string };
 }
 
 interface OcCommand {
@@ -111,10 +112,12 @@ function relTime(ts?: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function PartView({ part }: { part: OcPart }) {
+function PartView({ part, isUser = false }: { part: OcPart; isUser?: boolean }) {
   if (part.type === "text") {
     return (
-      <div className="markdown-body text-sm leading-relaxed text-neutral-200">
+      <div
+        className={`markdown-body text-sm leading-relaxed ${isUser ? "text-[#FFC799]" : "text-neutral-200"}`}
+      >
         <Markdown remarkPlugins={[remarkGfm]}>{part.text ?? ""}</Markdown>
       </div>
     );
@@ -333,7 +336,7 @@ export default function OpenCode({
           if (st.running) {
             falseStreakRef.current = 0;
             setRunning(true);
-          } else if (++falseStreakRef.current >= 2) {
+          } else if (++falseStreakRef.current >= 3) {
             setRunning(false);
           }
         }
@@ -372,13 +375,17 @@ export default function OpenCode({
       .catch(() => setCommands([]))
       .finally(() => controllersRef.current.delete(ctrl));
     const ctrl2 = track(new AbortController());
-    ocReq<{ all?: { id: string; models?: Record<string, { name?: string }> }[] }>(
+    ocReq<{ all?: { id: string; models?: Record<string, { name?: string }> }[]; connected?: string[] }>(
       `/api/opencode/${encodeURIComponent(projectId)}/proxy/provider`,
       { signal: ctrl2.signal },
     )
       .then((j) => {
+        // Only providers opencode actually has credentials for — "all" is the
+        // full models.dev catalog, not what this opencode install can use.
+        const connected = new Set(j.connected ?? []);
         const list: OcModel[] = [];
         for (const p of j.all ?? []) {
+          if (!connected.has(p.id)) continue;
           for (const [mid, mm] of Object.entries(p.models ?? {})) {
             list.push({ providerID: p.id, modelID: mid, label: `${p.id}/${mid}`, name: mm?.name });
           }
@@ -428,7 +435,7 @@ export default function OpenCode({
     if (!autoStart || autoSelectedRef.current) return;
     if (!running || !projectId || sessions.length === 0) return;
     autoSelectedRef.current = true;
-    selectSession(sessions[0].id);
+    selectSession(sessions[0]);
   }, [autoStart, running, projectId, sessions]);
 
   // SSE: refetch on part updates (debounced), idle, and permission prompts.
@@ -510,11 +517,23 @@ export default function OpenCode({
     };
   }, []);
 
-  // Auto-scroll unless the user scrolled up.
+  // Auto-scroll unless the user scrolled up. The ResizeObserver covers the
+  // case where messages resolve while the container has no size yet (window
+  // opening/animating) — scroll lands at 0 then, so re-apply once it resizes.
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
   }, [messages, sending]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (stickRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Auto-grow composer.
   useEffect(() => {
@@ -525,10 +544,22 @@ export default function OpenCode({
     ta.style.height = `${Math.min(ta.scrollHeight, 128)}px`;
   }, [input]);
 
-  const selectSession = (id: string) => {
+  const selectSession = (s: OcSession | string) => {
+    const id = typeof s === "string" ? s : s.id;
+    const sess = typeof s === "string" ? sessions.find((x) => x.id === id) : s;
     setActiveSessionId(id);
     activeSessionIdRef.current = id;
     setThinking(false);
+    stickRef.current = true;
+    setSelectedModel(
+      sess?.model?.providerID && sess?.model?.id
+        ? {
+            providerID: sess.model.providerID,
+            modelID: sess.model.id,
+            label: `${sess.model.providerID}/${sess.model.id}`,
+          }
+        : null,
+    );
     if (projectId) void fetchMessages(projectId, id);
   };
 
@@ -588,7 +619,7 @@ export default function OpenCode({
     }
     if (await startServer()) {
       const data = await fetchSessions(projectId);
-      if (data.length > 0) selectSession(data[0].id);
+      if (data.length > 0) selectSession(data[0]);
     }
   };
 
@@ -601,7 +632,7 @@ export default function OpenCode({
         { method: "POST", body: "{}", signal: ctrl.signal },
       );
       setSessions((prev) => [s, ...prev]);
-      selectSession(s.id);
+      selectSession(s);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create session");
     } finally {
@@ -887,7 +918,7 @@ export default function OpenCode({
               sessions.map((s) => (
                 <button
                   key={s.id}
-                  onClick={() => selectSession(s.id)}
+                  onClick={() => selectSession(s)}
                   className={`block w-full px-3 py-1.5 text-left transition-colors cursor-pointer ${
                     s.id === activeSessionId
                       ? "bg-neutral-800/80"
@@ -926,13 +957,17 @@ export default function OpenCode({
               </div>
             ) : (
               <>
-                {messages.map((m) => (
+                {messages.map((m) => {
+                  const isUser = m.info.role === "user";
+                  return (
                   <div
                     key={m.info.id}
-                    className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80"
+                    className={`overflow-hidden rounded-xl border ${
+                      isUser ? "border-[#EC5B2B]/25 bg-[#EC5B2B]/[0.07]" : "border-neutral-800 bg-neutral-900/80"
+                    }`}
                   >
                     <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
-                      <span className="text-neutral-300">
+                      <span className={isUser ? "text-[#FFC799]" : "text-neutral-300"}>
                         {m.info.role === "user" ? "You" : "OpenCode"}
                       </span>
                       {m.info.time?.created && (
@@ -941,11 +976,12 @@ export default function OpenCode({
                     </div>
                     <div className="space-y-1 px-3 py-2">
                       {m.parts.map((p) => (
-                        <PartView key={p.id} part={p} />
+                        <PartView key={p.id} part={p} isUser={isUser} />
                       ))}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 {(sending || thinking) && (
                   <div className="flex items-center gap-2 text-xs text-neutral-500">
                     <Loader2 size={12} className="animate-spin" />{" "}

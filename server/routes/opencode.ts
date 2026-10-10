@@ -235,22 +235,27 @@ router.post("/:projectId/stop", async (req, res) => {
 router.get("/:projectId/status", async (req, res) => {
   const id = String(req.params.projectId);
   if (HOSTD_URL) {
-    let running = false;
-    let port: number | null = null;
-    try {
-      const project = await prisma.project.findFirst({ where: { id, userId: LOCAL_USER_ID } });
-      if (project?.directory) {
-        const r = await hostdCall("/status", { query: { dir: project.directory } });
-        running = Boolean(r.json.running);
-        port = typeof r.json.port === "number" ? r.json.port : null;
-      }
-    } catch {
-      running = false;
-      port = null;
+    const project = await prisma.project.findFirst({ where: { id, userId: LOCAL_USER_ID } });
+    if (!project?.directory) {
+      res.json({ running: false, port: null });
+      return;
     }
-    if (running && port) remotePorts.set(id, port);
-    else remotePorts.delete(id);
-    res.json({ running, port });
+    // Unknown != stopped: a daemon hiccup must 502 so the UI keeps its last
+    // known state instead of flickering to "stopped".
+    try {
+      const r = await hostdCall("/status", { query: { dir: project.directory } });
+      if (r.status !== 200) {
+        res.status(502).json({ error: r.json.error || "host daemon status failed" });
+        return;
+      }
+      const running = Boolean(r.json.running);
+      const port = typeof r.json.port === "number" ? r.json.port : null;
+      if (running && port) remotePorts.set(id, port);
+      else remotePorts.delete(id);
+      res.json({ running, port });
+    } catch {
+      res.status(502).json({ error: "opencode host daemon unreachable" });
+    }
     return;
   }
   const entry = managed.get(id);
