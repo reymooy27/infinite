@@ -741,8 +741,7 @@ export default function FocusModeLayout({
           onTouchStart={handleSwipeStart}
           onTouchEnd={handleSwipeEnd}
         >
-          {/* Hide, don't unmount: SSHPane keeps its xterm buffer + WS alive while OpenCode shows. */}
-          <div className={openCodeOpen && activeProjectId ? "hidden" : "contents"}>
+          <div className="contents">
             {activeWindow ? (
               <>
                 {tabs.map((tab) => (
@@ -755,7 +754,7 @@ export default function FocusModeLayout({
                     hasNavigated={tab.hasNavigated}
                     keyboardHeight={keyboardHeight}
                     refreshNonce={paneRefreshKey}
-                    isModalOpen={gitPanelOpen || fileExplorerOpen}
+                    isModalOpen={gitPanelOpen || fileExplorerOpen || openCodeOpen}
                     enableTouchScroll
                   />
                 ))}
@@ -781,25 +780,19 @@ export default function FocusModeLayout({
             )}
           </div>
           {activeProjectId && (
-            <div
+            <aside
               className={
                 openCodeOpen
-                  ? "fixed inset-0 z-[10050] flex justify-end"
+                  ? "absolute inset-y-0 right-0 z-40 flex w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
                   : "hidden"
               }
             >
-              <div
-                className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-                onClick={() => setOpenCodeOpen(false)}
+              <OpenCode
+                fixedProjectId={activeProjectId}
+                autoStart
+                onClose={() => setOpenCodeOpen(false)}
               />
-              <aside className="relative z-[10051] h-full w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950 shadow-2xl">
-                <OpenCode
-                  fixedProjectId={activeProjectId}
-                  autoStart
-                  onClose={() => setOpenCodeOpen(false)}
-                />
-              </aside>
-            </div>
+            </aside>
           )}
           {activeWindow && (
             <div className="absolute right-2 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-2 md:hidden">
