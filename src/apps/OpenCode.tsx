@@ -498,6 +498,7 @@ export default function OpenCode({
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "auto";
+    if (ta.scrollHeight === 0) return;
     ta.style.height = `${Math.min(ta.scrollHeight, 128)}px`;
   }, [input]);
 
@@ -869,7 +870,7 @@ export default function OpenCode({
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto px-3 py-2"
+            className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2"
           >
             {!activeSessionId ? (
               <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
