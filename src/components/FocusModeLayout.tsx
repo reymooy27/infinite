@@ -787,7 +787,11 @@ export default function FocusModeLayout({
                 onClick={() => setOpenCodeOpen(false)}
               />
               <aside className="relative z-[10051] h-full w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950 shadow-2xl">
-                <OpenCode fixedProjectId={activeProjectId} autoStart />
+                <OpenCode
+                  fixedProjectId={activeProjectId}
+                  autoStart
+                  onClose={() => setOpenCodeOpen(false)}
+                />
               </aside>
             </div>
           )}
