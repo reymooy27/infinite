@@ -780,8 +780,14 @@ export default function FocusModeLayout({
             )}
           </div>
           {openCodeOpen && activeProjectId && (
-            <div className="absolute inset-0 z-40 bg-neutral-950">
-              <OpenCode fixedProjectId={activeProjectId} autoStart />
+            <div className="fixed inset-0 z-[10050] flex justify-end">
+              <div
+                className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+                onClick={() => setOpenCodeOpen(false)}
+              />
+              <aside className="relative z-[10051] h-full w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950 shadow-2xl">
+                <OpenCode fixedProjectId={activeProjectId} autoStart />
+              </aside>
             </div>
           )}
           {activeWindow && (
