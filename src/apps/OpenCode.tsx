@@ -10,6 +10,7 @@ import {
   Power,
   Send,
   Square,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
@@ -106,7 +107,7 @@ function relTime(ts?: number): string {
 function PartView({ part }: { part: OcPart }) {
   if (part.type === "text") {
     return (
-      <div className="markdown-body text-sm leading-relaxed text-[#e6edf3]">
+      <div className="markdown-body text-sm leading-relaxed text-neutral-200">
         <Markdown remarkPlugins={[remarkGfm]}>{part.text ?? ""}</Markdown>
       </div>
     );
@@ -114,10 +115,10 @@ function PartView({ part }: { part: OcPart }) {
   if (part.type === "reasoning") {
     return (
       <details className="my-1">
-        <summary className="text-xs text-[#8b949e] italic cursor-pointer select-none">
+        <summary className="text-xs text-neutral-500 italic cursor-pointer select-none">
           Reasoning
         </summary>
-        <div className="text-xs text-[#8b949e] italic mt-1 pl-2 border-l border-[#30363d] whitespace-pre-wrap">
+        <div className="text-xs text-neutral-500 italic mt-1 pl-2 border-l border-neutral-800 whitespace-pre-wrap">
           {part.text}
         </div>
       </details>
@@ -134,44 +135,44 @@ function ToolPartView({ part }: { part: OcPart }) {
   const state = part.state;
   const status = state?.status;
   return (
-    <div className="border border-[#30363d] rounded-md my-1.5 overflow-hidden bg-[#0d1117]">
+    <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80 my-1.5">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#8b949e] hover:bg-[#161b22] cursor-pointer"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:bg-neutral-800/60 cursor-pointer"
       >
         <ChevronRight
           size={12}
-          className={`shrink-0 text-[#6e7681] transition-transform ${open ? "rotate-90" : ""}`}
+          className={`shrink-0 text-neutral-500 transition-transform ${open ? "rotate-90" : ""}`}
         />
-        <span className="font-mono text-[#e6edf3]">{part.tool}</span>
+        <span className="font-mono text-neutral-100">{part.tool}</span>
         {status === "pending" && (
-          <span className="w-2 h-2 rounded-full bg-[#6e7681] shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-neutral-500 shrink-0" />
         )}
         {status === "running" && (
-          <Loader2 size={12} className="animate-spin text-[#58a6ff] shrink-0" />
+          <Loader2 size={12} className="animate-spin text-sky-300 shrink-0" />
         )}
         {status === "completed" && (
-          <CheckCircle2 size={12} className="text-[#3fb950] shrink-0" />
+          <CheckCircle2 size={12} className="text-emerald-300 shrink-0" />
         )}
         {status === "error" && (
-          <AlertCircle size={12} className="text-[#f85149] shrink-0" />
+          <AlertCircle size={12} className="text-rose-300 shrink-0" />
         )}
         {state?.title && (
-          <span className="text-[#8b949e] truncate">{state.title}</span>
+          <span className="truncate text-neutral-500">{state.title}</span>
         )}
       </button>
       {open && (
-        <div className="border-t border-[#30363d] px-2.5 py-2 space-y-1.5 bg-[#161b22]">
-          <pre className="text-[11px] font-mono text-[#8b949e] whitespace-pre-wrap break-all">
+        <div className="space-y-1.5 border-t border-neutral-800 bg-neutral-950/50 px-3 py-2">
+          <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-neutral-400">
             {JSON.stringify(state?.input ?? {}, null, 2)}
           </pre>
           {status === "completed" && state?.output && (
-            <pre className="text-[11px] font-mono text-[#8b949e] whitespace-pre-wrap break-all">
+            <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-neutral-400">
               {state.output}
             </pre>
           )}
           {status === "error" && state?.error && (
-            <pre className="text-[11px] font-mono text-[#f85149] whitespace-pre-wrap break-all">
+            <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-rose-400">
               {state.error}
             </pre>
           )}
@@ -733,42 +734,48 @@ export default function OpenCode({
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0d1117] text-[#e6edf3]">
-      {/* Top bar: project name (fixed) or picker + power */}
-      <div className="flex items-center gap-2 p-2 bg-[#161b22] border-b border-[#30363d] shrink-0">
-        {fixedProjectId ? (
-          <span className="flex-1 text-sm px-2 py-1 truncate text-[#e6edf3]">
-            {projects.find((p) => p.id === fixedProjectId)?.name ?? "OpenCode"}
-          </span>
-        ) : (
-          <select
-            className="flex-1 bg-[#0d1117] text-sm px-2 py-1 rounded-md border border-[#30363d] text-[#e6edf3] outline-none cursor-pointer"
-            value={projectId ?? ""}
-            onChange={(e) => {
-              setProjectId(e.target.value || null);
-              setActiveSessionId(null);
-              activeSessionIdRef.current = null;
-              setMessages([]);
-              setSessions([]);
-              setPermission(null);
-            }}
-          >
-            {projects.length === 0 && <option value="">No projects</option>}
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        )}
+    <div className="flex h-full w-full flex-col bg-neutral-950 text-neutral-100">
+      <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
+        <SquareTerminal size={14} className="shrink-0 text-neutral-300" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-medium text-neutral-100">
+            OpenCode
+          </p>
+          {fixedProjectId ? (
+            <p className="truncate text-[10px] text-neutral-500">
+              {projects.find((p) => p.id === fixedProjectId)?.name ??
+                "Active project"}
+            </p>
+          ) : (
+            <select
+              className="max-w-full cursor-pointer bg-transparent text-[10px] text-neutral-500 outline-none"
+              value={projectId ?? ""}
+              onChange={(e) => {
+                setProjectId(e.target.value || null);
+                setActiveSessionId(null);
+                activeSessionIdRef.current = null;
+                setMessages([]);
+                setSessions([]);
+                setPermission(null);
+              }}
+            >
+              {projects.length === 0 && <option value="">No projects</option>}
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <span
-          className={`w-2 h-2 rounded-full shrink-0 ${running ? "bg-[#3fb950]" : "bg-[#6e7681]"}`}
+          className={`h-2 w-2 shrink-0 rounded-full ${running ? "bg-emerald-400" : "bg-neutral-600"}`}
           title={running ? "Running" : "Stopped"}
         />
         {selectedModel && (
           <button
             onClick={() => setSelectedModel(null)}
-            className="max-w-40 truncate text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-[#21262d] border border-[#30363d] text-[#8b949e] hover:text-[#e6edf3] hover:border-[#8b949e] cursor-pointer"
+            className="max-w-40 shrink-0 truncate rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-400 hover:text-neutral-100 cursor-pointer"
             title="Clear model override"
           >
             {selectedModel.label} ✕
@@ -777,36 +784,36 @@ export default function OpenCode({
         <button
           onClick={() => void togglePower()}
           disabled={starting || !projectId}
-          className={`w-10 h-10 flex items-center justify-center rounded-md cursor-pointer disabled:opacity-30 ${
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer disabled:opacity-30 ${
             running
-              ? "text-[#f85149] hover:bg-[#30363d]"
-              : "text-[#8b949e] hover:bg-[#30363d] hover:text-[#e6edf3]"
+              ? "text-rose-300 hover:bg-neutral-800"
+              : "text-neutral-500 hover:bg-neutral-800 hover:text-white"
           }`}
           title={running ? "Stop server" : "Start server"}
         >
           {starting ? (
-            <Loader2 size={16} className="animate-spin" />
+            <Loader2 size={15} className="animate-spin" />
           ) : (
-            <Power size={16} />
+            <Power size={15} />
           )}
         </button>
         {onClose && (
           <button
             onClick={onClose}
-            className="w-10 h-10 flex items-center justify-center rounded-md text-[#8b949e] hover:bg-[#30363d] hover:text-[#e6edf3] cursor-pointer shrink-0"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white cursor-pointer"
             title="Close"
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         )}
       </div>
 
       {running && (
-        <div className="sm:hidden flex items-center gap-1.5 px-2 py-1.5 bg-[#161b22] border-b border-[#30363d] shrink-0">
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-neutral-800 px-3 py-1.5 sm:hidden">
           <select
             value={activeSessionId ?? ""}
             onChange={(e) => e.target.value && selectSession(e.target.value)}
-            className="flex-1 min-w-0 bg-[#0d1117] text-xs px-2 py-1.5 rounded-md border border-[#30363d] text-[#e6edf3] outline-none cursor-pointer"
+            className="min-w-0 flex-1 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100 outline-none cursor-pointer"
           >
             {sessions.length === 0 && <option value="">No sessions</option>}
             {sessions.map((s) => (
@@ -817,7 +824,7 @@ export default function OpenCode({
           </select>
           <button
             onClick={() => void newSession()}
-            className="w-8 h-8 flex items-center justify-center rounded-md bg-[#21262d] border border-[#30363d] text-[#e6edf3] hover:bg-[#30363d] cursor-pointer shrink-0"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 cursor-pointer"
             title="New session"
           >
             <Plus size={14} />
@@ -825,40 +832,46 @@ export default function OpenCode({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex min-h-0 flex-1">
         {/* Session list */}
-        <div className="w-52 bg-[#161b22] border-r border-[#30363d] flex-col shrink-0 hidden sm:flex">
-          <div className="p-2 border-b border-[#30363d]">
+        <div className="hidden w-56 shrink-0 flex-col border-r border-neutral-800 sm:flex">
+          <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2">
+            <span className="flex-1 text-[11px] font-medium uppercase tracking-wider text-neutral-500">
+              Sessions
+            </span>
             <button
               onClick={() => void newSession()}
               disabled={!running}
-              className="w-full h-10 flex items-center justify-center gap-1.5 rounded-md bg-[#238636] border border-[rgba(240,246,252,0.1)] text-sm text-white hover:bg-[#2ea043] disabled:opacity-40 cursor-pointer"
+              className="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white disabled:opacity-40 cursor-pointer"
+              title="New session"
             >
-              <Plus size={14} /> New session
+              <Plus size={14} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto py-1">
             {!running ? (
-              <div className="p-3 text-xs text-[#8b949e]">
+              <div className="px-3 py-2.5 text-xs text-neutral-500">
                 Start the server to see sessions.
               </div>
             ) : sessions.length === 0 ? (
-              <div className="p-3 text-xs text-[#8b949e]">No sessions yet.</div>
+              <div className="px-3 py-2.5 text-xs text-neutral-500">
+                No sessions yet.
+              </div>
             ) : (
               sessions.map((s) => (
                 <button
                   key={s.id}
                   onClick={() => selectSession(s.id)}
-                  className={`w-full text-left px-3 py-2 border-b border-[#21262d] border-l-2 cursor-pointer ${
+                  className={`block w-full px-3 py-1.5 text-left transition-colors cursor-pointer ${
                     s.id === activeSessionId
-                      ? "bg-[#1f6feb]/10 border-l-[#1f6feb]"
-                      : "border-l-transparent hover:bg-[#0d1117]"
+                      ? "bg-neutral-800/80"
+                      : "hover:bg-neutral-800/60"
                   }`}
                 >
-                  <div className="text-xs text-[#e6edf3] truncate">
+                  <div className="truncate text-xs text-neutral-100">
                     {s.title || "Untitled"}
                   </div>
-                  <div className="text-[10px] text-[#8b949e]">
+                  <div className="mt-1 text-[10px] text-neutral-500">
                     {relTime(s.time?.updated ?? s.time?.created)}
                   </div>
                 </button>
@@ -868,14 +881,19 @@ export default function OpenCode({
         </div>
 
         {/* Thread + composer */}
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 px-3 py-2">
+            <span className="flex-1 truncate text-[11px] font-medium uppercase tracking-wider text-neutral-500">
+              Conversation
+            </span>
+          </div>
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3"
+            className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-2.5"
           >
             {!activeSessionId ? (
-              <div className="flex items-center justify-center h-full text-[#8b949e] text-sm">
+              <div className="flex h-full items-center justify-center text-sm text-neutral-500">
                 {running
                   ? "Select or create a session to start chatting."
                   : "Start the server, then pick a session."}
@@ -885,17 +903,17 @@ export default function OpenCode({
                 {messages.map((m) => (
                   <div
                     key={m.info.id}
-                    className="mb-3 border border-[#30363d] rounded-md overflow-hidden"
+                    className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80"
                   >
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[#30363d] text-[11px] text-[#8b949e]">
-                      <span className="font-medium text-[#e6edf3]">
+                    <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
+                      <span className="text-neutral-300">
                         {m.info.role === "user" ? "You" : "OpenCode"}
                       </span>
                       {m.info.time?.created && (
                         <span>· {relTime(m.info.time.created)}</span>
                       )}
                     </div>
-                    <div className="px-3 py-2 space-y-1 bg-[#0d1117]">
+                    <div className="space-y-1 px-3 py-2">
                       {m.parts.map((p) => (
                         <PartView key={p.id} part={p} />
                       ))}
@@ -903,7 +921,7 @@ export default function OpenCode({
                   </div>
                 ))}
                 {sending && (
-                  <div className="py-2 text-xs text-[#8b949e] flex items-center gap-2">
+                  <div className="flex items-center gap-2 text-xs text-neutral-500">
                     <Loader2 size={12} className="animate-spin" /> thinking…
                   </div>
                 )}
@@ -912,12 +930,12 @@ export default function OpenCode({
           </div>
 
           {permission && (
-            <div className="border-t border-[#30363d] bg-[#161b22] px-3 py-2 flex items-center gap-3 flex-wrap">
-              <span className="text-xs text-[#8b949e] min-w-0">
-                <span className="text-[#d29922] font-medium">Permission:</span>{" "}
+            <div className="flex flex-wrap items-center gap-3 border-t border-neutral-800 bg-neutral-900/80 px-3 py-2">
+              <span className="min-w-0 text-xs text-neutral-400">
+                <span className="font-medium text-amber-300">Permission:</span>{" "}
                 {permission.label}
                 {permission.detail && (
-                  <span className="text-[#6e7681] font-mono ml-1">
+                  <span className="ml-1 font-mono text-neutral-500">
                     {permission.detail}
                   </span>
                 )}
@@ -925,19 +943,19 @@ export default function OpenCode({
               <div className="ml-auto flex gap-1.5">
                 <button
                   onClick={() => void replyPermission("once")}
-                  className="h-10 px-3 text-xs rounded-md bg-[#238636] hover:bg-[#2ea043] text-white border border-[rgba(240,246,252,0.1)] cursor-pointer"
+                  className="inline-flex items-center justify-center rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[11px] font-medium text-neutral-950 hover:bg-white cursor-pointer"
                 >
                   Once
                 </button>
                 <button
                   onClick={() => void replyPermission("always")}
-                  className="h-10 px-3 text-xs rounded-md bg-[#21262d] border border-[#30363d] hover:bg-[#30363d] text-[#e6edf3] cursor-pointer"
+                  className="inline-flex items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 cursor-pointer"
                 >
                   Always
                 </button>
                 <button
                   onClick={() => void replyPermission("reject")}
-                  className="h-10 px-3 text-xs rounded-md bg-[#21262d] border border-[#30363d] text-[#f85149] hover:bg-[#da3633] hover:text-white hover:border-[#da3633] cursor-pointer"
+                  className="inline-flex items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-rose-300 hover:bg-neutral-800 cursor-pointer"
                 >
                   Reject
                 </button>
@@ -945,16 +963,16 @@ export default function OpenCode({
             </div>
           )}
 
-          <div className="border-t border-[#30363d] bg-[#161b22] p-2 shrink-0">
+          <div className="shrink-0 border-t border-neutral-800 bg-neutral-950/95 p-3">
             {notice && !error && (
-              <div className="text-xs text-[#8b949e] px-1 pb-1.5">{notice}</div>
+              <div className="px-1 pb-1.5 text-xs text-neutral-500">{notice}</div>
             )}
             {error && (
-              <div className="text-xs text-[#f85149] px-1 pb-1.5">{error}</div>
+              <div className="px-1 pb-1.5 text-xs text-rose-300">{error}</div>
             )}
             <div className="relative flex items-end gap-2">
               {cmdList.length > 0 && (
-                <div className="absolute bottom-full left-0 mb-2 w-96 max-w-full max-h-60 overflow-y-auto rounded-md border border-[#30363d] bg-[#161b22] shadow-lg z-10">
+                <div className="absolute bottom-full left-0 z-10 mb-2 max-h-60 w-96 max-w-full overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl">
                   {cmdList.map((c, i) => (
                     <button
                       key={c.name}
@@ -964,15 +982,15 @@ export default function OpenCode({
                       }}
                       className={`flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left cursor-pointer ${
                         i === Math.min(cmdIdx, cmdList.length - 1)
-                          ? "bg-[#21262d]"
-                          : "hover:bg-[#21262d]/50"
+                          ? "bg-neutral-800"
+                          : "hover:bg-neutral-800/60"
                       }`}
                     >
-                      <span className="font-mono text-sm text-[#e6edf3] shrink-0">
+                      <span className="shrink-0 font-mono text-sm text-neutral-100">
                         /{c.name}
                       </span>
                       {c.description && (
-                        <span className="text-xs text-[#8b949e] truncate">
+                        <span className="truncate text-xs text-neutral-500">
                           {c.description}
                         </span>
                       )}
@@ -994,12 +1012,12 @@ export default function OpenCode({
                   running ? "Message…  (/ for commands, Enter to send)" : "Start the server to chat…"
                 }
                 disabled={!running || sending}
-                className="flex-1 resize-none bg-[#0d1117] border border-[#30363d] rounded-md px-2.5 py-2 text-sm text-[#e6edf3] outline-none placeholder-[#6e7681] focus:border-[#58a6ff] disabled:opacity-50"
+                className="flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700 disabled:opacity-50"
               />
               {sending ? (
                 <button
                   onClick={() => void stop()}
-                  className="w-10 h-10 flex items-center justify-center rounded-md bg-[#21262d] border border-[#30363d] text-[#f85149] hover:bg-[#da3633] hover:text-white hover:border-[#da3633] cursor-pointer"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 text-rose-300 hover:bg-neutral-800 cursor-pointer"
                   title="Stop generating"
                 >
                   <Square size={14} />
@@ -1008,10 +1026,10 @@ export default function OpenCode({
                 <button
                   onClick={() => void send()}
                   disabled={!running || !input.trim()}
-                  className="w-10 h-10 flex items-center justify-center rounded-md bg-[#238636] border border-[rgba(240,246,252,0.1)] text-white hover:bg-[#2ea043] disabled:opacity-30 cursor-pointer"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-950 hover:bg-white disabled:opacity-40 cursor-pointer"
                   title="Send"
                 >
-                  <Send size={16} />
+                  <Send size={15} />
                 </button>
               )}
             </div>
