@@ -5,6 +5,8 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronRight,
+  Hammer,
+  ListChecks,
   Loader2,
   Plus,
   Power,
@@ -46,6 +48,11 @@ const MODEL_HINT: OcCommand = {
   name: "model",
   description: "Switch model: /model <provider/model>",
 };
+
+const MODES = [
+  { id: "plan" as const, icon: ListChecks, label: "Plan" },
+  { id: "build" as const, icon: Hammer, label: "Build" },
+];
 
 interface OcToolState {
   status: "pending" | "running" | "completed" | "error";
@@ -203,6 +210,7 @@ export default function OpenCode({
   const [messages, setMessages] = useState<OcMessageEntry[]>([]);
   const [sending, setSending] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const [mode, setMode] = useState<"plan" | "build">("build");
   const [permission, setPermission] = useState<OcPermission | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -661,6 +669,7 @@ export default function OpenCode({
             method: "POST",
             body: JSON.stringify({
               parts: [{ type: "text", text }],
+              agent: mode,
               ...(selectedModel
                 ? { model: { providerID: selectedModel.providerID, modelID: selectedModel.modelID } }
                 : {}),
@@ -1016,6 +1025,26 @@ export default function OpenCode({
                   ))}
                 </div>
               )}
+              <div className="flex shrink-0 items-center gap-0.5">
+                {MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setMode(m.id)}
+                    aria-label={`${m.label} mode`}
+                    title={
+                      m.id === "plan" ? "Plan mode — read-only" : "Build mode"
+                    }
+                    className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors cursor-pointer ${
+                      mode === m.id
+                        ? "bg-neutral-800 text-white"
+                        : "text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+                    }`}
+                  >
+                    <m.icon size={15} />
+                  </button>
+                ))}
+              </div>
               <textarea
                 ref={taRef}
                 rows={1}
