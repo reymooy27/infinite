@@ -242,21 +242,22 @@ export default function OpenCode({
   }, []);
 
   const startServer = useCallback(async () => {
+    const pid = projectIdRef.current;
     setStarting(true);
     setError(null);
     try {
-      await ocReq(`/api/opencode/${encodeURIComponent(projectIdRef.current ?? "")}/start`, {
+      await ocReq(`/api/opencode/${encodeURIComponent(pid ?? "")}/start`, {
         method: "POST",
       });
-      setRunning(true);
+      if (projectIdRef.current === pid) setRunning(true);
       return true;
     } catch (err) {
       const e = err as Error & { status?: number };
       if (e.status === 409) {
-        setRunning(true);
+        if (projectIdRef.current === pid) setRunning(true);
         return true;
       }
-      setError(e.message || "Failed to start");
+      if (projectIdRef.current === pid) setError(e.message || "Failed to start");
       return false;
     } finally {
       setStarting(false);
@@ -271,6 +272,7 @@ export default function OpenCode({
           `/api/opencode/${encodeURIComponent(pid)}/proxy/session`,
           { signal: ctrl.signal },
         );
+        if (projectIdRef.current !== pid) return data;
         setSessions(data);
         return data;
       } catch {
@@ -290,6 +292,7 @@ export default function OpenCode({
           `/api/opencode/${encodeURIComponent(pid)}/proxy/session/${encodeURIComponent(sid)}/message`,
           { signal: ctrl.signal },
         );
+        if (projectIdRef.current !== pid || activeSessionIdRef.current !== sid) return data;
         setMessages(data);
         return data;
       } catch {
@@ -324,6 +327,11 @@ export default function OpenCode({
   useEffect(() => {
     if (!projectId) return;
     falseStreakRef.current = 0;
+    setRunning(false);
+    setThinking(false);
+    setError(null);
+    setNotice(null);
+    setSelectedModel(null);
     let stopped = false;
     const poll = async () => {
       const ctrl = track(new AbortController());
