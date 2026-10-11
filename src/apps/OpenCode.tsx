@@ -792,39 +792,35 @@ export default function OpenCode({
 
   return (
     <div className="flex h-full w-full flex-col bg-neutral-950 text-neutral-100">
-      <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
-        <SquareTerminal size={14} className="shrink-0 text-neutral-300" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium text-neutral-100">
-            OpenCode
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-neutral-800 px-2 py-1">
+        <SquareTerminal size={13} className="shrink-0 text-neutral-300" />
+        <span className="shrink-0 text-xs font-medium text-neutral-100">OpenCode</span>
+        {fixedProjectId ? (
+          <p className="min-w-0 flex-1 truncate text-[10px] text-neutral-500">
+            {projects.find((p) => p.id === fixedProjectId)?.name ??
+              "Active project"}
           </p>
-          {fixedProjectId ? (
-            <p className="truncate text-[10px] text-neutral-500">
-              {projects.find((p) => p.id === fixedProjectId)?.name ??
-                "Active project"}
-            </p>
-          ) : (
-            <select
-              className="max-w-full cursor-pointer bg-transparent text-[10px] text-neutral-500 outline-none"
-              value={projectId ?? ""}
-              onChange={(e) => {
-                setProjectId(e.target.value || null);
-                setActiveSessionId(null);
-                activeSessionIdRef.current = null;
-                setMessages([]);
-                setSessions([]);
-                setPermission(null);
-              }}
-            >
-              {projects.length === 0 && <option value="">No projects</option>}
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+        ) : (
+          <select
+            className="min-w-0 max-w-full flex-1 cursor-pointer truncate bg-transparent text-[10px] text-neutral-500 outline-none"
+            value={projectId ?? ""}
+            onChange={(e) => {
+              setProjectId(e.target.value || null);
+              setActiveSessionId(null);
+              activeSessionIdRef.current = null;
+              setMessages([]);
+              setSessions([]);
+              setPermission(null);
+            }}
+          >
+            {projects.length === 0 && <option value="">No projects</option>}
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${running ? "bg-emerald-400" : "bg-neutral-600"}`}
           title={running ? "Running" : "Stopped"}
@@ -841,7 +837,7 @@ export default function OpenCode({
         <button
           onClick={() => void togglePower()}
           disabled={starting || !projectId}
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer disabled:opacity-30 ${
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer disabled:opacity-30 ${
             running
               ? "text-rose-300 hover:bg-neutral-800"
               : "text-neutral-500 hover:bg-neutral-800 hover:text-white"
@@ -849,28 +845,28 @@ export default function OpenCode({
           title={running ? "Stop server" : "Start server"}
         >
           {starting ? (
-            <Loader2 size={15} className="animate-spin" />
+            <Loader2 size={14} className="animate-spin" />
           ) : (
-            <Power size={15} />
+            <Power size={14} />
           )}
         </button>
         {onClose && (
           <button
             onClick={onClose}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white cursor-pointer"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white cursor-pointer"
             title="Close"
           >
-            <X size={15} />
+            <X size={14} />
           </button>
         )}
       </div>
 
       {running && (
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-neutral-800 px-3 py-1.5 sm:hidden">
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-neutral-800 px-2 py-1 sm:hidden">
           <select
             value={activeSessionId ?? ""}
             onChange={(e) => e.target.value && selectSession(e.target.value)}
-            className="min-w-0 flex-1 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-100 outline-none cursor-pointer"
+            className="min-w-0 flex-1 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 outline-none cursor-pointer"
           >
             {sessions.length === 0 && <option value="">No sessions</option>}
             {sessions.map((s) => (
@@ -881,7 +877,7 @@ export default function OpenCode({
           </select>
           <button
             onClick={() => void newSession()}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 cursor-pointer"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 cursor-pointer"
             title="New session"
           >
             <Plus size={14} />
@@ -892,7 +888,7 @@ export default function OpenCode({
       <div className="flex min-h-0 flex-1">
         {/* Session list */}
         <div className="hidden w-56 shrink-0 flex-col border-r border-neutral-800 sm:flex">
-          <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2">
+          <div className="flex items-center gap-2 border-b border-neutral-800 px-2 py-1">
             <span className="flex-1 text-[11px] font-medium uppercase tracking-wider text-neutral-500">
               Sessions
             </span>
