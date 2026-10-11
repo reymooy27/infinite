@@ -13,6 +13,8 @@
 - **Docker manager** — control containers, images, and volumes over SSH
 - **System monitor** — btop-style CPU/memory/net/disk; kill processes or free ports
 - **Git view** — status, diff, commit/push/pull, AI commit messages
+- **OpenCode chat** — per-project `opencode serve` sessions in a window
+  (plan/build modes, slash commands, model switching)
 - **Code editor** — Monaco with git diff overlay
 - **Usage analytics** — live [9router](https://9router.dev) dashboard (requests, tokens, cost, errors)
 - **Projects, notes & bookmarks** — workspace state in a local SQLite file
@@ -513,6 +515,36 @@ That starts the Vite dev server on `http://localhost:9871` and the
 Express/WebSocket server on `http://localhost:7891`. Open
 `http://localhost:9871`.
 
+### OpenCode integration (optional)
+
+The OpenCode panel embeds an `opencode serve` process per project. A native
+backend spawns it directly if `opencode` is on `PATH`. Under Docker the
+container can't launch host binaries, so a small host daemon (`hostd/`) does
+it over a loopback API instead.
+
+Requirements for the daemon path: Linux with a systemd user session, Node.js,
+and the opencode CLI (`curl -fsSL https://opencode.ai/install | bash`).
+
+One-time setup, from the repo root:
+
+```bash
+npm run setup:opencode
+```
+
+This renders and enables the `infinite-opencode-hostd` systemd user service
+(with this checkout's paths), generates a token to
+`~/.config/infinite/opencode-hostd.env`, writes `OPENCODE_HOSTD_URL` /
+`OPENCODE_HOSTD_TOKEN` into `.env`, and runs a self-check. It is idempotent —
+re-run it after moving the repo. Then let the backend pick up the keys:
+
+```bash
+docker compose up -d --force-recreate server   # Docker deploy
+# or just restart the dev server process       # native dev
+```
+
+Without the keys the panel falls back to local spawn; if `opencode` is missing
+there too, the start button reports exactly what is missing.
+
 ## Build and Lint
 
 ```bash
@@ -689,6 +721,7 @@ npm run lint
 npm run db:push
 npm run db:migrate
 npm run db:studio
+npm run setup:opencode   # optional: one-time OpenCode host daemon setup
 ```
 
 ## Important Files

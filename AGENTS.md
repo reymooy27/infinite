@@ -8,7 +8,7 @@
 - `npm run build` — Production build
 - `npm run lint` — ESLint
 - `npx patch-package` — Reapply patches (auto-runs on npm install via postinstall)
-- `node scripts/install-opencode-hostd.mjs` — One-time host setup: systemd daemon so the Docker backend spawns opencode serve on the host (needs `docker compose up -d --build server` after)
+- `npm run setup:opencode` — One-time host setup (scripts/install-opencode-hostd.mjs): renders + enables systemd user daemon (127.0.0.1:7890, token auth) so the Docker backend spawns opencode serve on the host; needs `docker compose up -d --force-recreate server` after. Fails with install hint if `opencode` binary missing.
 
 ### Git
 

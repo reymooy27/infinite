@@ -10,6 +10,7 @@
     "start": "concurrently \"vite preview\" \"npm run start:server\"",
     "start:server": "npm run build:server && node .server-build/index.js",
     "lint": "eslint .",
+    "setup:opencode": "node scripts/install-opencode-hostd.mjs",
     "db:migrate": "prisma migrate dev --schema server/prisma/schema.prisma",
     "db:push": "prisma db push --schema server/prisma/schema.prisma",
     "db:studio": "prisma studio --schema server/prisma/schema.prisma",

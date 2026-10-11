@@ -40,11 +40,43 @@ const sc = run(process.execPath, ["hostd/opencode-hostd.mjs", "--selfcheck"]);
 process.stdout.write(sc.stdout || "");
 if (!ok(sc)) die(`selfcheck failed: ${sc.stderr}`);
 
+function findOpencodeBin() {
+  const candidates = [
+    process.env.OPENCODE_BIN,
+    ...(process.env.PATH || "").split(path.delimiter).map((d) => path.join(d, "opencode")),
+    path.join(os.homedir(), ".opencode", "bin", "opencode"),
+  ].filter(Boolean);
+  for (const c of candidates) {
+    try {
+      fs.accessSync(c, fs.constants.X_OK);
+      return c;
+    } catch {}
+  }
+  return null;
+}
+
+const opencodeBin = findOpencodeBin();
+if (!opencodeBin) {
+  die(
+    'opencode binary not found (checked OPENCODE_BIN, PATH, ~/.opencode/bin/opencode).\n' +
+      "     Install it first:  curl -fsSL https://opencode.ai/install | bash\n" +
+      "     then re-run this script.",
+  );
+}
+log(`opencode binary -> ${opencodeBin}`);
+
 const unitName = "infinite-opencode-hostd.service";
 const unitDir = path.join(os.homedir(), ".config", "systemd", "user");
 fs.mkdirSync(unitDir, { recursive: true });
-fs.copyFileSync(path.join(root, "hostd", unitName), path.join(unitDir, unitName));
-ok(run("systemctl", ["--user", "daemon-reload"])) || die("systemctl --user daemon-reload failed");
+const unit = fs
+  .readFileSync(path.join(root, "hostd", unitName), "utf8")
+  .replaceAll("__NODE_BIN__", process.execPath)
+  .replaceAll("__REPO_ROOT__", root)
+  .replaceAll("__OPENCODE_DIR__", path.dirname(opencodeBin));
+fs.writeFileSync(path.join(unitDir, unitName), unit);
+log(`unit rendered -> ${path.join(unitDir, unitName)}`);
+ok(run("systemctl", ["--user", "daemon-reload"])) ||
+  die("systemctl --user unavailable — the daemon needs a Linux systemd user session");
 ok(run("systemctl", ["--user", "enable", "--now", unitName])) || die("systemctl --user enable --now failed");
 log("daemon enabled + started");
 
