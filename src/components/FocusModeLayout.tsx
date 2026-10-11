@@ -523,19 +523,6 @@ export default function FocusModeLayout({
           </button>
 
           <button
-            onClick={() => setOpenCodeOpen((prev) => !prev)}
-            disabled={!activeProjectId}
-            title="OpenCode (Ctrl+Shift+O)"
-            className={`px-1.5 transition-colors cursor-pointer rounded disabled:opacity-30 disabled:cursor-not-allowed ${
-              openCodeOpen
-                ? "text-white bg-neutral-800"
-                : "text-neutral-500 hover:text-white hover:bg-neutral-800"
-            }`}
-          >
-            <SquareTerminal size={14} />
-          </button>
-
-          <button
             onClick={handleExitFocusMode}
             title="Switch to canvas mode"
             className="px-1.5 text-neutral-500 hover:text-white transition-colors cursor-pointer rounded hover:bg-neutral-800"
@@ -730,6 +717,18 @@ export default function FocusModeLayout({
             }`}
           >
             <FileCode2 size={14} />
+          </button>
+          <button
+            onClick={() => setOpenCodeOpen((prev) => !prev)}
+            disabled={!activeProjectId}
+            title="OpenCode (Ctrl+Shift+O)"
+            className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
+              openCodeOpen
+                ? "bg-neutral-800 text-white border-neutral-700"
+                : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
+            }`}
+          >
+            <SquareTerminal size={14} />
           </button>
         </div>
       )}
