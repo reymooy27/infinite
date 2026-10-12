@@ -72,7 +72,11 @@ interface OcPart {
 }
 
 interface OcMessageEntry {
-  info: { id: string; role?: string; time?: { created?: number } };
+  info: {
+    id: string;
+    role?: string;
+    time?: { created?: number; completed?: number };
+  };
   parts: OcPart[];
 }
 
@@ -212,7 +216,6 @@ export default function OpenCode({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<OcMessageEntry[]>([]);
   const [sending, setSending] = useState(false);
-  const [thinking, setThinking] = useState(false);
   const [mode, setMode] = useState<"plan" | "build">("build");
   const [permission, setPermission] = useState<OcPermission | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -235,6 +238,11 @@ export default function OpenCode({
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   activeSessionIdRef.current = activeSessionId;
+
+  const busy = useMemo(() => {
+    const last = messages[messages.length - 1];
+    return !!last && last.info.role === "assistant" && !last.info.time?.completed;
+  }, [messages]);
 
   const track = useCallback((ctrl: AbortController) => {
     controllersRef.current.add(ctrl);
@@ -328,7 +336,6 @@ export default function OpenCode({
     if (!projectId) return;
     falseStreakRef.current = 0;
     setRunning(false);
-    setThinking(false);
     setError(null);
     setNotice(null);
     setSelectedModel(null);
@@ -480,12 +487,10 @@ export default function OpenCode({
         ) {
           if (debounceRef.current) clearTimeout(debounceRef.current);
           debounceRef.current = setTimeout(refetchHistory, 250);
-          setThinking(true);
         } else if (type === "session.idle") {
           if (isActive) {
             refetchHistory();
             if (projectId) void fetchSessions(projectId);
-            setThinking(false);
           }
         } else if (
           type === "permission.asked" ||
@@ -564,7 +569,6 @@ export default function OpenCode({
     const sess = typeof s === "string" ? sessions.find((x) => x.id === id) : s;
     setActiveSessionId(id);
     activeSessionIdRef.current = id;
-    setThinking(false);
     stickRef.current = true;
     setSelectedModel(
       sess?.model?.providerID && sess?.model?.id
@@ -629,7 +633,6 @@ export default function OpenCode({
       activeSessionIdRef.current = null;
       setMessages([]);
       setPermission(null);
-      setThinking(false);
       return;
     }
     if (await startServer()) {
@@ -689,7 +692,6 @@ export default function OpenCode({
     setError(null);
     setNotice(null);
     setSending(true);
-    setThinking(true);
     stickRef.current = true;
     const optimisticId = `optimistic-${Date.now()}`;
     const optimistic: OcMessageEntry = {
@@ -728,7 +730,6 @@ export default function OpenCode({
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
       setError(err instanceof Error ? err.message : "Failed to send");
-      setThinking(false);
     } finally {
       controllersRef.current.delete(ctrl);
       setSending(false);
@@ -738,7 +739,6 @@ export default function OpenCode({
 
   const stop = async () => {
     if (!projectId || !activeSessionId) return;
-    setThinking(false);
     const ctrl = track(new AbortController());
     try {
       await ocReq(
@@ -993,7 +993,7 @@ export default function OpenCode({
                   </div>
                   );
                 })}
-                {(sending || thinking) && (
+                {(sending || busy) && (
                   <div className="flex items-center gap-2 text-xs text-neutral-500">
                     <Loader2 size={12} className="animate-spin" />{" "}
                     {sending ? "thinking…" : "working…"}
@@ -1108,7 +1108,7 @@ export default function OpenCode({
                 disabled={!running || sending}
                 className="flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700 disabled:opacity-50"
               />
-              {sending || thinking ? (
+              {sending || busy ? (
                 <button
                   onClick={() => void stop()}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 text-rose-300 hover:bg-neutral-800 cursor-pointer"
