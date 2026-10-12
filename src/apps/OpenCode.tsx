@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
 import { useProjectStore } from "@/stores/useProjectStore";
+import ModelPicker from "@/components/ModelPicker";
 import type { Project } from "@/types";
 
 // Backend contract: /api/opencode/:projectId/{start,stop,status} + proxy to the
@@ -40,9 +41,13 @@ interface OcCommand {
 
 interface OcModel {
   providerID: string;
+  providerName: string;
   modelID: string;
   label: string;
   name?: string;
+  isDefault?: boolean;
+  context?: number;
+  toolcall?: boolean;
 }
 
 const MODEL_HINT: OcCommand = {
@@ -223,6 +228,7 @@ export default function OpenCode({
   const [commands, setCommands] = useState<OcCommand[]>([]);
   const [models, setModels] = useState<OcModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<OcModel | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [cmdIdx, setCmdIdx] = useState(0);
@@ -390,19 +396,39 @@ export default function OpenCode({
       .catch(() => setCommands([]))
       .finally(() => controllersRef.current.delete(ctrl));
     const ctrl2 = track(new AbortController());
-    ocReq<{ all?: { id: string; models?: Record<string, { name?: string }> }[]; connected?: string[] }>(
-      `/api/opencode/${encodeURIComponent(projectId)}/proxy/provider`,
-      { signal: ctrl2.signal },
-    )
+    ocReq<{
+      all?: {
+        id: string;
+        name?: string;
+        models?: Record<
+          string,
+          { name?: string; status?: string; limit?: { context?: number }; capabilities?: { toolcall?: boolean } }
+        >;
+      }[];
+      connected?: string[];
+      default?: Record<string, string>;
+    }>(`/api/opencode/${encodeURIComponent(projectId)}/proxy/provider`, { signal: ctrl2.signal })
       .then((j) => {
         // Only providers opencode actually has credentials for — "all" is the
         // full models.dev catalog, not what this opencode install can use.
         const connected = new Set(j.connected ?? []);
+        const defaults = j.default ?? {};
         const list: OcModel[] = [];
         for (const p of j.all ?? []) {
           if (!connected.has(p.id)) continue;
+          const providerName = p.name || p.id;
           for (const [mid, mm] of Object.entries(p.models ?? {})) {
-            list.push({ providerID: p.id, modelID: mid, label: `${p.id}/${mid}`, name: mm?.name });
+            if (mm?.status === "deprecated") continue;
+            list.push({
+              providerID: p.id,
+              providerName,
+              modelID: mid,
+              label: `${p.id}/${mid}`,
+              name: mm?.name,
+              isDefault: defaults[p.id] === mid,
+              context: mm?.limit?.context,
+              toolcall: mm?.capabilities?.toolcall,
+            });
           }
         }
         setModels(list);
@@ -572,8 +598,9 @@ export default function OpenCode({
     stickRef.current = true;
     setSelectedModel(
       sess?.model?.providerID && sess?.model?.id
-        ? {
+        ? models.find((m) => m.providerID === sess.model!.providerID && m.modelID === sess.model!.id) ?? {
             providerID: sess.model.providerID,
+            providerName: sess.model.providerID,
             modelID: sess.model.id,
             label: `${sess.model.providerID}/${sess.model.id}`,
           }
@@ -589,9 +616,14 @@ export default function OpenCode({
     if (modelQuery !== undefined) {
       const q = modelQuery.toLowerCase();
       return models
-        .filter((m) => m.label.toLowerCase().includes(q))
-        .slice(0, 30)
-        .map((m) => ({ name: `model ${m.label}`, description: m.name }));
+        .filter((m) => m.label.toLowerCase().includes(q) || (m.name ?? "").toLowerCase().includes(q))
+        .slice(0, 40)
+        .map((m) => ({
+          name: `model ${m.label}`,
+          description: [m.isDefault ? "★ default" : null, m.name, m.providerName]
+            .filter(Boolean)
+            .join(" · "),
+        }));
     }
     if (slashQuery === undefined) return [];
     const q = slashQuery.toLowerCase();
@@ -666,13 +698,8 @@ export default function OpenCode({
       setInput("");
       const arg = (mc[1] ?? "").toLowerCase();
       if (!arg) {
-        setNotice(
-          selectedModel
-            ? `Model: ${selectedModel.label} — change with /model <provider/model>`
-            : models.length > 0
-              ? `Using default model. Type /model <provider/model> — ${models.length} models available.`
-              : "No models loaded.",
-        );
+        if (models.length > 0) setShowPicker(true);
+        else setNotice("No models loaded.");
         return;
       }
       const exact = models.find((m) => m.label.toLowerCase() === arg);
@@ -840,13 +867,32 @@ export default function OpenCode({
           className={`h-2 w-2 shrink-0 rounded-full ${running ? "bg-emerald-400" : "bg-neutral-600"}`}
           title={running ? "Running" : "Stopped"}
         />
-        {selectedModel && (
+        {selectedModel ? (
+          <span className="inline-flex shrink-0 items-center rounded-md border border-neutral-800 bg-neutral-900">
+            <button
+              onClick={() => setShowPicker(true)}
+              disabled={!running}
+              className="max-w-36 truncate px-1.5 py-0.5 font-mono text-[10px] text-neutral-300 hover:text-neutral-100 disabled:opacity-40 cursor-pointer"
+              title={`Model: ${selectedModel.label}`}
+            >
+              {selectedModel.name || selectedModel.label}
+            </button>
+            <button
+              onClick={() => setSelectedModel(null)}
+              className="px-1 py-0.5 text-[10px] text-neutral-500 hover:text-neutral-100 cursor-pointer"
+              title="Use provider default"
+            >
+              ✕
+            </button>
+          </span>
+        ) : (
           <button
-            onClick={() => setSelectedModel(null)}
-            className="max-w-40 shrink-0 truncate rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-400 hover:text-neutral-100 cursor-pointer"
-            title="Clear model override"
+            onClick={() => setShowPicker(true)}
+            disabled={!running || models.length === 0}
+            className="max-w-36 shrink-0 truncate rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 hover:text-neutral-200 disabled:opacity-40 cursor-pointer"
+            title="Select model"
           >
-            {selectedModel.label} ✕
+            {models.length === 0 ? "no models" : "default model"}
           </button>
         )}
         <button
@@ -1130,6 +1176,19 @@ export default function OpenCode({
           </div>
         </div>
       </div>
+
+      {showPicker && (
+        <ModelPicker
+          models={models}
+          selected={selectedModel}
+          onSelect={(m) => {
+            setSelectedModel(m);
+            setShowPicker(false);
+            setNotice(`Model → ${m.label}`);
+          }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
     </div>
   );
 }
