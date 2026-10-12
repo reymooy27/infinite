@@ -472,14 +472,21 @@ export default function OpenCode({
           return;
         }
         const type = data.type ?? "";
-        if (type === "message.part.updated") {
+        const sid = String(data.properties?.sessionID ?? "");
+        const isActive = !!sid && sid === activeSessionIdRef.current;
+        if (
+          (type === "message.part.updated" || type === "message.part.delta") &&
+          isActive
+        ) {
           if (debounceRef.current) clearTimeout(debounceRef.current);
           debounceRef.current = setTimeout(refetchHistory, 250);
           setThinking(true);
         } else if (type === "session.idle") {
-          refetchHistory();
-          if (projectId) void fetchSessions(projectId);
-          setThinking(false);
+          if (isActive) {
+            refetchHistory();
+            if (projectId) void fetchSessions(projectId);
+            setThinking(false);
+          }
         } else if (
           type === "permission.asked" ||
           type === "permission.v2.asked" ||
