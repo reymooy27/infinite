@@ -5,9 +5,11 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronRight,
+  Cpu,
   Hammer,
   ListChecks,
   Loader2,
+  Mic,
   Plus,
   Power,
   Send,
@@ -17,7 +19,9 @@ import {
 } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
 import { useProjectStore } from "@/stores/useProjectStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import ModelPicker from "@/components/ModelPicker";
+import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import type { Project } from "@/types";
 
 // Backend contract: /api/opencode/:projectId/{start,stop,status} + proxy to the
@@ -232,6 +236,7 @@ export default function OpenCode({
   const [notice, setNotice] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [cmdIdx, setCmdIdx] = useState(0);
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const falseStreakRef = useRef(0);
@@ -832,6 +837,32 @@ export default function OpenCode({
     }
   };
 
+  const handleVoiceSend = useCallback((text: string) => {
+    setInput((prev) => (prev ? `${prev.trimEnd()} ${text}` : text));
+    setDismissed(false);
+    taRef.current?.focus();
+  }, []);
+
+  const translateVoice = useCallback(async (text: string) => {
+    try {
+      const { ninerouterApiKey, ninerouterModel } = useSettingsStore.getState();
+      const res = await fetch("/api/voice/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          apiKey: ninerouterApiKey || undefined,
+          model: ninerouterModel || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Translation failed");
+      const data = await res.json();
+      return data.translated || text;
+    } catch {
+      return text;
+    }
+  }, []);
+
   return (
     <div className="flex h-full w-full flex-col bg-neutral-950 text-neutral-100">
       <div className="flex shrink-0 items-center gap-1.5 border-b border-neutral-800 px-2 py-1">
@@ -868,31 +899,26 @@ export default function OpenCode({
           title={running ? "Running" : "Stopped"}
         />
         {selectedModel ? (
-          <span className="inline-flex shrink-0 items-center rounded-md border border-neutral-800 bg-neutral-900">
-            <button
-              onClick={() => setShowPicker(true)}
-              disabled={!running}
-              className="max-w-36 truncate px-1.5 py-0.5 font-mono text-[10px] text-neutral-300 hover:text-neutral-100 disabled:opacity-40 cursor-pointer"
-              title={`Model: ${selectedModel.label}`}
-            >
-              {selectedModel.name || selectedModel.label}
-            </button>
-            <button
-              onClick={() => setSelectedModel(null)}
-              className="px-1 py-0.5 text-[10px] text-neutral-500 hover:text-neutral-100 cursor-pointer"
-              title="Use provider default"
-            >
-              ✕
-            </button>
-          </span>
+          <button
+            onClick={() => setShowPicker(true)}
+            disabled={!running}
+            className="flex max-w-40 shrink-0 items-center gap-1 truncate rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300 hover:text-neutral-100 disabled:opacity-40 cursor-pointer"
+            title={`Model: ${selectedModel.label} — click to change`}
+          >
+            <Cpu size={11} className="shrink-0" />
+            <span className="truncate">{selectedModel.name || selectedModel.label}</span>
+          </button>
         ) : (
           <button
             onClick={() => setShowPicker(true)}
             disabled={!running || models.length === 0}
-            className="max-w-36 shrink-0 truncate rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 hover:text-neutral-200 disabled:opacity-40 cursor-pointer"
-            title="Select model"
+            className="flex max-w-40 shrink-0 items-center gap-1 rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 hover:text-neutral-200 disabled:opacity-40 cursor-pointer"
+            title={models.length === 0 ? "No models loaded" : "Select model"}
           >
-            {models.length === 0 ? "no models" : "default model"}
+            <Cpu size={11} className="shrink-0" />
+            <span className="truncate">
+              {models.length === 0 ? "no models" : "select model"}
+            </span>
           </button>
         )}
         <button
@@ -1154,6 +1180,14 @@ export default function OpenCode({
                 disabled={!running || sending}
                 className="flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700 disabled:opacity-50"
               />
+              <button
+                onClick={() => setVoiceOpen(true)}
+                disabled={!running}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 text-neutral-400 hover:text-sky-300 hover:bg-neutral-800 disabled:opacity-40 cursor-pointer"
+                title="Voice input"
+              >
+                <Mic size={15} />
+              </button>
               {sending || busy ? (
                 <button
                   onClick={() => void stop()}
@@ -1189,6 +1223,13 @@ export default function OpenCode({
           onClose={() => setShowPicker(false)}
         />
       )}
+
+      <VoiceInputOverlay
+        isOpen={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        onSend={handleVoiceSend}
+        onTranslate={translateVoice}
+      />
     </div>
   );
 }
