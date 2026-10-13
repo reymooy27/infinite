@@ -347,6 +347,8 @@ export default function OpenCode({
     if (!projectId) return;
     falseStreakRef.current = 0;
     setRunning(false);
+    setStarting(false);
+    setSending(false);
     setError(null);
     setNotice(null);
     setSelectedModel(null);
