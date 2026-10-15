@@ -67,6 +67,8 @@ export default function SettingsPanel({
   const setAutoTmux = useSettingsStore((s) => s.setAutoTmux);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
+  const chatFontSize = useSettingsStore((s) => s.chatFontSize);
+  const setChatFontSize = useSettingsStore((s) => s.setChatFontSize);
   const bgColor = useSettingsStore((s) => s.bgColor);
   const setBgColor = useSettingsStore((s) => s.setBgColor);
   const quickBarSlots = useSettingsStore((s) => s.quickBarSlots);
@@ -189,7 +191,7 @@ export default function SettingsPanel({
       </div>
 
       <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
-        <h3 className="text-[13px] font-medium text-neutral-100">Font size</h3>
+        <h3 className="text-[13px] font-medium text-neutral-100">Terminal font size</h3>
         <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
           Adjust the terminal text size (8-24px).
         </p>
@@ -208,6 +210,34 @@ export default function SettingsPanel({
           <button
             onClick={() =>
               setTerminalFontSize(Math.min(24, terminalFontSize + 1))
+            }
+            className="flex h-7 w-7 items-center justify-center rounded bg-neutral-700 text-sm font-medium text-neutral-200 transition-colors cursor-pointer hover:bg-neutral-600"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-700 bg-neutral-800/70 p-3">
+        <h3 className="text-[13px] font-medium text-neutral-100">Chat font size</h3>
+        <p className="mt-1 text-[11px] leading-4.5 text-neutral-400">
+          Adjust the OpenCode conversation text size (10-24px).
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={() =>
+              setChatFontSize(Math.max(10, chatFontSize - 1))
+            }
+            className="flex h-7 w-7 items-center justify-center rounded bg-neutral-700 text-sm font-medium text-neutral-200 transition-colors cursor-pointer hover:bg-neutral-600"
+          >
+            -
+          </button>
+          <span className="w-8 text-center font-mono text-sm text-neutral-200">
+            {chatFontSize}
+          </span>
+          <button
+            onClick={() =>
+              setChatFontSize(Math.min(24, chatFontSize + 1))
             }
             className="flex h-7 w-7 items-center justify-center rounded bg-neutral-700 text-sm font-medium text-neutral-200 transition-colors cursor-pointer hover:bg-neutral-600"
           >

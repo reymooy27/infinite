@@ -14,7 +14,8 @@
 - **System monitor** — btop-style CPU/memory/net/disk; kill processes or free ports
 - **Git view** — status, diff, commit/push/pull, AI commit messages
 - **OpenCode chat** — per-project `opencode serve` sessions in a window
-  (plan/build modes, slash commands, model switching)
+  (plan/build modes, slash commands, model switching, inline
+  permission/Ask prompts, voice input)
 - **Code editor** — Monaco with git diff overlay
 - **Usage analytics** — live [9router](https://9router.dev) dashboard (requests, tokens, cost, errors)
 - **Projects, notes & bookmarks** — workspace state in a local SQLite file
@@ -168,7 +169,8 @@ The Dev browser adds two tools on top of the localhost tunnel:
 In Settings → **Terminal** you can tune the terminal appearance and
 mobile UX:
 
-- **font size** (8–24px)
+- **terminal font size** (8–24px)
+- **chat font size** — OpenCode conversation text (10–24px)
 - **background color** (8 presets + custom)
 - **terminal button shortcuts** toggle (on-screen control keys, arrows,
   enter/tab)
@@ -517,10 +519,30 @@ Express/WebSocket server on `http://localhost:7891`. Open
 
 ### OpenCode integration (optional)
 
-The OpenCode panel embeds an `opencode serve` process per project. A native
-backend spawns it directly if `opencode` is on `PATH`. Under Docker the
-container can't launch host binaries, so a small host daemon (`hostd/`) does
-it over a loopback API instead.
+The OpenCode panel embeds an [`opencode serve`](https://opencode.ai) process
+per project — a full chat UI over the opencode HTTP API:
+
+- **Sessions** — create, list, and switch sessions per project
+- **Plan / build modes** — a toolbar toggle; plan is read-only, build can edit
+- **Slash commands** — autocompleted from the server's command list, with
+  inline `/model` suggestions
+- **Model picker** — reads the live catalog of providers opencode is
+  authenticated for; switch model per session
+- **Permission prompts** — approve once / always / reject inline when
+  opencode asks to run a tool
+- **Ask prompts** — answer opencode's `question` prompts inline (single or
+  multi-select, with a free-text option)
+- **Tool + reasoning views** — collapsible tool calls with status and
+  input/output, plus reasoning blocks
+- **Voice input** — dictate a message (Web Speech API; HTTPS or localhost)
+- **Live streaming** — SSE event stream updates the thread as parts arrive
+- **Chat font size** — adjustable in Settings → Terminal (10–24px)
+
+#### Host setup
+
+A native backend spawns `opencode serve` directly if `opencode` is on `PATH`.
+Under Docker the container can't launch host binaries, so a small host daemon
+(`hostd/`) does it over a loopback API instead.
 
 Requirements for the daemon path: Linux with a systemd user session, Node.js,
 and the opencode CLI (`curl -fsSL https://opencode.ai/install | bash`).

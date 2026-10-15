@@ -3,6 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   ChevronRight,
   Cpu,
@@ -98,6 +99,25 @@ interface OcPermission {
 
 type PermissionReply = "once" | "always" | "reject";
 
+interface OcQuestionOption {
+  label: string;
+  description?: string;
+}
+
+interface OcQuestionInfo {
+  question: string;
+  header?: string;
+  options: OcQuestionOption[];
+  multiple?: boolean;
+  custom?: boolean;
+}
+
+interface OcQuestion {
+  requestID: string;
+  sessionID: string;
+  questions: OcQuestionInfo[];
+}
+
 async function ocReq<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -126,10 +146,12 @@ function relTime(ts?: number): string {
 }
 
 function PartView({ part, isUser = false }: { part: OcPart; isUser?: boolean }) {
+  const chatFontSize = useSettingsStore((s) => s.chatFontSize);
   if (part.type === "text") {
     return (
       <div
-        className={`markdown-body text-sm leading-relaxed ${isUser ? "text-[#FFC799]" : "text-neutral-200"}`}
+        className={`markdown-body leading-relaxed ${isUser ? "text-[#FFC799]" : "text-neutral-200"}`}
+        style={{ fontSize: `${chatFontSize}px` }}
       >
         <Markdown remarkPlugins={[remarkGfm]}>{part.text ?? ""}</Markdown>
       </div>
@@ -205,6 +227,127 @@ function ToolPartView({ part }: { part: OcPart }) {
   );
 }
 
+function QuestionPanel({
+  question,
+  onAnswer,
+}: {
+  question: OcQuestion;
+  onAnswer: (answers: string[][]) => void;
+}) {
+  const [selected, setSelected] = useState<string[][]>(() =>
+    question.questions.map(() => []),
+  );
+  const [custom, setCustom] = useState<string[]>(() =>
+    question.questions.map(() => ""),
+  );
+
+  const toggle = (qi: number, label: string) => {
+    setSelected((prev) =>
+      prev.map((cur, i) => {
+        if (i !== qi) return cur;
+        if (cur.includes(label)) return cur.filter((l) => l !== label);
+        return question.questions[i]?.multiple ? [...cur, label] : [label];
+      }),
+    );
+  };
+
+  const submit = () => {
+    const answers = question.questions.map((q, i) => {
+      const picked = [...selected[i]];
+      const typed = custom[i].trim();
+      if (typed && q.custom !== false && !picked.includes(typed)) picked.push(typed);
+      return picked;
+    });
+    if (answers.some((a) => a.length === 0)) return;
+    onAnswer(answers);
+  };
+
+  const ready = question.questions.every(
+    (q, i) => selected[i].length > 0 || custom[i].trim().length > 0,
+  );
+
+  return (
+    <div className="border-t border-neutral-800 bg-neutral-900/95">
+      <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5">
+        <ListChecks size={13} className="shrink-0 text-amber-300" />
+        <span className="text-[11px] font-medium uppercase tracking-wider text-amber-300">
+          {question.questions.length > 1 ? "Questions" : "Question"}
+        </span>
+      </div>
+      <div className="max-h-80 space-y-3 overflow-y-auto px-3 py-2.5">
+        {question.questions.map((q, qi) => (
+          <div key={qi} className="space-y-1.5">
+            <div className="text-xs font-medium text-neutral-100">
+              {q.header && (
+                <span className="mr-1.5 rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
+                  {q.header}
+                </span>
+              )}
+              {q.question}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {q.options.map((o) => {
+                const active = selected[qi]?.includes(o.label);
+                return (
+                  <button
+                    key={o.label}
+                    onClick={() => toggle(qi, o.label)}
+                    className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors cursor-pointer ${
+                      active
+                        ? "border-amber-400/60 bg-amber-400/10"
+                        : "border-neutral-800 bg-neutral-950/60 hover:border-neutral-700 hover:bg-neutral-800/60"
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center border ${
+                        q.multiple ? "rounded" : "rounded-full"
+                      } ${active ? "border-amber-400 bg-amber-400" : "border-neutral-600"}`}
+                    >
+                      {active && <Check size={9} className="text-neutral-950" />}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs text-neutral-100">{o.label}</span>
+                      {o.description && (
+                        <span className="block text-[10px] text-neutral-500">
+                          {o.description}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {q.custom !== false && (
+              <input
+                value={custom[qi]}
+                onChange={(e) =>
+                  setCustom((prev) => prev.map((v, i) => (i === qi ? e.target.value : v)))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && ready) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                placeholder="Type your own answer…"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end gap-1.5 border-t border-neutral-800 px-3 py-2">
+        <button
+          onClick={submit}
+          disabled={!ready}
+          className="inline-flex items-center justify-center rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[11px] font-medium text-neutral-950 hover:bg-white disabled:opacity-40 cursor-pointer"
+        >
+          Submit
+        </button>
+      </div>
+    </div>
+  );
+}
 export default function OpenCode({
   fixedProjectId,
   autoStart,
@@ -227,6 +370,7 @@ export default function OpenCode({
   const [sending, setSending] = useState(false);
   const [mode, setMode] = useState<"plan" | "build">("build");
   const [permission, setPermission] = useState<OcPermission | null>(null);
+  const [question, setQuestion] = useState<OcQuestion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [commands, setCommands] = useState<OcCommand[]>([]);
@@ -463,6 +607,7 @@ export default function OpenCode({
     setMessages([]);
     setSessions([]);
     setPermission(null);
+    setQuestion(null);
   }, [fixedProjectId]);
 
   const autoStartedRef = useRef<string | null>(null);
@@ -544,6 +689,35 @@ export default function OpenCode({
           }
         } else if (type === "permission.replied" || type === "permission.v2.replied") {
           setPermission(null);
+        } else if (type === "question.asked") {
+          const p = data.properties as
+            | {
+                id?: string;
+                sessionID?: string;
+                questions?: OcQuestionInfo[];
+              }
+            | undefined;
+          if (p && p.id) {
+            const raw = Array.isArray(p.questions) ? p.questions : [];
+            setQuestion({
+              requestID: String(p.id),
+              sessionID: String(p.sessionID ?? ""),
+              questions: raw.map((q) => ({
+                question: String(q?.question ?? ""),
+                header: q?.header ? String(q.header) : undefined,
+                options: Array.isArray(q?.options)
+                  ? q.options.map((o: OcQuestionOption) => ({
+                      label: String(o?.label ?? ""),
+                      description: o?.description ? String(o.description) : undefined,
+                    }))
+                  : [],
+                multiple: Boolean(q?.multiple),
+                custom: q?.custom === undefined ? true : Boolean(q.custom),
+              })),
+            });
+          }
+        } else if (type === "question.replied" || type === "question.rejected") {
+          setQuestion(null);
         }
       };
       es.onerror = () => {
@@ -672,6 +846,7 @@ export default function OpenCode({
       activeSessionIdRef.current = null;
       setMessages([]);
       setPermission(null);
+      setQuestion(null);
       return;
     }
     if (await startServer()) {
@@ -804,6 +979,24 @@ export default function OpenCode({
     if (activeSessionId) void fetchMessages(projectId, activeSessionId);
   };
 
+  const replyQuestion = async (answers: string[][]) => {
+    if (!projectId || !question) return;
+    const req = question;
+    setQuestion(null);
+    const ctrl = track(new AbortController());
+    try {
+      await ocReq(
+        `/api/opencode/${encodeURIComponent(projectId)}/proxy/question/${encodeURIComponent(req.requestID)}/reply`,
+        { method: "POST", body: JSON.stringify({ answers }), signal: ctrl.signal },
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to answer");
+    } finally {
+      controllersRef.current.delete(ctrl);
+    }
+    if (activeSessionId) void fetchMessages(projectId, activeSessionId);
+  };
+
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -886,6 +1079,7 @@ export default function OpenCode({
               setMessages([]);
               setSessions([]);
               setPermission(null);
+              setQuestion(null);
             }}
           >
             {projects.length === 0 && <option value="">No projects</option>}
@@ -1109,6 +1303,14 @@ export default function OpenCode({
                 </button>
               </div>
             </div>
+          )}
+
+          {question && !permission && (
+            <QuestionPanel
+              key={question.requestID}
+              question={question}
+              onAnswer={(answers) => void replyQuestion(answers)}
+            />
           )}
 
           <div className="shrink-0 border-t border-neutral-800 bg-neutral-950/95 p-3">
