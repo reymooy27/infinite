@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -23,6 +23,13 @@ import { useProjectStore } from "@/stores/useProjectStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import ModelPicker from "@/components/ModelPicker";
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
+import {
+  appendDeltaIn,
+  upsertInfoIn,
+  upsertPartIn,
+  type OcMessageEntry,
+  type OcPart,
+} from "./opencode-parts";
 import type { Project } from "@/types";
 
 // Backend contract: /api/opencode/:projectId/{start,stop,status} + proxy to the
@@ -64,31 +71,6 @@ const MODES = [
   { id: "plan" as const, icon: ListChecks, label: "Plan" },
   { id: "build" as const, icon: Hammer, label: "Build" },
 ];
-
-interface OcToolState {
-  status: "pending" | "running" | "completed" | "error";
-  input?: unknown;
-  output?: string;
-  error?: string;
-  title?: string;
-}
-
-interface OcPart {
-  id: string;
-  type: string;
-  text?: string;
-  tool?: string;
-  state?: OcToolState;
-}
-
-interface OcMessageEntry {
-  info: {
-    id: string;
-    role?: string;
-    time?: { created?: number; completed?: number };
-  };
-  parts: OcPart[];
-}
 
 interface OcPermission {
   requestID: string;
@@ -145,7 +127,7 @@ function relTime(ts?: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function PartView({ part, isUser = false }: { part: OcPart; isUser?: boolean }) {
+const PartView = memo(function PartView({ part, isUser = false }: { part: OcPart; isUser?: boolean }) {
   const chatFontSize = useSettingsStore((s) => s.chatFontSize);
   if (part.type === "text") {
     return (
@@ -173,7 +155,7 @@ function PartView({ part, isUser = false }: { part: OcPart; isUser?: boolean }) 
     return <ToolPartView part={part} />;
   }
   return null;
-}
+});
 
 function ToolPartView({ part }: { part: OcPart }) {
   const [open, setOpen] = useState(false);
@@ -348,6 +330,29 @@ function QuestionPanel({
     </div>
   );
 }
+const MessageRow = memo(function MessageRow({ entry }: { entry: OcMessageEntry }) {
+  const isUser = entry.info.role === "user";
+  return (
+    <div
+      className={`overflow-hidden rounded-xl border ${
+        isUser ? "border-[#EC5B2B]/25 bg-[#EC5B2B]/[0.07]" : "border-neutral-800 bg-neutral-900/80"
+      }`}
+    >
+      <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
+        <span className={isUser ? "text-[#FFC799]" : "text-neutral-300"}>
+          {isUser ? "You" : "OpenCode"}
+        </span>
+        {entry.info.time?.created && <span>· {relTime(entry.info.time.created)}</span>}
+      </div>
+      <div className="space-y-1 px-3 py-2">
+        {entry.parts.map((p) => (
+          <PartView key={p.id} part={p} isUser={isUser} />
+        ))}
+      </div>
+    </div>
+  );
+});
+
 export default function OpenCode({
   fixedProjectId,
   autoStart,
@@ -391,6 +396,7 @@ export default function OpenCode({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repairRef = useRef(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   activeSessionIdRef.current = activeSessionId;
@@ -670,8 +676,10 @@ export default function OpenCode({
     selectSession(sessions[0]);
   }, [autoStart, running, projectId, sessions]);
 
-  // SSE: refetch on part updates (debounced), idle, and permission prompts.
-  // Reconnects with a fixed 3s backoff; closed on unmount / project change.
+  // SSE: apply part events locally (incremental, CLI-like); debounced full
+  // refetch only as fallback when an event can't be applied, plus a full
+  // reconcile on session.idle. Reconnects with a fixed 3s backoff; closed on
+  // unmount / project change.
   useEffect(() => {
     if (!projectId || !running) return;
     let es: EventSource | null = null;
@@ -681,6 +689,11 @@ export default function OpenCode({
     const refetchHistory = () => {
       const sid = activeSessionIdRef.current;
       if (sid && projectId) void fetchMessages(projectId, sid);
+    };
+
+    const scheduleRefetch = (delay: number) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(refetchHistory, delay);
     };
 
     const connect = () => {
@@ -698,12 +711,44 @@ export default function OpenCode({
         const type = data.type ?? "";
         const sid = String(data.properties?.sessionID ?? "");
         const isActive = !!sid && sid === activeSessionIdRef.current;
-        if (
-          (type === "message.part.updated" || type === "message.part.delta") &&
-          isActive
-        ) {
-          if (debounceRef.current) clearTimeout(debounceRef.current);
-          debounceRef.current = setTimeout(refetchHistory, 250);
+        if (type === "message.part.updated" && isActive) {
+          const part = data.properties?.part as (OcPart & { messageID?: string }) | undefined;
+          const mid = String(data.properties?.messageID ?? part?.messageID ?? "");
+          if (part?.id && mid) {
+            setMessages((prev) => upsertPartIn(prev, mid, part as OcPart));
+          } else {
+            scheduleRefetch(1000);
+          }
+        } else if (type === "message.part.delta" && isActive) {
+          const props = data.properties as {
+            messageID?: string;
+            partID?: string;
+            field?: string;
+            delta?: string;
+          };
+          if (repairRef.current) {
+            scheduleRefetch(1000);
+          } else if (props.messageID && props.partID && typeof props.delta === "string") {
+            const { messageID, partID } = props;
+            const field = String(props.field ?? "text");
+            const delta = props.delta;
+            // ref side-effects must stay idempotent: StrictMode double-invokes updaters
+            setMessages((prev) => {
+              const next = appendDeltaIn(prev, messageID, partID, field, delta);
+              if (next === null) {
+                repairRef.current = true;
+                scheduleRefetch(500);
+                return prev;
+              }
+              return next;
+            });
+          } else {
+            repairRef.current = true;
+            scheduleRefetch(500);
+          }
+        } else if (type === "message.updated" && isActive) {
+          const info = data.properties?.info as OcMessageEntry["info"] | undefined;
+          if (info?.id) setMessages((prev) => upsertInfoIn(prev, info));
         } else if (type === "session.status") {
           if (sid) {
             const st = data.properties?.status as { type?: string } | undefined;
@@ -712,6 +757,7 @@ export default function OpenCode({
         } else if (type === "session.idle") {
           if (sid) markBusy(sid, false);
           if (isActive) {
+            repairRef.current = false;
             refetchHistory();
             if (projectId) void fetchSessions(projectId);
           }
@@ -819,6 +865,7 @@ export default function OpenCode({
   const selectSession = (s: OcSession | string) => {
     const id = typeof s === "string" ? s : s.id;
     const sess = typeof s === "string" ? sessions.find((x) => x.id === id) : s;
+    repairRef.current = false;
     setActiveSessionId(id);
     activeSessionIdRef.current = id;
     stickRef.current = true;
@@ -1293,31 +1340,9 @@ export default function OpenCode({
               </div>
             ) : (
               <>
-                {messages.map((m) => {
-                  const isUser = m.info.role === "user";
-                  return (
-                  <div
-                    key={m.info.id}
-                    className={`overflow-hidden rounded-xl border ${
-                      isUser ? "border-[#EC5B2B]/25 bg-[#EC5B2B]/[0.07]" : "border-neutral-800 bg-neutral-900/80"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
-                      <span className={isUser ? "text-[#FFC799]" : "text-neutral-300"}>
-                        {m.info.role === "user" ? "You" : "OpenCode"}
-                      </span>
-                      {m.info.time?.created && (
-                        <span>· {relTime(m.info.time.created)}</span>
-                      )}
-                    </div>
-                    <div className="space-y-1 px-3 py-2">
-                      {m.parts.map((p) => (
-                        <PartView key={p.id} part={p} isUser={isUser} />
-                      ))}
-                    </div>
-                  </div>
-                  );
-                })}
+                {messages.map((m) => (
+                  <MessageRow key={m.info.id} entry={m} />
+                ))}
                 {(sending || busy) && (
                   <div className="flex items-center gap-2 text-xs text-neutral-500">
                     <Loader2 size={12} className="animate-spin" />{" "}
