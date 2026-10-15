@@ -365,6 +365,7 @@ export default function OpenCode({
   const [running, setRunning] = useState(false);
   const [starting, setStarting] = useState(false);
   const [sessions, setSessions] = useState<OcSession[]>([]);
+  const [sessionBusy, setSessionBusy] = useState<Record<string, boolean>>({});
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<OcMessageEntry[]>([]);
   const [sending, setSending] = useState(false);
@@ -447,6 +448,41 @@ export default function OpenCode({
     [track],
   );
 
+  // /session/status returns { [sessionID]: { type: "busy" | "retry" | ... } };
+  // absent or "idle" means the session is not running.
+  const fetchStatus = useCallback(
+    async (pid: string) => {
+      const ctrl = track(new AbortController());
+      try {
+        const data = await ocReq<Record<string, { type?: string }>>(
+          `/api/opencode/${encodeURIComponent(pid)}/proxy/session/status`,
+          { signal: ctrl.signal },
+        );
+        if (projectIdRef.current !== pid) return;
+        const busy: Record<string, boolean> = {};
+        for (const [sid, st] of Object.entries(data ?? {})) {
+          if (st?.type && st.type !== "idle") busy[sid] = true;
+        }
+        setSessionBusy(busy);
+      } catch {
+        // ignore — SSE reconciles
+      } finally {
+        controllersRef.current.delete(ctrl);
+      }
+    },
+    [track],
+  );
+
+  const markBusy = useCallback((sid: string, busy: boolean) => {
+    setSessionBusy((prev) => {
+      if (!!prev[sid] === busy) return prev;
+      const next = { ...prev };
+      if (busy) next[sid] = true;
+      else delete next[sid];
+      return next;
+    });
+  }, []);
+
   const fetchMessages = useCallback(
     async (pid: string, sid: string): Promise<OcMessageEntry[]> => {
       const ctrl = track(new AbortController());
@@ -493,6 +529,7 @@ export default function OpenCode({
     setRunning(false);
     setStarting(false);
     setSending(false);
+    setSessionBusy({});
     setError(null);
     setNotice(null);
     setSelectedModel(null);
@@ -530,7 +567,8 @@ export default function OpenCode({
   useEffect(() => {
     if (!projectId || !running) return;
     void fetchSessions(projectId);
-  }, [projectId, running, fetchSessions]);
+    void fetchStatus(projectId);
+  }, [projectId, running, fetchSessions, fetchStatus]);
 
   // Load slash commands + model catalog whenever the server is up.
   useEffect(() => {
@@ -606,6 +644,7 @@ export default function OpenCode({
     autoSelectedRef.current = false;
     setMessages([]);
     setSessions([]);
+    setSessionBusy({});
     setPermission(null);
     setQuestion(null);
   }, [fixedProjectId]);
@@ -665,7 +704,13 @@ export default function OpenCode({
         ) {
           if (debounceRef.current) clearTimeout(debounceRef.current);
           debounceRef.current = setTimeout(refetchHistory, 250);
+        } else if (type === "session.status") {
+          if (sid) {
+            const st = data.properties?.status as { type?: string } | undefined;
+            markBusy(sid, Boolean(st?.type && st.type !== "idle"));
+          }
         } else if (type === "session.idle") {
+          if (sid) markBusy(sid, false);
           if (isActive) {
             refetchHistory();
             if (projectId) void fetchSessions(projectId);
@@ -733,7 +778,7 @@ export default function OpenCode({
       if (retryTimer) clearTimeout(retryTimer);
       es?.close();
     };
-  }, [projectId, running, fetchMessages, fetchSessions]);
+  }, [projectId, running, fetchMessages, fetchSessions, markBusy]);
 
   // Cleanup on unmount: abort in-flight fetches, drop pending debounce.
   useEffect(() => {
@@ -842,6 +887,7 @@ export default function OpenCode({
       }
       setRunning(false);
       setSessions([]);
+      setSessionBusy({});
       setActiveSessionId(null);
       activeSessionIdRef.current = null;
       setMessages([]);
@@ -908,6 +954,7 @@ export default function OpenCode({
       parts: [{ id: `${optimisticId}-p`, type: "text", text }],
     };
     setMessages((prev) => [...prev, optimistic]);
+    markBusy(activeSessionId, true);
     const ctrl = track(new AbortController());
     try {
       if (cmd) {
@@ -1154,6 +1201,7 @@ export default function OpenCode({
             {sessions.length === 0 && <option value="">No sessions</option>}
             {sessions.map((s) => (
               <option key={s.id} value={s.id}>
+                {sessionBusy[s.id] ? "● " : ""}
                 {s.title || "Untitled"}
               </option>
             ))}
@@ -1204,8 +1252,17 @@ export default function OpenCode({
                       : "hover:bg-neutral-800/60"
                   }`}
                 >
-                  <div className="truncate text-xs text-neutral-100">
-                    {s.title || "Untitled"}
+                  <div className="flex items-center gap-1.5">
+                    {sessionBusy[s.id] && (
+                      <Loader2
+                        size={11}
+                        aria-label="Running"
+                        className="shrink-0 animate-spin text-indigo-300"
+                      />
+                    )}
+                    <span className="truncate text-xs text-neutral-100">
+                      {s.title || "Untitled"}
+                    </span>
                   </div>
                   <div className="mt-1 text-[10px] text-neutral-500">
                     {relTime(s.time?.updated ?? s.time?.created)}
