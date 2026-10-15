@@ -21,8 +21,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
-import { CommandSuggest } from "@/components/CommandSuggest";
-import { recordCommand, isShellPromptLine } from "@/lib/commandSuggestions";
+import { suggest, recordCommand, isShellPromptLine } from "@/lib/commandSuggestions";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import TerminalNextButton from "@/components/TerminalNextButton";
@@ -82,7 +81,6 @@ export const SSHPane = ({
     return window.matchMedia("(max-width: 767px)").matches;
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [suggestInput, setSuggestInput] = useState("");
   const suggestBufRef = useRef("");
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
   const micPos = useSettingsStore((s) => s.micButtonPos);
@@ -619,20 +617,63 @@ export const SSHPane = ({
           } else if (data.length === 1 && data >= " " && data !== "\x7f") {
             buf = (buf + data).slice(-200);
           }
-          if (buf !== suggestBufRef.current) {
-            suggestBufRef.current = buf;
-            setSuggestInput(buf);
-          }
+          if (buf !== suggestBufRef.current) suggestBufRef.current = buf;
         } else if (suggestBufRef.current !== "") {
           // Left the shell prompt (TUI or output) — drop the stale mirror.
           suggestBufRef.current = "";
-          setSuggestInput("");
         }
       }
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "data", data }));
       }
     });
+
+    // Fish-style inline completion: the top suggestion's remaining suffix is
+    // drawn as dim ghost text right after the cursor — no dropdown covering
+    // the terminal. Redrawn on each parsed write so it follows the echoed
+    // cursor; pointerup on the ghost sends the completion.
+    let ghostDeco = undefined;
+    let ghostMarker = undefined;
+    const drawGhost = () => {
+      ghostDeco?.dispose();
+      ghostDeco = undefined;
+      ghostMarker?.dispose();
+      ghostMarker = undefined;
+      const buf = suggestBufRef.current;
+      if (!buf) return;
+      const lastLine =
+        term.buffer.active
+          .getLine(term.buffer.active.length - 1)
+          ?.translateToString()
+          .trimEnd() ?? "";
+      if (!isShellPromptLine(lastLine)) return;
+      const suffix = suggest(buf, 1)[0]?.cmd.slice(buf.length) ?? "";
+      if (!suffix) return;
+      const cell = term._core?._renderService?.dimensions?.css?.cell;
+      if (!cell?.width) return;
+      ghostMarker = term.registerMarker(0);
+      ghostDeco = ghostMarker &&
+        term.registerDecoration({
+          marker: ghostMarker,
+          anchor: "left",
+          offsetX: term.buffer.active.cursorX * cell.width,
+        });
+      const el = ghostDeco?.element;
+      if (!el) return;
+      el.textContent = suffix;
+      el.title = "complete";
+      el.style.cssText = `color:rgba(255,255,255,0.38);white-space:pre;height:${cell.height}px;line-height:${cell.height}px;font-size:${term.options.fontSize}px;font-family:${term.options.fontFamily};pointer-events:auto;cursor:pointer`;
+      el.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+      el.addEventListener("pointerup", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        suggestBufRef.current = "";
+        drawGhost();
+        if (wsRef.current?.readyState === WebSocket.OPEN)
+          wsRef.current.send(JSON.stringify({ type: "data", data: suffix }));
+      });
+    };
+    term.onWriteParsed(drawGhost);
 
     // Claude Code (and any CLI) rings the bell when it finishes; forward it to the OS
     // only while the tab is in the background, otherwise it's just noise.
@@ -1005,18 +1046,6 @@ export const SSHPane = ({
           wsRef.current.send(JSON.stringify({ type: "data", data: key }));
         }
       }, 80);
-    }
-  }, []);
-
-  // Complete the current input with the remaining characters of a suggestion.
-  const handleSuggestComplete = useCallback((completion: string) => {
-    const ws = wsRef.current;
-    // Always dismiss the popup, even when the pick is an exact match of what's
-    // already typed (completion === "") — otherwise it would never close.
-    suggestBufRef.current = "";
-    setSuggestInput("");
-    if (ws?.readyState === WebSocket.OPEN && completion) {
-      ws.send(JSON.stringify({ type: "data", data: completion }));
     }
   }, []);
 
@@ -1679,31 +1708,6 @@ export const SSHPane = ({
             anchorRef={terminalRef}
           />
         )}
-
-      {status === "connected" && (
-        <div
-          className={isMobile ? "absolute left-1 right-1 z-30" : "absolute left-2 right-2 z-40"}
-          style={
-            isMobile
-              ? {
-                  bottom: keyboardHeight
-                    ? `${keyboardHeight + (showTerminalShortcuts ? 68 : 4)}px`
-                    : showTerminalShortcuts
-                      ? "4.25rem"
-                      : "0.25rem",
-                }
-              : {
-                  bottom: showTerminalShortcuts
-                    ? showTmuxShortcuts
-                      ? "8.5rem"
-                      : "4.5rem"
-                    : "0.5rem",
-                }
-          }
-        >
-          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
-        </div>
-      )}
 
       {/* Desktop UI */}
       {status === "connected" && !isMobile && (
