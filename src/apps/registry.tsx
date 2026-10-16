@@ -600,12 +600,15 @@ export const SSHPane = ({
       // a TUI (opencode, claude code) re-renders its own input line, so
       // mirroring desyncs and shows stale/foreign suggestions.
       {
-        const lastLine =
+        // Cursor row (baseY + cursorY), NOT buffer.length - 1: `length` counts
+        // scrollback + viewport, so in tmux or after scrolling its last line
+        // is not the row being typed on.
+        const cursorLine =
           term.buffer.active
-            .getLine(term.buffer.active.length - 1)
+            .getLine(term.buffer.active.baseY + term.buffer.active.cursorY)
             ?.translateToString()
             .trimEnd() ?? "";
-        if (isShellPromptLine(lastLine)) {
+        if (isShellPromptLine(cursorLine)) {
           let buf = suggestBufRef.current;
           if (data === "\r" || data === "\n") {
             recordCommand(buf);
@@ -647,12 +650,12 @@ export const SSHPane = ({
       ghostStyledEl = undefined;
       const buf = suggestBufRef.current;
       if (!buf) return;
-      const lastLine =
+      const cursorLine =
         term.buffer.active
-          .getLine(term.buffer.active.length - 1)
+          .getLine(term.buffer.active.baseY + term.buffer.active.cursorY)
           ?.translateToString()
           .trimEnd() ?? "";
-      if (!isShellPromptLine(lastLine)) return;
+      if (!isShellPromptLine(cursorLine)) return;
       const suffix = suggest(buf, 1)[0]?.cmd.slice(buf.length) ?? "";
       if (!suffix) return;
       ghostMarker = term.registerMarker(0);
