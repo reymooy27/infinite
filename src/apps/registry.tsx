@@ -632,13 +632,19 @@ export const SSHPane = ({
     // drawn as dim ghost text right after the cursor — no dropdown covering
     // the terminal. Redrawn on each parsed write so it follows the echoed
     // cursor; pointerup on the ghost sends the completion.
+    // xterm 6 quirks: the decoration element is created at RENDER time (style
+    // it via onRender, it's undefined right after registerDecoration), the
+    // renderer rewrites width/top every frame (undo the 1-cell width clip
+    // there), and x-position is the `x` option in cells (no pixel offsetX).
     let ghostDeco = undefined;
     let ghostMarker = undefined;
+    let ghostStyledEl = undefined;
     const drawGhost = () => {
       ghostDeco?.dispose();
       ghostDeco = undefined;
       ghostMarker?.dispose();
       ghostMarker = undefined;
+      ghostStyledEl = undefined;
       const buf = suggestBufRef.current;
       if (!buf) return;
       const lastLine =
@@ -649,28 +655,34 @@ export const SSHPane = ({
       if (!isShellPromptLine(lastLine)) return;
       const suffix = suggest(buf, 1)[0]?.cmd.slice(buf.length) ?? "";
       if (!suffix) return;
-      const cell = term._core?._renderService?.dimensions?.css?.cell;
-      if (!cell?.width) return;
       ghostMarker = term.registerMarker(0);
-      ghostDeco = ghostMarker &&
+      ghostDeco =
+        ghostMarker &&
         term.registerDecoration({
           marker: ghostMarker,
           anchor: "left",
-          offsetX: term.buffer.active.cursorX * cell.width,
+          x: term.buffer.active.cursorX,
         });
-      const el = ghostDeco?.element;
-      if (!el) return;
-      el.textContent = suffix;
-      el.title = "complete";
-      el.style.cssText = `color:rgba(255,255,255,0.38);white-space:pre;height:${cell.height}px;line-height:${cell.height}px;font-size:${term.options.fontSize}px;font-family:${term.options.fontFamily};pointer-events:auto;cursor:pointer`;
-      el.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-      el.addEventListener("pointerup", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        suggestBufRef.current = "";
-        drawGhost();
-        if (wsRef.current?.readyState === WebSocket.OPEN)
-          wsRef.current.send(JSON.stringify({ type: "data", data: suffix }));
+      ghostDeco?.onRender((el) => {
+        el.style.width = "auto";
+        el.style.overflow = "visible";
+        if (ghostStyledEl === el) return;
+        ghostStyledEl = el;
+        el.textContent = suffix;
+        el.title = "complete";
+        el.style.color = "rgba(255,255,255,0.38)";
+        el.style.whiteSpace = "pre";
+        el.style.pointerEvents = "auto";
+        el.style.cursor = "pointer";
+        el.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+        el.addEventListener("pointerup", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          suggestBufRef.current = "";
+          drawGhost();
+          if (wsRef.current?.readyState === WebSocket.OPEN)
+            wsRef.current.send(JSON.stringify({ type: "data", data: suffix }));
+        });
       });
     };
     term.onWriteParsed(drawGhost);
