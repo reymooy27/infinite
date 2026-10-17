@@ -667,6 +667,18 @@ export const SSHPane = ({
           x: term.buffer.active.cursorX,
         });
       ghostDeco?.onRender((el) => {
+        // Re-pin to the LIVE cursor every frame. The marker line was captured
+        // at write-time, but async prompt redraws (powerlevel10k, zsh async
+        // jobs) move the cursor after the parse — a marker captured during
+        // that transient window parks the ghost one row below the input.
+        // The renderer sets width/top every frame then fires this event, so
+        // overrides here win; resetting them here every frame is required.
+        const b = term.buffer.active;
+        const cell = term._core._renderService?.dimensions?.css?.cell;
+        if (cell?.height && cell?.width) {
+          el.style.top = `${(b.baseY + b.cursorY - b.viewportY) * cell.height}px`;
+          el.style.left = `${b.cursorX * cell.width}px`;
+        }
         el.style.width = "auto";
         el.style.overflow = "visible";
         if (ghostStyledEl === el) return;
