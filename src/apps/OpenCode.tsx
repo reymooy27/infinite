@@ -10,7 +10,6 @@ import {
   Hammer,
   ListChecks,
   Loader2,
-  MessageSquare,
   Mic,
   Plus,
   Power,
@@ -1226,17 +1225,6 @@ export default function OpenCode({
           className={`h-2 w-2 shrink-0 rounded-full ${running ? "bg-emerald-400" : "bg-neutral-600"}`}
           title={running ? "Running" : "Stopped"}
         />
-        <button
-          onClick={() => setShowSessionPicker(true)}
-          disabled={!running}
-          className="flex max-w-40 shrink-0 items-center gap-1 rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-300 hover:text-neutral-100 disabled:opacity-40 cursor-pointer"
-          title="Switch session"
-        >
-          <MessageSquare size={11} className="shrink-0" />
-          <span className="truncate">
-            {sessions.find((s) => s.id === activeSessionId)?.title || "session"}
-          </span>
-        </button>
         {selectedModel ? (
           <button
             onClick={() => setShowPicker(true)}
