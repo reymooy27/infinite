@@ -10,6 +10,7 @@ import {
   Hammer,
   ListChecks,
   Loader2,
+  MessageSquare,
   Mic,
   Plus,
   Power,
@@ -23,6 +24,7 @@ import { api, API_BASE } from "@/lib/api";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import ModelPicker from "@/components/ModelPicker";
+import SessionPicker, { type PickableSession } from "@/components/SessionPicker";
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import {
   appendDeltaIn,
@@ -384,6 +386,7 @@ export default function OpenCode({
   const [models, setModels] = useState<OcModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<OcModel | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [showSessionPicker, setShowSessionPicker] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [cmdIdx, setCmdIdx] = useState(0);
@@ -1223,6 +1226,17 @@ export default function OpenCode({
           className={`h-2 w-2 shrink-0 rounded-full ${running ? "bg-emerald-400" : "bg-neutral-600"}`}
           title={running ? "Running" : "Stopped"}
         />
+        <button
+          onClick={() => setShowSessionPicker(true)}
+          disabled={!running}
+          className="flex max-w-40 shrink-0 items-center gap-1 rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-300 hover:text-neutral-100 disabled:opacity-40 cursor-pointer"
+          title="Switch session"
+        >
+          <MessageSquare size={11} className="shrink-0" />
+          <span className="truncate">
+            {sessions.find((s) => s.id === activeSessionId)?.title || "session"}
+          </span>
+        </button>
         {selectedModel ? (
           <button
             onClick={() => setShowPicker(true)}
@@ -1275,19 +1289,17 @@ export default function OpenCode({
 
       {running && (
         <div className="flex shrink-0 items-center gap-1.5 border-b border-neutral-800 px-2 py-1 sm:hidden">
-          <select
-            value={activeSessionId ?? ""}
-            onChange={(e) => e.target.value && selectSession(e.target.value)}
-            className="min-w-0 flex-1 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 outline-none cursor-pointer"
+          <button
+            onClick={() => setShowSessionPicker(true)}
+            className="flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-left text-xs text-neutral-100 cursor-pointer"
           >
-            {sessions.length === 0 && <option value="">No sessions</option>}
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {sessionBusy[s.id] ? "● " : ""}
-                {s.title || "Untitled"}
-              </option>
-            ))}
-          </select>
+            {activeSessionId && sessionBusy[activeSessionId] && (
+              <Loader2 size={11} className="shrink-0 animate-spin text-indigo-300" />
+            )}
+            <span className="truncate">
+              {sessions.find((s) => s.id === activeSessionId)?.title || "Select session"}
+            </span>
+          </button>
           <button
             onClick={() => void newSession()}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 cursor-pointer"
@@ -1540,6 +1552,33 @@ export default function OpenCode({
           </div>
         </div>
       </div>
+
+      {showSessionPicker && (
+        <SessionPicker
+          sessions={sessions.map(
+            (s): PickableSession => ({
+              id: s.id,
+              title: s.title,
+              busy: !!sessionBusy[s.id],
+              updated: s.time?.updated ?? s.time?.created,
+            }),
+          )}
+          selectedId={activeSessionId}
+          onSelect={(id) => {
+            setShowSessionPicker(false);
+            selectSession(id);
+          }}
+          onNew={() => {
+            setShowSessionPicker(false);
+            void newSession();
+          }}
+          onDelete={(id) => {
+            const s = sessions.find((x) => x.id === id);
+            if (s) void deleteSession(s);
+          }}
+          onClose={() => setShowSessionPicker(false)}
+        />
+      )}
 
       {showPicker && (
         <ModelPicker
