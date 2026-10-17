@@ -14,12 +14,6 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 9871,
     allowedHosts: [".ts.net", ".local"],
-    hmr: {
-      client: {
-        reconnectAttempts: 10,
-        reconnectInterval: 3000,
-      },
-    },
     proxy: {
       "/api": {
         target: "http://localhost:7891",

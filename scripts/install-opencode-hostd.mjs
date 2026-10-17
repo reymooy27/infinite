@@ -27,7 +27,9 @@ fs.mkdirSync(cfgDir, { recursive: true, mode: 0o700 });
 let token = null;
 try {
   token = /OPENCODE_HOSTD_TOKEN=([0-9a-f]+)/.exec(fs.readFileSync(envFile, "utf8"))?.[1] ?? null;
-} catch {}
+} catch {
+  /* first run: no env file yet */
+}
 if (token) {
   log(`token kept -> ${envFile}`);
 } else {
@@ -50,7 +52,9 @@ function findOpencodeBin() {
     try {
       fs.accessSync(c, fs.constants.X_OK);
       return c;
-    } catch {}
+    } catch {
+      /* not this candidate */
+    }
   }
   return null;
 }

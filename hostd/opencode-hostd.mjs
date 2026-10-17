@@ -53,7 +53,9 @@ function resolveBin() {
       fs.accessSync(c, fs.constants.X_OK);
       bin = c;
       return bin;
-    } catch {}
+    } catch {
+      /* not this candidate */
+    }
   }
   throw new Error(
     "opencode binary not found (checked OPENCODE_BIN, PATH, ~/.opencode/bin); set OPENCODE_BIN",
@@ -87,7 +89,9 @@ function saveState() {
     const out = {};
     for (const [dir, s] of serves) out[dir] = { pid: s.pid, port: s.port };
     fs.writeFileSync(STATE_FILE, JSON.stringify(out, null, 2), { mode: 0o600 });
-  } catch {}
+  } catch {
+    /* state file is best-effort */
+  }
 }
 
 async function loadState() {
@@ -103,6 +107,19 @@ async function loadState() {
     }
   }
   saveState();
+}
+
+// A crashed/reclaimed child leaves a stale pid in the map — sweep it so the
+// port is reclaimable and `/status` never reports a ghost as running.
+function startReaper() {
+  const t = setInterval(async () => {
+    for (const [dir, entry] of serves) {
+      if (await isLive(entry)) continue;
+      serves.delete(dir);
+      saveState();
+    }
+  }, 30_000);
+  t.unref();
 }
 
 function isPortFree(port) {
@@ -145,14 +162,18 @@ function killEntry(entry) {
   try {
     if (entry.proc) entry.proc.kill("SIGTERM");
     else process.kill(entry.pid, "SIGTERM");
-  } catch {}
+  } catch {
+    /* already gone */
+  }
   setTimeout(() => {
     try {
       if (entry.proc ? entry.proc.exitCode === null : alive(entry.pid)) {
         if (entry.proc) entry.proc.kill("SIGKILL");
         else process.kill(entry.pid, "SIGKILL");
       }
-    } catch {}
+    } catch {
+      /* already gone */
+    }
   }, KILL_GRACE_MS).unref();
 }
 
@@ -191,7 +212,7 @@ async function beginStart(dir) {
     spawnError = err.message;
   });
   proc.on("exit", () => {
-    if (serves.get(dir)?.pid === proc.pid) {
+    if (serves.get(dir)?.proc === proc) {
       serves.delete(dir);
       saveState();
     }
@@ -212,7 +233,9 @@ async function beginStart(dir) {
   if (!ready) {
     try {
       proc.kill("SIGKILL");
-    } catch {}
+    } catch {
+      /* already dead */
+    }
     const detail = spawnError
       ? `failed to launch "opencode serve": ${spawnError}`
       : outputTail
@@ -345,6 +368,7 @@ server.listen(SELF ? 0 : PORT, "127.0.0.1", () => {
   if (SELF) {
     void runSelfcheck(server.address().port).then((ok) => process.exit(ok ? 0 : 1));
   } else {
+    startReaper();
     console.log(`infinite-opencode-hostd listening on http://127.0.0.1:${PORT}`);
   }
 });

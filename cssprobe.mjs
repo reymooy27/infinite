@@ -1,0 +1,24 @@
+import { chromium } from '/home/rey/project/infinite/node_modules/playwright-core/index.mjs';
+const exe = process.env.HOME + '/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome';
+const b = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
+const p = await b.newPage();
+await p.goto('=http://localhost:8899/index.html'.replace('=',''));
+const out = await p.evaluate(async () => {
+  const term = await window.t0;
+  await new Promise(r => term.write('rey@pc:~$ git stat', r));
+  await new Promise(r => setTimeout(r, 80));
+  const buf = term.buffer.active;
+  const marker = term.registerMarker(0);
+  const deco = term.registerDecoration({ marker, anchor: 'left', x: buf.cursorX });
+  let el = null;
+  deco.onRender(e => { if (!el) { el = e; e.textContent = 'atus'; e.style.width = 'auto'; e.style.color = '#0f0'; } });
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const rows = document.querySelectorAll('.xterm-rows > div');
+  const row = rows[buf.cursorY];
+  const rr = row.getBoundingClientRect();
+  const dr = el.getBoundingClientRect();
+  return { rowTop: rr.top, rowH: rr.height, decoTop: dr.top, decoH: dr.height, diff: +(dr.top - rr.top).toFixed(2), cursorY: buf.cursorY };
+});
+console.log(JSON.stringify(out));
+await p.screenshot({ path: '/tmp/opencode/xterm-test/cssghost.png' });
+await b.close();

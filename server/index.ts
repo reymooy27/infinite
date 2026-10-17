@@ -7,7 +7,6 @@ import http from "http";
 import https from "https";
 import { WebSocket, WebSocketServer } from "ws";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
@@ -93,18 +92,6 @@ app.use(
   }),
 );
 app.use(express.json());
-
-const apiLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests, try again later" },
-});
-const PROXY_CONTENT_PATH = /^\/api\/(dev-browser\/proxy|tunnels|opencode\/[^/]+\/proxy)\//;
-app.use("/api", (req, res, next) =>
-  PROXY_CONTENT_PATH.test(req.originalUrl) ? next() : apiLimiter(req, res, next),
-);
 
 // Domain routes
 app.use("/api/bookmarks", bookmarksRouter);

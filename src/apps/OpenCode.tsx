@@ -16,6 +16,7 @@ import {
   Send,
   Square,
   SquareTerminal,
+  Trash2,
   X,
 } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
@@ -411,6 +412,13 @@ export default function OpenCode({
     return ctrl;
   }, []);
 
+  // Surface a backend/down-proxy failure once instead of silently rendering an
+  // empty session list. AbortError is expected (cancelled on project switch).
+  const reportFetchError = useCallback((err: unknown) => {
+    if ((err as { name?: string })?.name === "AbortError") return;
+    setError(err instanceof Error ? err.message : "Failed to load from opencode");
+  }, []);
+
   const startServer = useCallback(async () => {
     const pid = projectIdRef.current;
     setStarting(true);
@@ -445,13 +453,14 @@ export default function OpenCode({
         if (projectIdRef.current !== pid) return data;
         setSessions(data);
         return data;
-      } catch {
+      } catch (err) {
+        reportFetchError(err);
         return [];
       } finally {
         controllersRef.current.delete(ctrl);
       }
     },
-    [track],
+    [track, reportFetchError],
   );
 
   // /session/status returns { [sessionID]: { type: "busy" | "retry" | ... } };
@@ -500,13 +509,14 @@ export default function OpenCode({
         if (projectIdRef.current !== pid || activeSessionIdRef.current !== sid) return data;
         setMessages(data);
         return data;
-      } catch {
+      } catch (err) {
+        reportFetchError(err);
         return [];
       } finally {
         controllersRef.current.delete(ctrl);
       }
     },
-    [track],
+    [track, reportFetchError],
   );
 
   // Project list + default selection (active project from the store).
@@ -948,6 +958,31 @@ export default function OpenCode({
     }
   };
 
+  const deleteSession = async (s: OcSession) => {
+    if (!projectId) return;
+    const ctrl = track(new AbortController());
+    try {
+      await ocReq(
+        `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(s.id)}`,
+        { method: "DELETE", signal: ctrl.signal },
+      );
+      setSessions((prev) => prev.filter((x) => x.id !== s.id));
+      if (activeSessionIdRef.current === s.id) {
+        const rest = sessions.filter((x) => x.id !== s.id);
+        if (rest[0]) selectSession(rest[0]);
+        else {
+          setActiveSessionId(null);
+          activeSessionIdRef.current = null;
+          setMessages([]);
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete session");
+    } finally {
+      controllersRef.current.delete(ctrl);
+    }
+  };
+
   const newSession = async () => {
     if (!projectId || !running) return;
     const ctrl = track(new AbortController());
@@ -1290,31 +1325,40 @@ export default function OpenCode({
               </div>
             ) : (
               sessions.map((s) => (
-                <button
+                <div
                   key={s.id}
-                  onClick={() => selectSession(s)}
-                  className={`block w-full px-3 py-1.5 text-left transition-colors cursor-pointer ${
-                    s.id === activeSessionId
-                      ? "bg-neutral-800/80"
-                      : "hover:bg-neutral-800/60"
+                  className={`group flex items-center transition-colors ${
+                    s.id === activeSessionId ? "bg-neutral-800/80" : "hover:bg-neutral-800/60"
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    {sessionBusy[s.id] && (
-                      <Loader2
-                        size={11}
-                        aria-label="Running"
-                        className="shrink-0 animate-spin text-indigo-300"
-                      />
-                    )}
-                    <span className="truncate text-xs text-neutral-100">
-                      {s.title || "Untitled"}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-[10px] text-neutral-500">
-                    {relTime(s.time?.updated ?? s.time?.created)}
-                  </div>
-                </button>
+                  <button
+                    onClick={() => selectSession(s)}
+                    className="block min-w-0 flex-1 px-3 py-1.5 text-left cursor-pointer"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {sessionBusy[s.id] && (
+                        <Loader2
+                          size={11}
+                          aria-label="Running"
+                          className="shrink-0 animate-spin text-indigo-300"
+                        />
+                      )}
+                      <span className="truncate text-xs text-neutral-100">
+                        {s.title || "Untitled"}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[10px] text-neutral-500">
+                      {relTime(s.time?.updated ?? s.time?.created)}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => void deleteSession(s)}
+                    className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-neutral-500 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-rose-300 group-hover:opacity-100 cursor-pointer"
+                    title="Delete session"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               ))
             )}
           </div>

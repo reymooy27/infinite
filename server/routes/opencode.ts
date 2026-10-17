@@ -184,7 +184,11 @@ router.post("/:projectId/start", async (req, res) => {
     proc.on("error", (err) => {
       spawnError = err.message;
     });
-    proc.on("exit", () => managed.delete(project.id));
+    // Guard on identity: a stale proc from a prior failed start must not evict
+    // the entry that replaced it.
+    proc.on("exit", () => {
+      if (managed.get(project.id)?.proc === proc) managed.delete(project.id);
+    });
 
     const ready = await waitUntilReady(proc, port, READY_TIMEOUT_MS, () => spawnError !== null);
     if (!ready) {

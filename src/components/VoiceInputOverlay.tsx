@@ -71,7 +71,7 @@ export default function VoiceInputOverlay({
     setShowTranslation(true);
     try {
       const result = await onTranslate(editedText);
-      setTranslatedText(result.translated || result);
+      setTranslatedText(result);
     } catch {
       setTranslatedText("Gagal menerjemahkan");
     } finally {
