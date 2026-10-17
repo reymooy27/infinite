@@ -792,7 +792,7 @@ export default function OpenCode({
           }
         } else if (type === "permission.replied" || type === "permission.v2.replied") {
           setPermission(null);
-        } else if (type === "question.asked") {
+        } else if (type === "question.asked" || type === "question.v2.asked") {
           const p = data.properties as
             | {
                 id?: string;
@@ -819,7 +819,12 @@ export default function OpenCode({
               })),
             });
           }
-        } else if (type === "question.replied" || type === "question.rejected") {
+        } else if (
+          type === "question.replied" ||
+          type === "question.rejected" ||
+          type === "question.v2.replied" ||
+          type === "question.v2.rejected"
+        ) {
           setQuestion(null);
         }
       };
