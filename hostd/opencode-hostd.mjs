@@ -158,21 +158,25 @@ function stopDir(raw) {
   }
 }
 
-function killEntry(entry) {
+// Children are spawned detached, so each is its own process-group leader:
+// kill the group (-pid) so wrapper children holding the port die too.
+function killPid(pid, signal) {
   try {
-    if (entry.proc) entry.proc.kill("SIGTERM");
-    else process.kill(entry.pid, "SIGTERM");
+    process.kill(-pid, signal);
   } catch {
-    /* already gone */
-  }
-  setTimeout(() => {
     try {
-      if (entry.proc ? entry.proc.exitCode === null : alive(entry.pid)) {
-        if (entry.proc) entry.proc.kill("SIGKILL");
-        else process.kill(entry.pid, "SIGKILL");
-      }
+      process.kill(pid, signal);
     } catch {
       /* already gone */
+    }
+  }
+}
+
+function killEntry(entry) {
+  killPid(entry.pid, "SIGTERM");
+  setTimeout(() => {
+    if (entry.proc ? entry.proc.exitCode === null : alive(entry.pid)) {
+      killPid(entry.pid, "SIGKILL");
     }
   }, KILL_GRACE_MS).unref();
 }
@@ -182,7 +186,7 @@ async function isLive(entry) {
   return alive(entry.pid) && (await health(entry.port, 2000));
 }
 
-async function beginStart(dir) {
+async function beginStart(dir, cancel = { hit: false }) {
   const existing = serves.get(dir);
   if (existing) {
     if (await isLive(existing)) return { status: 200, body: { running: true, port: existing.port } };
@@ -221,7 +225,7 @@ async function beginStart(dir) {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let ready = false;
   for (;;) {
-    if (proc.exitCode !== null || spawnError) break;
+    if (proc.exitCode !== null || spawnError || cancel.hit) break;
     if (await health(port, 800)) {
       ready = true;
       break;
@@ -230,12 +234,17 @@ async function beginStart(dir) {
     await new Promise((r) => setTimeout(r, 500));
   }
 
+  // A /stop that raced this in-flight start must win: the entry is not in
+  // `serves` yet, so without this the serve would start up *after* the UI
+  // already reported "stopped" (check + set are atomic — no await between).
+  if (cancel.hit) {
+    killPid(proc.pid, "SIGKILL");
+    console.log(`start of ${dir} cancelled by stop`);
+    return { status: 409, body: { error: "start cancelled by stop" } };
+  }
+
   if (!ready) {
-    try {
-      proc.kill("SIGKILL");
-    } catch {
-      /* already dead */
-    }
+    if (proc.pid) killPid(proc.pid, "SIGKILL");
     const detail = spawnError
       ? `failed to launch "opencode serve": ${spawnError}`
       : outputTail
@@ -287,18 +296,24 @@ const server = http.createServer(async (req, res) => {
       const dir = startDir(body?.dir);
       if (!dir) return send(400, { error: "dir must be an existing absolute directory" });
       let job = pending.get(dir);
-      if (!job) {
-        job = beginStart(dir);
+      if (!job || job.cancel.hit) {
+        const cancel = { hit: false };
+        const promise = beginStart(dir, cancel);
+        job = { promise, cancel };
         pending.set(dir, job);
-        void job.finally(() => pending.delete(dir));
+        void promise.finally(() => {
+          if (pending.get(dir) === job) pending.delete(dir);
+        });
       }
-      const r = await job;
+      const r = await job.promise;
       return send(r.status, r.body);
     }
     if (req.method === "POST" && url.pathname === "/stop") {
       const body = await readJson(req);
       const dir = stopDir(body?.dir);
       if (!dir) return send(400, { error: "dir must be an absolute path" });
+      const inflight = pending.get(dir);
+      if (inflight) inflight.cancel.hit = true;
       const entry = serves.get(dir);
       if (entry) {
         serves.delete(dir);

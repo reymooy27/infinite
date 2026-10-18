@@ -51,6 +51,25 @@ interface Managed {
 
 const managed = new Map<string, Managed>();
 
+// In-flight starts: /stop arriving during the readiness wait must cancel the
+// spawn instead of silently no-op'ing (entry lands in `managed` only once
+// ready, so without this the process starts *after* the UI said "stopped").
+const starting = new Map<string, { proc: ChildProcess; cancelled: boolean }>();
+
+// Children are spawned detached (own process group) so a group kill takes
+// down wrapper children too — including whatever actually holds the port.
+function killTree(pid: number, signal: NodeJS.Signals) {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
 function copyHeaders(source: http.IncomingHttpHeaders, skip: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
@@ -98,10 +117,10 @@ async function waitUntilReady(
 
 function stopOne(entry: Managed) {
   const { proc } = entry;
-  if (proc.exitCode === null && !proc.killed) {
-    proc.kill("SIGTERM");
+  if (proc.exitCode === null && proc.pid) {
+    killTree(proc.pid, "SIGTERM");
     setTimeout(() => {
-      if (proc.exitCode === null) proc.kill("SIGKILL");
+      if (proc.exitCode === null && proc.pid) killTree(proc.pid, "SIGKILL");
     }, KILL_GRACE_MS);
   }
 }
@@ -171,6 +190,7 @@ router.post("/:projectId/start", async (req, res) => {
 
     const proc = spawn("opencode", ["serve", "--port", String(port), "--hostname", "127.0.0.1"], {
       cwd: project.directory,
+      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     // stdio piped (not "ignore") so spawn ENOENT + crash output reach the 502 body.
@@ -190,9 +210,17 @@ router.post("/:projectId/start", async (req, res) => {
       if (managed.get(project.id)?.proc === proc) managed.delete(project.id);
     });
 
-    const ready = await waitUntilReady(proc, port, READY_TIMEOUT_MS, () => spawnError !== null);
+    const job = { proc, cancelled: false };
+    starting.set(project.id, job);
+    const ready = await waitUntilReady(proc, port, READY_TIMEOUT_MS, () => spawnError !== null || job.cancelled);
+    if (starting.get(project.id) === job) starting.delete(project.id);
+    if (job.cancelled) {
+      stopOne({ proc, port });
+      res.json({ running: false });
+      return;
+    }
     if (!ready) {
-      proc.kill("SIGKILL");
+      if (proc.pid) killTree(proc.pid, "SIGKILL");
       const detail = spawnError
         ? `failed to launch "opencode serve": ${spawnError}`
         : outputTail
@@ -226,6 +254,11 @@ router.post("/:projectId/stop", async (req, res) => {
     }
     res.json({ running: false });
     return;
+  }
+  const inflight = starting.get(id);
+  if (inflight) {
+    inflight.cancelled = true;
+    if (inflight.proc.pid) killTree(inflight.proc.pid, "SIGTERM");
   }
   const entry = managed.get(id);
   if (entry) {
