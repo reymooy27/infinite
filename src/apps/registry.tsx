@@ -1610,10 +1610,7 @@ export const SSHPane = ({
     [openVoiceOverlay],
   );
 
-  const mobileBottomInset =
-    isMobile && focusMode
-      ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
-      : 0;
+  const mobileFocusFlow = isMobile && focusMode;
 
   const translateVoice = useCallback(async (text: string) => {
     try {
@@ -1641,7 +1638,10 @@ export const SSHPane = ({
         visibility: isActive ? "visible" : "hidden",
         position: "absolute",
         inset: 0,
-        paddingBottom: mobileBottomInset ? `${mobileBottomInset}px` : undefined,
+        // QuickBar is in-flow below; inset is keyboard-only on purpose.
+        paddingBottom: mobileFocusFlow ? `${keyboardHeight ?? 0}px` : undefined,
+        display: mobileFocusFlow ? "flex" : undefined,
+        flexDirection: mobileFocusFlow ? "column" : undefined,
       }}
       className={`bg-[#0a0a0a] ${
         isMobile
@@ -1656,7 +1656,7 @@ export const SSHPane = ({
       <div
         ref={terminalRef}
         onMouseDown={lockKeyboard}
-        className="w-full h-full"
+        className={mobileFocusFlow ? "w-full flex-1 min-h-0" : "w-full h-full"}
         style={
           enableTouchScroll && isMobile
             ? { touchAction: "pan-y", overscrollBehavior: "contain" }
@@ -1699,10 +1699,7 @@ export const SSHPane = ({
             <Mic className="w-6 h-6" />
           </button>
           <div
-            className="absolute left-1 right-1 z-30"
-            style={{
-              bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
-            }}
+            className="relative z-30 mx-1 mb-1 shrink-0 empty:hidden"
             onTouchStart={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
           >
