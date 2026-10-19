@@ -11,6 +11,9 @@ export interface OcPart {
   type: string;
   text?: string;
   tool?: string;
+  mime?: string;
+  filename?: string;
+  url?: string;
   state?: OcToolState;
 }
 
@@ -73,4 +76,17 @@ export function upsertInfoIn(prev: OcMessageEntry[], info: OcMessageEntry["info"
 function entryIndex(prev: OcMessageEntry[], messageID: string): number {
   for (let i = prev.length - 1; i >= 0; i--) if (prev[i].info.id === messageID) return i;
   return -1;
+}
+
+export function extractLastTodos(messages: OcMessageEntry[]): unknown[] | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    for (let j = messages[i].parts.length - 1; j >= 0; j--) {
+      const p = messages[i].parts[j];
+      if (p.type === "tool" && p.tool === "todowrite") {
+        const t = (p.state?.input as { todos?: unknown } | undefined)?.todos;
+        return Array.isArray(t) ? (t as unknown[]) : [];
+      }
+    }
+  }
+  return null;
 }

@@ -534,6 +534,10 @@ per project — a full chat UI over the opencode HTTP API:
   multi-select, with a free-text option)
 - **Tool + reasoning views** — collapsible tool calls with status and
   input/output, plus reasoning blocks
+- **Attachments** — attach files or paste images; sent to opencode as file parts
+- **Plan checklist** — the session's `todowrite` progress renders as a live
+  checklist above the composer (survives reloads via history replay)
+- **Syntax-highlighted code blocks** — highlight.js + one-click copy button
 - **Voice input** — dictate a message (Web Speech API; HTTPS or localhost)
 - **Live streaming** — SSE event stream updates the thread as parts arrive
 - **Chat font size** — adjustable in Settings → Terminal (10–24px)

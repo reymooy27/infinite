@@ -91,7 +91,10 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
+// ponytail: global 25mb so OpenCode image attachments (base64 file parts in a
+// JSON prompt) fit. Ceiling: every JSON route shares this cap. Upgrade path:
+// move the higher limit onto a path-scoped parser mounted before this line.
+app.use(express.json({ limit: "25mb" }));
 
 // Domain routes
 app.use("/api/bookmarks", bookmarksRouter);

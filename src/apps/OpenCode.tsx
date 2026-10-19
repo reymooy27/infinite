@@ -1,16 +1,22 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import hljs from "highlight.js/lib/common";
+import "highlight.js/styles/github-dark.css";
 import {
   AlertCircle,
   Check,
   CheckCircle2,
   ChevronRight,
+  Circle,
+  Copy,
   Cpu,
+  FileText,
   Hammer,
   ListChecks,
   Loader2,
   Mic,
+  Paperclip,
   Plus,
   Power,
   Send,
@@ -27,6 +33,7 @@ import SessionPicker, { type PickableSession } from "@/components/SessionPicker"
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import {
   appendDeltaIn,
+  extractLastTodos,
   upsertInfoIn,
   upsertPartIn,
   type OcMessageEntry,
@@ -129,6 +136,96 @@ function relTime(ts?: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+interface OcTodo {
+  content: string;
+  status?: string;
+  priority?: string;
+}
+
+interface DraftFile {
+  id: string;
+  name: string;
+  mime: string;
+  dataUrl: string;
+}
+
+const MAX_FILES = 4;
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
+
+function readFileAsDataUrl(f: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result));
+    fr.onerror = () => reject(fr.error ?? new Error("read failed"));
+    fr.readAsDataURL(f);
+  });
+}
+
+function nodeText(node: unknown): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join("");
+  return nodeText((node as { props?: { children?: unknown } })?.props?.children);
+}
+
+function CodePre({ children }: { children?: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const codeEl = (Array.isArray(children) ? children[0] : children) as {
+    props?: { className?: string; children?: unknown };
+  } | undefined;
+  const lang = /^language-([\w+#.-]+)/.exec(String(codeEl?.props?.className ?? ""))?.[1];
+  const raw = nodeText(codeEl?.props?.children ?? children).replace(/\n$/, "");
+  let html = "";
+  try {
+    if (raw.length < 100_000) {
+      html =
+        lang && hljs.getLanguage(lang)
+          ? hljs.highlight(raw, { language: lang }).value
+          : hljs.highlightAuto(raw).value;
+    }
+  } catch {
+    html = "";
+  }
+  const flash = () => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  const copy = () => {
+    navigator.clipboard
+      ?.writeText(raw)
+      .then(flash)
+      .catch(() => {
+        const ta = document.createElement("textarea");
+        ta.value = raw;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+        flash();
+      });
+  };
+  const cls = `hljs${lang ? ` language-${lang}` : ""}`;
+  return (
+    <pre className="group relative">
+      <button
+        onClick={copy}
+        title="Copy code"
+        className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800/90 px-1.5 py-0.5 text-[10px] text-neutral-300 opacity-0 transition-opacity group-hover:opacity-100 cursor-pointer"
+      >
+        {copied ? <Check size={10} /> : <Copy size={10} />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+      {html ? (
+        <code className={cls} style={{ background: "transparent" }} dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <code className={cls} style={{ background: "transparent" }}>
+          {raw}
+        </code>
+      )}
+    </pre>
+  );
+}
+
 const PartView = memo(function PartView({ part, isUser = false }: { part: OcPart; isUser?: boolean }) {
   const chatFontSize = useSettingsStore((s) => s.chatFontSize);
   if (part.type === "text") {
@@ -137,7 +234,33 @@ const PartView = memo(function PartView({ part, isUser = false }: { part: OcPart
         className={`markdown-body leading-relaxed ${isUser ? "text-[#FFC799]" : "text-neutral-200"}`}
         style={{ fontSize: `${chatFontSize}px` }}
       >
-        <Markdown remarkPlugins={[remarkGfm]}>{part.text ?? ""}</Markdown>
+        <Markdown remarkPlugins={[remarkGfm]} components={{ pre: CodePre }}>
+          {part.text ?? ""}
+        </Markdown>
+      </div>
+    );
+  }
+  if (part.type === "file") {
+    if (part.mime?.startsWith("image/") && part.url) {
+      return (
+        <img
+          src={part.url}
+          alt={part.filename ?? "image"}
+          className="my-1 max-h-48 max-w-[70%] rounded-lg border border-neutral-800 object-contain"
+        />
+      );
+    }
+    return (
+      <div
+        className={`my-1 inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-xs ${
+          isUser
+            ? "border-[#EC5B2B]/30 bg-[#EC5B2B]/10 text-[#FFC799]"
+            : "border-neutral-800 bg-neutral-900 text-neutral-300"
+        }`}
+      >
+        <FileText size={12} className="shrink-0" />
+        <span className="truncate">{part.filename ?? "file"}</span>
+        {part.mime && <span className="shrink-0 text-neutral-500">{part.mime}</span>}
       </div>
     );
   }
@@ -390,6 +513,8 @@ export default function OpenCode({
   const [dismissed, setDismissed] = useState(false);
   const [cmdIdx, setCmdIdx] = useState(0);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [files, setFiles] = useState<DraftFile[]>([]);
+  const [todos, setTodos] = useState<OcTodo[]>([]);
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const falseStreakRef = useRef(0);
@@ -401,6 +526,7 @@ export default function OpenCode({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repairRef = useRef(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   activeSessionIdRef.current = activeSessionId;
 
@@ -551,6 +677,8 @@ export default function OpenCode({
     setError(null);
     setNotice(null);
     setSelectedModel(null);
+    setTodos([]);
+    setFiles([]);
     let stopped = false;
     const poll = async () => {
       const ctrl = track(new AbortController());
@@ -649,6 +777,13 @@ export default function OpenCode({
     if (!projectId || !running || !activeSessionId) return;
     void fetchMessages(projectId, activeSessionId);
   }, [projectId, running, activeSessionId, fetchMessages]);
+
+  // Rebuild the plan checklist from history (last todowrite tool part) so the
+  // view survives reloads/session switches, where no todo.updated SSE fired.
+  useEffect(() => {
+    const t = extractLastTodos(messages);
+    if (t) setTodos(t as OcTodo[]);
+  }, [messages]);
 
   // Fixed-project mode (focus mode): the panel follows the active project,
   // no selector, and starts opencode serve by itself.
@@ -773,6 +908,9 @@ export default function OpenCode({
             refetchHistory();
             if (projectId) void fetchSessions(projectId);
           }
+        } else if (type === "todo.updated" && isActive) {
+          const t = data.properties?.todos;
+          if (Array.isArray(t)) setTodos(t as OcTodo[]);
         } else if (
           type === "permission.asked" ||
           type === "permission.v2.asked" ||
@@ -886,6 +1024,7 @@ export default function OpenCode({
     setActiveSessionId(id);
     activeSessionIdRef.current = id;
     stickRef.current = true;
+    setTodos([]);
     setSelectedModel(
       sess?.model?.providerID && sess?.model?.id
         ? models.find((m) => m.providerID === sess.model!.providerID && m.modelID === sess.model!.id) ?? {
@@ -1007,9 +1146,39 @@ export default function OpenCode({
     }
   };
 
+  const addFiles = async (list: FileList | File[]) => {
+    const incoming = Array.from(list);
+    const room = MAX_FILES - files.length;
+    if (room <= 0) {
+      setNotice(`Max ${MAX_FILES} attachments.`);
+      return;
+    }
+    const accepted: DraftFile[] = [];
+    for (const f of incoming.slice(0, room)) {
+      if (f.size > MAX_FILE_BYTES) {
+        setNotice(`${f.name}: skipped, larger than ${MAX_FILE_BYTES >> 20}MB`);
+        continue;
+      }
+      try {
+        accepted.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: f.name,
+          mime: f.type || "application/octet-stream",
+          dataUrl: await readFileAsDataUrl(f),
+        });
+      } catch {
+        setNotice(`${f.name}: could not read file`);
+      }
+    }
+    if (accepted.length > 0) {
+      setNotice(null);
+      setFiles((prev) => [...prev, ...accepted]);
+    }
+  };
+
   const send = async () => {
     const text = input.trim();
-    if (!text || !projectId || !activeSessionId || sending) return;
+    if ((!text && files.length === 0) || !projectId || !activeSessionId || sending) return;
     const mc = /^\/model(?:\s+(\S*))?$/.exec(text);
     if (mc) {
       setInput("");
@@ -1040,7 +1209,16 @@ export default function OpenCode({
     const optimisticId = `optimistic-${Date.now()}`;
     const optimistic: OcMessageEntry = {
       info: { id: optimisticId, role: "user", time: { created: Date.now() } },
-      parts: [{ id: `${optimisticId}-p`, type: "text", text }],
+      parts: [
+        ...files.map((f, i) => ({
+          id: `${optimisticId}-f${i}`,
+          type: "file",
+          mime: f.mime,
+          filename: f.name,
+          url: f.dataUrl,
+        })),
+        ...(text ? [{ id: `${optimisticId}-p`, type: "text", text }] : []),
+      ],
     };
     setMessages((prev) => [...prev, optimistic]);
     markBusy(activeSessionId, true);
@@ -1055,13 +1233,17 @@ export default function OpenCode({
             signal: ctrl.signal,
           },
         );
+        setFiles([]);
       } else {
         const res = await ocReq<OcMessageEntry>(
           `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/message`,
           {
             method: "POST",
             body: JSON.stringify({
-              parts: [{ type: "text", text }],
+              parts: [
+                ...files.map((f) => ({ type: "file", mime: f.mime, filename: f.name, url: f.dataUrl })),
+                ...(text ? [{ type: "text", text }] : []),
+              ],
               agent: mode,
               ...(selectedModel
                 ? { model: { providerID: selectedModel.providerID, modelID: selectedModel.modelID } }
@@ -1071,6 +1253,7 @@ export default function OpenCode({
           },
         );
         setMessages((prev) => [...prev.filter((m) => m.info.id !== optimisticId), res]);
+        setFiles([]);
       }
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
@@ -1402,6 +1585,38 @@ export default function OpenCode({
             )}
           </div>
 
+          {activeSessionId && todos.length > 0 && (
+            <details open className="shrink-0 border-t border-neutral-800 bg-neutral-900/95">
+              <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-neutral-400">
+                <ListChecks size={13} className="shrink-0 text-sky-300" />
+                Plan
+                <span className="ml-auto font-mono text-[10px] normal-case tracking-normal text-neutral-500">
+                  {todos.filter((t) => t.status === "completed").length}/{todos.length}
+                </span>
+              </summary>
+              <ul className="max-h-44 space-y-1 overflow-y-auto px-3 pb-2">
+                {todos.map((t, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs">
+                    {t.status === "completed" ? (
+                      <CheckCircle2 size={12} className="mt-0.5 shrink-0 text-emerald-300" />
+                    ) : t.status === "in_progress" ? (
+                      <Loader2 size={12} className="mt-0.5 shrink-0 animate-spin text-sky-300" />
+                    ) : (
+                      <Circle size={12} className="mt-0.5 shrink-0 text-neutral-600" />
+                    )}
+                    <span
+                      className={
+                        t.status === "completed" ? "text-neutral-500 line-through" : "text-neutral-200"
+                      }
+                    >
+                      {t.content}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
           {permission && (
             <div className="flex flex-wrap items-center gap-3 border-t border-neutral-800 bg-neutral-900/80 px-3 py-2">
               <span className="min-w-0 text-xs text-neutral-400">
@@ -1451,6 +1666,30 @@ export default function OpenCode({
             {error && (
               <div className="px-1 pb-1.5 text-xs text-rose-300">{error}</div>
             )}
+            {files.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {files.map((f) => (
+                  <span
+                    key={f.id}
+                    className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 py-1 pl-1 pr-1.5 text-[10px] text-neutral-300"
+                  >
+                    {f.mime.startsWith("image/") ? (
+                      <img src={f.dataUrl} alt={f.name} className="h-6 w-6 rounded object-cover" />
+                    ) : (
+                      <FileText size={14} className="h-6 w-6 p-1 text-neutral-500" />
+                    )}
+                    <span className="max-w-32 truncate">{f.name}</span>
+                    <button
+                      onClick={() => setFiles((prev) => prev.filter((x) => x.id !== f.id))}
+                      className="text-neutral-500 hover:text-rose-300 cursor-pointer"
+                      title="Remove"
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="relative flex items-end gap-2">
               {cmdList.length > 0 && (
                 <div className="absolute bottom-full left-0 z-10 mb-2 max-h-60 w-96 max-w-full overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl">
@@ -1498,6 +1737,24 @@ export default function OpenCode({
                     <m.icon size={15} />
                   </button>
                 ))}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!running || files.length >= MAX_FILES}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300 disabled:opacity-40 cursor-pointer"
+                  title="Attach files"
+                >
+                  <Paperclip size={15} />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) void addFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
               </div>
               <textarea
                 ref={taRef}
@@ -1509,6 +1766,12 @@ export default function OpenCode({
                   setCmdIdx(0);
                 }}
                 onKeyDown={handleKeyDown}
+                onPaste={(e) => {
+                  if (e.clipboardData.files.length > 0) {
+                    e.preventDefault();
+                    void addFiles(e.clipboardData.files);
+                  }
+                }}
                 placeholder={
                   running ? "Message…  (/ for commands, Enter to send)" : "Start the server to chat…"
                 }
@@ -1534,7 +1797,7 @@ export default function OpenCode({
               ) : (
                 <button
                   onClick={() => void send()}
-                  disabled={!running || !input.trim()}
+                  disabled={!running || (!input.trim() && files.length === 0)}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-950 hover:bg-white disabled:opacity-40 cursor-pointer"
                   title="Send"
                 >

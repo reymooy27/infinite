@@ -1,6 +1,12 @@
 // Run: node_modules/.bin/tsx src/apps/opencode-parts.check.ts
 import assert from "node:assert/strict";
-import { appendDeltaIn, upsertInfoIn, upsertPartIn, type OcMessageEntry } from "./opencode-parts";
+import {
+  appendDeltaIn,
+  extractLastTodos,
+  upsertInfoIn,
+  upsertPartIn,
+  type OcMessageEntry,
+} from "./opencode-parts";
 
 const userMsg: OcMessageEntry = {
   info: { id: "msg_u", role: "user" },
@@ -40,5 +46,21 @@ const withOptimistic = [...s4, { info: { id: `optimistic-1`, role: "user" }, par
 const s5 = upsertInfoIn(withOptimistic, { id: "msg_u2", role: "user", time: { created: 3 } });
 assert.ok(!s5.some((m) => m.info.id.startsWith("optimistic-")));
 assert.equal(s5.length, 3);
+
+// extractLastTodos: last todowrite wins, other tools ignored, none → null
+const mkTodos = (a: string, b: string): OcMessageEntry => ({
+  info: { id: `m_${a}`, role: "assistant" },
+  parts: [
+    { id: `t_${a}`, type: "tool", tool: "todowrite", state: { status: "completed", input: { todos: [{ content: a }, { content: b }] } } },
+  ],
+});
+const history: OcMessageEntry[] = [
+  mkTodos("first", "one"),
+  { info: { id: "m_edit", role: "assistant" }, parts: [{ id: "t_e", type: "tool", tool: "edit", state: { status: "completed" } }] },
+  mkTodos("second", "two"),
+];
+assert.deepEqual(extractLastTodos(history), [{ content: "second" }, { content: "two" }]);
+assert.equal(extractLastTodos([history[1]]), null);
+assert.deepEqual(extractLastTodos([{ info: { id: "x", role: "assistant" }, parts: [{ id: "t", type: "tool", tool: "todowrite", state: { status: "completed" } }] }]), []);
 
 console.log("opencode-parts: all checks passed");
