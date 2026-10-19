@@ -90,3 +90,52 @@ export function extractLastTodos(messages: OcMessageEntry[]): unknown[] | null {
   }
   return null;
 }
+
+export interface OcFilePart {
+  type: "file";
+  mime: string;
+  filename: string;
+  url: string;
+}
+
+const MENTION_MIME: Record<string, string> = {
+  ts: "text/typescript",
+  tsx: "text/tsx",
+  js: "text/javascript",
+  jsx: "text/jsx",
+  mjs: "text/javascript",
+  cjs: "text/javascript",
+  json: "application/json",
+  md: "text/markdown",
+  css: "text/css",
+  html: "text/html",
+  py: "text/x-python",
+  rs: "text/rust",
+  go: "text/x-go",
+  sh: "text/x-shellscript",
+  yml: "text/yaml",
+  yaml: "text/yaml",
+  sql: "text/x-sql",
+  txt: "text/plain",
+};
+
+function mimeFor(path: string): string {
+  const ext = (/\.([\w+]+)$/.exec(path)?.[1] ?? "").toLowerCase();
+  return MENTION_MIME[ext] ?? "text/plain";
+}
+
+// ponytail: mentions become file:// parts only when the same user picked them
+// from the picker AND the @token is still in the text — no filesystem check.
+// Ceiling: a renamed/picked-stale path 502s from opencode. Upgrade path:
+// validate via /find/file exact match before send.
+export function buildMentionParts(input: string, tracked: string[], root: string): OcFilePart[] {
+  if (!root) return [];
+  const cleanRoot = root.replace(/\/+$/, "");
+  const out: OcFilePart[] = [];
+  for (const p of tracked) {
+    if (!input.includes(`@${p}`)) continue;
+    const full = `${cleanRoot}/${p}`.split("/").map(encodeURIComponent).join("/");
+    out.push({ type: "file", mime: mimeFor(p), filename: p, url: `file://${full}` });
+  }
+  return out;
+}

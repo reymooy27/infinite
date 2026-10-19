@@ -535,6 +535,8 @@ per project — a full chat UI over the opencode HTTP API:
 - **Tool + reasoning views** — collapsible tool calls with status and
   input/output, plus reasoning blocks
 - **Attachments** — attach files or paste images; sent to opencode as file parts
+- **@ file mentions** — fuzzy file picker (opencode `/find/file`); picked paths
+  ship as `file://` parts alongside the prompt
 - **Plan checklist** — the session's `todowrite` progress renders as a live
   checklist above the composer (survives reloads via history replay)
 - **Syntax-highlighted code blocks** — highlight.js + one-click copy button

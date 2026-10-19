@@ -33,6 +33,7 @@ import SessionPicker, { type PickableSession } from "@/components/SessionPicker"
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import {
   appendDeltaIn,
+  buildMentionParts,
   extractLastTodos,
   upsertInfoIn,
   upsertPartIn,
@@ -515,6 +516,10 @@ export default function OpenCode({
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [files, setFiles] = useState<DraftFile[]>([]);
   const [todos, setTodos] = useState<OcTodo[]>([]);
+  const [fileHits, setFileHits] = useState<string[]>([]);
+  const [mentions, setMentions] = useState<string[]>([]);
+  const [fileIdx, setFileIdx] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const falseStreakRef = useRef(0);
@@ -679,6 +684,7 @@ export default function OpenCode({
     setSelectedModel(null);
     setTodos([]);
     setFiles([]);
+    setMentions([]);
     let stopped = false;
     const poll = async () => {
       const ctrl = track(new AbortController());
@@ -784,6 +790,30 @@ export default function OpenCode({
     const t = extractLastTodos(messages);
     if (t) setTodos(t as OcTodo[]);
   }, [messages]);
+
+  // @-mention picker: fuzzy file search against the opencode workspace,
+  // debounced so each keystroke isn't a round-trip.
+  const atQuery = /(?:^|\s)@([\w./@+-]*)$/.exec(input)?.[1];
+  useEffect(() => {
+    if (!projectId || !running || atQuery === undefined) {
+      setFileHits([]);
+      return;
+    }
+    const ctrl = track(new AbortController());
+    const t = setTimeout(() => {
+      ocReq<string[]>(
+        `/api/opencode/${encodeURIComponent(projectId)}/proxy/find/file?query=${encodeURIComponent(atQuery)}&type=file&limit=80`,
+        { signal: ctrl.signal },
+      )
+        .then((d) => setFileHits(Array.isArray(d) ? d.slice(0, 30) : []))
+        .catch(() => setFileHits([]))
+        .finally(() => controllersRef.current.delete(ctrl));
+    }, 150);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [atQuery, projectId, running, track]);
 
   // Fixed-project mode (focus mode): the panel follows the active project,
   // no selector, and starts opencode serve by itself.
@@ -1074,6 +1104,15 @@ export default function OpenCode({
     taRef.current?.focus();
   };
 
+  const mentionList = mentionDismissed || atQuery === undefined ? [] : fileHits;
+
+  const applyMention = (path: string) => {
+    setInput((i) => i.replace(/@[\w./@+-]*$/, `@${path} `));
+    setMentions((prev) => (prev.includes(path) ? prev : [...prev, path]));
+    setFileIdx(0);
+    taRef.current?.focus();
+  };
+
   const togglePower = async () => {
     if (!projectId) return;
     if (running) {
@@ -1206,6 +1245,8 @@ export default function OpenCode({
     setNotice(null);
     setSending(true);
     stickRef.current = true;
+    const root = projects.find((p) => p.id === projectId)?.directory?.replace(/\/+$/, "") ?? "";
+    const mentionParts = buildMentionParts(text, mentions, root);
     const optimisticId = `optimistic-${Date.now()}`;
     const optimistic: OcMessageEntry = {
       info: { id: optimisticId, role: "user", time: { created: Date.now() } },
@@ -1217,6 +1258,7 @@ export default function OpenCode({
           filename: f.name,
           url: f.dataUrl,
         })),
+        ...mentionParts.map((m, i) => ({ ...m, id: `${optimisticId}-m${i}` })),
         ...(text ? [{ id: `${optimisticId}-p`, type: "text", text }] : []),
       ],
     };
@@ -1242,6 +1284,7 @@ export default function OpenCode({
             body: JSON.stringify({
               parts: [
                 ...files.map((f) => ({ type: "file", mime: f.mime, filename: f.name, url: f.dataUrl })),
+                ...mentionParts,
                 ...(text ? [{ type: "text", text }] : []),
               ],
               agent: mode,
@@ -1254,6 +1297,7 @@ export default function OpenCode({
         );
         setMessages((prev) => [...prev.filter((m) => m.info.id !== optimisticId), res]);
         setFiles([]);
+        setMentions([]);
       }
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
@@ -1323,6 +1367,28 @@ export default function OpenCode({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionList.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFileIdx((i) => (i + 1) % mentionList.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFileIdx((i) => (i - 1 + mentionList.length) % mentionList.length);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        applyMention(mentionList[Math.min(fileIdx, mentionList.length - 1)]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionDismissed(true);
+        return;
+      }
+    }
     if (cmdList.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -1718,6 +1784,27 @@ export default function OpenCode({
                   ))}
                 </div>
               )}
+              {mentionList.length > 0 && (
+                <div className="absolute bottom-full left-0 z-10 mb-2 max-h-60 w-96 max-w-full overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl">
+                  {mentionList.map((path, i) => (
+                    <button
+                      key={path}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyMention(path);
+                      }}
+                      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left cursor-pointer ${
+                        i === Math.min(fileIdx, mentionList.length - 1)
+                          ? "bg-neutral-800"
+                          : "hover:bg-neutral-800/60"
+                      }`}
+                    >
+                      <FileText size={12} className="shrink-0 text-neutral-500" />
+                      <span className="truncate font-mono text-xs text-neutral-100">{path}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex shrink-0 items-center gap-0.5">
                 {MODES.map((m) => (
                   <button
@@ -1763,6 +1850,7 @@ export default function OpenCode({
                 onChange={(e) => {
                   setInput(e.target.value);
                   setDismissed(false);
+                  setMentionDismissed(false);
                   setCmdIdx(0);
                 }}
                 onKeyDown={handleKeyDown}
@@ -1773,7 +1861,7 @@ export default function OpenCode({
                   }
                 }}
                 placeholder={
-                  running ? "Message…  (/ for commands, Enter to send)" : "Start the server to chat…"
+                  running ? "Message…  (/ commands, @ files, Enter to send)" : "Start the server to chat…"
                 }
                 disabled={!running || sending}
                 className="flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700 disabled:opacity-50"

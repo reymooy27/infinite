@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   appendDeltaIn,
+  buildMentionParts,
   extractLastTodos,
   upsertInfoIn,
   upsertPartIn,
@@ -62,5 +63,18 @@ const history: OcMessageEntry[] = [
 assert.deepEqual(extractLastTodos(history), [{ content: "second" }, { content: "two" }]);
 assert.equal(extractLastTodos([history[1]]), null);
 assert.deepEqual(extractLastTodos([{ info: { id: "x", role: "assistant" }, parts: [{ id: "t", type: "tool", tool: "todowrite", state: { status: "completed" } }] }]), []);
+
+// buildMentionParts: only tracked paths still present as @tokens; file:// url,
+// ext-based mime, empty root → nothing
+const parts = buildMentionParts(
+  "fix @src/a.ts and bye",
+  ["src/a.ts", "gone.ts"],
+  "/home/dev/proj/",
+);
+assert.equal(parts.length, 1);
+assert.equal(parts[0].url.replace(/%2F/g, "/"), "file:///home/dev/proj/src/a.ts");
+assert.equal(parts[0].filename, "src/a.ts");
+assert.equal(parts[0].mime, "text/typescript");
+assert.deepEqual(buildMentionParts("hello", ["src/a.ts"], ""), []);
 
 console.log("opencode-parts: all checks passed");
