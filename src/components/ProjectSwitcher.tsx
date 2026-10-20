@@ -294,7 +294,7 @@ export default function ProjectSwitcher({
           <path d="M4 12h16" />
           <path d="M4 18h16" />
         </svg>
-        <span className="text-[11px] font-medium">
+        <span className="max-w-24 truncate text-[11px] font-medium">
           {activeProjectName ?? "Menu"}
         </span>
       </button>

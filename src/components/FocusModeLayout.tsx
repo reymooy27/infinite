@@ -435,7 +435,7 @@ export default function FocusModeLayout({
       style={{ backgroundColor: bgColor }}
     >
       <div className="flex items-center h-8 shrink-0 bg-neutral-950 border-b border-neutral-800 px-1 gap-1">
-        <div className="shrink-0 relative z-[10001]">
+        <div className="min-w-0 relative z-[10001]">
           <ProjectSwitcher
             embedded
             isOpen={switcherOpen}
@@ -448,7 +448,7 @@ export default function FocusModeLayout({
           <button
             onClick={() => void useProjectStore.getState().toggleLastProject()}
             title={`Back to "${previousProjectName}" (Ctrl+Shift+O)`}
-            className="shrink-0 max-w-44 truncate px-2 py-0.5 rounded border border-neutral-800 text-xs text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+            className="max-w-24 min-w-0 truncate px-2 py-0.5 rounded border border-neutral-800 text-xs text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer sm:max-w-44"
           >
             ↩ {previousProjectName}
           </button>
@@ -533,18 +533,18 @@ export default function FocusModeLayout({
       </div>
 
       {activeWindow && (
-        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center justify-end gap-2">
-          <div className="relative">
+        <div className="shrink-0 bg-neutral-950 border-b border-neutral-800 px-2 py-1 flex items-center justify-end gap-1 sm:gap-2">
+          <div className="relative min-w-0">
             <button
               ref={tabToggleBtnRef}
               onClick={() => setTabPanelOpen((p) => !p)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border ${
+              className={`min-w-0 flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors cursor-pointer border sm:px-2.5 ${
                 tabPanelOpen
                   ? "bg-neutral-800 text-white border-neutral-700"
                   : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
               }`}
             >
-              <span className="w-32 truncate">
+              <span className="w-20 min-w-0 truncate sm:w-32">
                 {openCodeOpen
                   ? "OpenCode"
                   : (tabs.find((t) => t.id === activeTabId)?.title ??
@@ -674,13 +674,13 @@ export default function FocusModeLayout({
             onClick={handlePrevWindow}
             disabled={!prevTerminal}
             iconOnly
-            className="px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
+            className="px-2 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center sm:px-2.5"
           />
           <TerminalNextButton
             onClick={handleNextWindow}
             disabled={!nextTerminal}
             iconOnly
-            className="px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center"
+            className="px-2 py-1 rounded text-xs transition-colors cursor-pointer border text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center sm:px-2.5"
           />
           <button
             ref={gitToggleBtnRef}
@@ -691,7 +691,7 @@ export default function FocusModeLayout({
             }}
             disabled={!activeProjectId}
             title={gitPanelOpen ? "Hide git changes (Ctrl+Shift+G)" : "Show git changes (Ctrl+Shift+G)"}
-            className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
+            className={`px-2 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed sm:px-2.5 ${
               gitPanelOpen
                 ? "bg-neutral-800 text-white border-neutral-700"
                 : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
@@ -710,7 +710,7 @@ export default function FocusModeLayout({
             title={
               fileExplorerOpen ? "Hide file explorer (Ctrl+Shift+E)" : "Show file explorer (Ctrl+Shift+E)"
             }
-            className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
+            className={`px-2 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed sm:px-2.5 ${
               fileExplorerOpen
                 ? "bg-neutral-800 text-white border-neutral-700"
                 : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
@@ -722,7 +722,7 @@ export default function FocusModeLayout({
             onClick={() => setOpenCodeOpen((prev) => !prev)}
             disabled={!activeProjectId}
             title="OpenCode (Ctrl+Shift+O)"
-            className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed ${
+            className={`px-2 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed sm:px-2.5 ${
               openCodeOpen
                 ? "bg-neutral-800 text-white border-neutral-700"
                 : "text-neutral-300 border-neutral-800 hover:bg-neutral-800 hover:text-white"
