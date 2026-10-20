@@ -91,7 +91,12 @@ export function ShortcutDrawer({
   useEffect(() => {
     if (!open || !anchorRef.current) { setPos(null); return; }
     const update = () => {
-      const el = anchorRef.current?.closest("[class*='react-draggable']") || anchorRef.current?.parentElement?.parentElement;
+      // display:contents ancestors have zero rects → walk up to the first sized box.
+      let el = anchorRef.current?.closest("[class*='react-draggable']");
+      if (!el) {
+        el = anchorRef.current;
+        while (el && !el.offsetWidth) el = el.parentElement;
+      }
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const vh = window.visualViewport?.height || window.innerHeight;
