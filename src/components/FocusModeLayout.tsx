@@ -454,7 +454,10 @@ export default function FocusModeLayout({
           </button>
         )}
 
-        <ProjectTabs />
+        {/* Mobile uses the ProjectSwitcher menu instead of the tab strip */}
+        <div className="hidden min-w-0 sm:contents">
+          <ProjectTabs />
+        </div>
 
         <div className="flex-1" />
 
