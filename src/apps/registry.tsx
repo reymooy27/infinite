@@ -83,11 +83,6 @@ export const SSHPane = ({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const suggestBufRef = useRef("");
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
-  const micPos = useSettingsStore((s) => s.micButtonPos);
-  const setMicPos = useSettingsStore((s) => s.setMicButtonPos);
-  const micDragStartRef = useRef({ x: 0, y: 0 });
-  const micDragOriginRef = useRef({ x: 0, y: 0 });
-  const micDragMovedRef = useRef(false);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -1572,44 +1567,6 @@ export const SSHPane = ({
     setVoiceOverlayOpen(false);
   }, []);
 
-  // Tap-vs-drag: pointerup with no movement = tap (opens overlay), so no onClick here.
-  // 10px = standard touch slop; 6px ate real taps as "drags" on phones.
-  const MIC_DRAG_THRESHOLD = 10;
-  const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    const el = e.currentTarget;
-    micDragOriginRef.current = { x: el.offsetLeft, y: el.offsetTop };
-    micDragStartRef.current = { x: e.clientX, y: e.clientY };
-    micDragMovedRef.current = false;
-    el.setPointerCapture(e.pointerId);
-  }, []);
-
-  const handleMicPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    const el = e.currentTarget;
-    if (!el.hasPointerCapture(e.pointerId)) return;
-    const dx = e.clientX - micDragStartRef.current.x;
-    const dy = e.clientY - micDragStartRef.current.y;
-    if (!micDragMovedRef.current && Math.hypot(dx, dy) < MIC_DRAG_THRESHOLD) return;
-    micDragMovedRef.current = true;
-    const parent = el.offsetParent ?? el.parentElement;
-    const maxX = parent ? parent.clientWidth - el.offsetWidth : 0;
-    const maxY = parent ? parent.clientHeight - el.offsetHeight : 0;
-    setMicPos({
-      x: Math.max(0, Math.min(maxX, micDragOriginRef.current.x + dx)),
-      y: Math.max(0, Math.min(maxY, micDragOriginRef.current.y + dy)),
-    });
-  }, []);
-
-  const handleMicPointerUp = useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>) => {
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {}
-      if (!micDragMovedRef.current) openVoiceOverlay();
-      micDragMovedRef.current = false;
-    },
-    [openVoiceOverlay],
-  );
-
   const mobileFocusFlow = isMobile && focusMode;
 
   const translateVoice = useCallback(async (text: string) => {
@@ -1675,29 +1632,6 @@ export const SSHPane = ({
       {/* Mobile UI */}
       {status === "connected" && isMobile && focusMode && (
         <>
-          <button
-            onPointerDown={handleMicPointerDown}
-            onPointerMove={handleMicPointerMove}
-            onPointerUp={handleMicPointerUp}
-            onPointerCancel={handleMicPointerUp}
-            onTouchStart={(e) => e.stopPropagation()}
-            onTouchEnd={(e) => e.stopPropagation()}
-            className={`absolute z-30 mb-2 w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white shadow-xl transition-colors active:scale-95 touch-none cursor-grab active:cursor-grabbing ${
-              micPos ? "" : "left-1/2 -translate-x-1/2"
-            }`}
-            style={
-              micPos
-                ? { left: micPos.x, top: micPos.y }
-                : {
-                    position: "absolute",
-                    bottom: keyboardHeight ? `${keyboardHeight + 64}px` : "4rem",
-                  }
-            }
-            title="Voice Input"
-            aria-label="Voice Input"
-          >
-            <Mic className="w-6 h-6" />
-          </button>
           <div
             className="relative z-30 mx-1 mb-1 shrink-0 empty:hidden"
             onTouchStart={(e) => e.stopPropagation()}
@@ -1710,6 +1644,7 @@ export const SSHPane = ({
                 onCopy={handleCopy}
                 onPaste={handlePaste}
                 onPasteImage={handlePasteImage}
+                onVoice={openVoiceOverlay}
                 onToggleDrawer={() => setDrawerOpen((o) => !o)}
                 copyFeedback={copyFeedback}
                 pasteFeedback={pasteFeedback}

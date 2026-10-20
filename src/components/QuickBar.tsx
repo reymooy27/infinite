@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useCallback } from "react";
-import { Copy, Image as ImageIcon, MoreHorizontal } from "lucide-react";
+import { Copy, Image as ImageIcon, Mic, MoreHorizontal } from "lucide-react";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import type { QuickBarSlot } from "@/stores/useSettingsStore";
 
@@ -10,6 +10,7 @@ export function QuickBar({
   onCopy,
   onPaste,
   onPasteImage,
+  onVoice,
   onToggleDrawer,
   copyFeedback,
   pasteFeedback,
@@ -20,6 +21,7 @@ export function QuickBar({
   onCopy: () => void;
   onPaste: () => void;
   onPasteImage: () => void;
+  onVoice: () => void;
   onToggleDrawer: () => void;
   copyFeedback: boolean;
   pasteFeedback: boolean;
@@ -44,6 +46,9 @@ export function QuickBar({
       onTouchEnd={(e) => e.stopPropagation()}
       className="flex items-center gap-1 px-2 py-1.5 mr-5 bg-neutral-900/90 backdrop-blur-sm border border-neutral-700 rounded-lg overflow-x-auto scrollbar-hide"
     >
+      <button onClick={onVoice} className={`${btn} !text-blue-400`} title="Voice Input" aria-label="Voice Input">
+        <Mic size={13} />
+      </button>
       {slots.map((s) => (
         <button key={s.label + (s.isTmux ? "-tmux" : "")} onClick={() => press(s)} className={btn}>{s.label}</button>
       ))}
