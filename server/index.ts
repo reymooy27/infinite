@@ -7,7 +7,6 @@ import http from "http";
 import https from "https";
 import { WebSocket, WebSocketServer } from "ws";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
 import type { IncomingMessage } from "http";
 import { prisma } from "./lib/prisma.js";
 import { decrypt } from "./lib/crypto.js";
@@ -60,6 +59,7 @@ import filesRouter from "./routes/files.js";
 import pushRouter from "./routes/push.js";
 import translatorRouter from "./routes/translator.js";
 import voiceRouter from "./routes/voice.js";
+import opencodeRouter from "./routes/opencode.js";
 
 const LOCAL_USER_ID = "local-user";
 
@@ -91,19 +91,10 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
-
-const apiLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests, try again later" },
-});
-const PROXY_CONTENT_PATH = /^\/api\/(dev-browser\/proxy|tunnels)\//;
-app.use("/api", (req, res, next) =>
-  PROXY_CONTENT_PATH.test(req.originalUrl) ? next() : apiLimiter(req, res, next),
-);
+// ponytail: global 25mb so OpenCode image attachments (base64 file parts in a
+// JSON prompt) fit. Ceiling: every JSON route shares this cap. Upgrade path:
+// move the higher limit onto a path-scoped parser mounted before this line.
+app.use(express.json({ limit: "25mb" }));
 
 // Domain routes
 app.use("/api/bookmarks", bookmarksRouter);
@@ -117,6 +108,7 @@ app.use("/api/router-usage", routerUsageRouter);
 app.use("/api/push", pushRouter);
 app.use("/api/translator", translatorRouter);
 app.use("/api/voice", voiceRouter);
+app.use("/api/opencode", opencodeRouter);
 
 function resolveConfiguredPublicServerBaseUrl() {
   const configured =

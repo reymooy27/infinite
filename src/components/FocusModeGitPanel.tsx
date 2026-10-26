@@ -23,6 +23,10 @@ import {
   X,
 } from "lucide-react";
 
+// Module-scope so the ~5s cache survives the unmount that App.tsx close causes.
+const STATUS_TTL_MS = 5000;
+const statusCache = new Map<string, { data: GitStatusPayload; at: number }>();
+
 type GitChange = {
   path: string;
   originalPath: string | null;
@@ -443,11 +447,21 @@ export default function FocusModeGitPanel({
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const loadStatus = useCallback(
-    async (signal?: AbortSignal, silent = false) => {
+    async (signal?: AbortSignal, silent = false, force = false) => {
       if (!projectId) {
         setData(null);
         setError("");
         setFeedback(null);
+        return;
+      }
+
+      const cacheKey = `${projectId}:${connectionId ?? ""}:${directory ?? ""}`;
+      const cached = statusCache.get(cacheKey);
+      if (!force && cached && Date.now() - cached.at < STATUS_TTL_MS) {
+        if (!silent) {
+          setData(cached.data);
+          setError("");
+        }
         return;
       }
 
@@ -480,6 +494,7 @@ export default function FocusModeGitPanel({
         }
 
         setData(body);
+        statusCache.set(cacheKey, { data: body, at: Date.now() });
       } catch (err) {
         if (signal?.aborted) return;
         setError(
@@ -705,6 +720,10 @@ export default function FocusModeGitPanel({
         }
 
         setData(body.nextStatus);
+        statusCache.set(
+          `${projectId}:${connectionId ?? ""}:${directory ?? ""}`,
+          { data: body.nextStatus, at: Date.now() },
+        );
         if (payload.action === "commit") {
           setCommitMessage("");
           setCommitComposerOpen(false);
@@ -988,7 +1007,7 @@ export default function FocusModeGitPanel({
           break;
         case "g":
           event.preventDefault();
-          void loadStatus();
+          void loadStatus(undefined, false, true);
           break;
         case "a":
           event.preventDefault();
@@ -1185,7 +1204,7 @@ export default function FocusModeGitPanel({
             </div>
           </div>
           <button
-            onClick={() => void loadStatus()}
+            onClick={() => void loadStatus(undefined, false, true)}
             title="Refresh git status"
             className="rounded p-1.5 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white"
           >

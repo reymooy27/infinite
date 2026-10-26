@@ -16,18 +16,19 @@ import {
   Mic,
   NotepadText,
   RefreshCw,
+  SquareTerminal,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QuickBar } from "@/components/QuickBar";
-import { CommandSuggest } from "@/components/CommandSuggest";
-import { recordCommand, isShellPromptLine } from "@/lib/commandSuggestions";
+import { suggest, recordCommand, isShellPromptLine } from "@/lib/commandSuggestions";
 import { ShortcutDrawer } from "@/components/ShortcutDrawer";
 import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import TerminalNextButton from "@/components/TerminalNextButton";
 import FileTransferWindow from "@/components/FileTransferModal";
 import DevBrowser from "./DevBrowser";
 import Notes from "./Notes";
+import OpenCode from "./OpenCode";
 import { useFileTransferStore } from "@/stores/useFileTransferStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
@@ -80,14 +81,8 @@ export const SSHPane = ({
     return window.matchMedia("(max-width: 767px)").matches;
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [suggestInput, setSuggestInput] = useState("");
   const suggestBufRef = useRef("");
   const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
-  const micPos = useSettingsStore((s) => s.micButtonPos);
-  const setMicPos = useSettingsStore((s) => s.setMicButtonPos);
-  const micDragStartRef = useRef({ x: 0, y: 0 });
-  const micDragOriginRef = useRef({ x: 0, y: 0 });
-  const micDragMovedRef = useRef(false);
   const showTerminalShortcuts = useSettingsStore(
     (s) => s.showTerminalShortcuts,
   );
@@ -600,12 +595,15 @@ export const SSHPane = ({
       // a TUI (opencode, claude code) re-renders its own input line, so
       // mirroring desyncs and shows stale/foreign suggestions.
       {
-        const lastLine =
+        // Cursor row (baseY + cursorY), NOT buffer.length - 1: `length` counts
+        // scrollback + viewport, so in tmux or after scrolling its last line
+        // is not the row being typed on.
+        const cursorLine =
           term.buffer.active
-            .getLine(term.buffer.active.length - 1)
+            .getLine(term.buffer.active.baseY + term.buffer.active.cursorY)
             ?.translateToString()
             .trimEnd() ?? "";
-        if (isShellPromptLine(lastLine)) {
+        if (isShellPromptLine(cursorLine)) {
           let buf = suggestBufRef.current;
           if (data === "\r" || data === "\n") {
             recordCommand(buf);
@@ -617,20 +615,87 @@ export const SSHPane = ({
           } else if (data.length === 1 && data >= " " && data !== "\x7f") {
             buf = (buf + data).slice(-200);
           }
-          if (buf !== suggestBufRef.current) {
-            suggestBufRef.current = buf;
-            setSuggestInput(buf);
-          }
+          if (buf !== suggestBufRef.current) suggestBufRef.current = buf;
         } else if (suggestBufRef.current !== "") {
           // Left the shell prompt (TUI or output) — drop the stale mirror.
           suggestBufRef.current = "";
-          setSuggestInput("");
         }
       }
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "data", data }));
       }
     });
+
+    // Fish-style inline completion: the top suggestion's remaining suffix is
+    // drawn as dim ghost text right after the cursor — no dropdown covering
+    // the terminal. Redrawn on each parsed write so it follows the echoed
+    // cursor; pointerup on the ghost sends the completion.
+    // xterm 6 quirks: the decoration element is created at RENDER time (style
+    // it via onRender, it's undefined right after registerDecoration), the
+    // renderer rewrites width/top every frame (undo the 1-cell width clip
+    // there), and x-position is the `x` option in cells (no pixel offsetX).
+    let ghostDeco = undefined;
+    let ghostMarker = undefined;
+    let ghostStyledEl = undefined;
+    const drawGhost = () => {
+      ghostDeco?.dispose();
+      ghostDeco = undefined;
+      ghostMarker?.dispose();
+      ghostMarker = undefined;
+      ghostStyledEl = undefined;
+      const buf = suggestBufRef.current;
+      if (!buf) return;
+      const cursorLine =
+        term.buffer.active
+          .getLine(term.buffer.active.baseY + term.buffer.active.cursorY)
+          ?.translateToString()
+          .trimEnd() ?? "";
+      if (!isShellPromptLine(cursorLine)) return;
+      const suffix = suggest(buf, 1)[0]?.cmd.slice(buf.length) ?? "";
+      if (!suffix) return;
+      ghostMarker = term.registerMarker(0);
+      ghostDeco =
+        ghostMarker &&
+        term.registerDecoration({
+          marker: ghostMarker,
+          anchor: "left",
+          x: term.buffer.active.cursorX,
+        });
+      ghostDeco?.onRender((el) => {
+        // Re-pin to the LIVE cursor every frame. The marker line was captured
+        // at write-time, but async prompt redraws (powerlevel10k, zsh async
+        // jobs) move the cursor after the parse — a marker captured during
+        // that transient window parks the ghost one row below the input.
+        // The renderer sets width/top every frame then fires this event, so
+        // overrides here win; resetting them here every frame is required.
+        const b = term.buffer.active;
+        const cell = term._core._renderService?.dimensions?.css?.cell;
+        if (cell?.height && cell?.width) {
+          el.style.top = `${(b.baseY + b.cursorY - b.viewportY) * cell.height}px`;
+          el.style.left = `${b.cursorX * cell.width}px`;
+        }
+        el.style.width = "auto";
+        el.style.overflow = "visible";
+        if (ghostStyledEl === el) return;
+        ghostStyledEl = el;
+        el.textContent = suffix;
+        el.title = "complete";
+        el.style.color = "rgba(255,255,255,0.38)";
+        el.style.whiteSpace = "pre";
+        el.style.pointerEvents = "auto";
+        el.style.cursor = "pointer";
+        el.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+        el.addEventListener("pointerup", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          suggestBufRef.current = "";
+          drawGhost();
+          if (wsRef.current?.readyState === WebSocket.OPEN)
+            wsRef.current.send(JSON.stringify({ type: "data", data: suffix }));
+        });
+      });
+    };
+    term.onWriteParsed(drawGhost);
 
     // Claude Code (and any CLI) rings the bell when it finishes; forward it to the OS
     // only while the tab is in the background, otherwise it's just noise.
@@ -1003,18 +1068,6 @@ export const SSHPane = ({
           wsRef.current.send(JSON.stringify({ type: "data", data: key }));
         }
       }, 80);
-    }
-  }, []);
-
-  // Complete the current input with the remaining characters of a suggestion.
-  const handleSuggestComplete = useCallback((completion: string) => {
-    const ws = wsRef.current;
-    // Always dismiss the popup, even when the pick is an exact match of what's
-    // already typed (completion === "") — otherwise it would never close.
-    suggestBufRef.current = "";
-    setSuggestInput("");
-    if (ws?.readyState === WebSocket.OPEN && completion) {
-      ws.send(JSON.stringify({ type: "data", data: completion }));
     }
   }, []);
 
@@ -1514,48 +1567,7 @@ export const SSHPane = ({
     setVoiceOverlayOpen(false);
   }, []);
 
-  // Tap-vs-drag: pointerup with no movement = tap (opens overlay), so no onClick here.
-  // 10px = standard touch slop; 6px ate real taps as "drags" on phones.
-  const MIC_DRAG_THRESHOLD = 10;
-  const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    const el = e.currentTarget;
-    micDragOriginRef.current = { x: el.offsetLeft, y: el.offsetTop };
-    micDragStartRef.current = { x: e.clientX, y: e.clientY };
-    micDragMovedRef.current = false;
-    el.setPointerCapture(e.pointerId);
-  }, []);
-
-  const handleMicPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    const el = e.currentTarget;
-    if (!el.hasPointerCapture(e.pointerId)) return;
-    const dx = e.clientX - micDragStartRef.current.x;
-    const dy = e.clientY - micDragStartRef.current.y;
-    if (!micDragMovedRef.current && Math.hypot(dx, dy) < MIC_DRAG_THRESHOLD) return;
-    micDragMovedRef.current = true;
-    const parent = el.offsetParent ?? el.parentElement;
-    const maxX = parent ? parent.clientWidth - el.offsetWidth : 0;
-    const maxY = parent ? parent.clientHeight - el.offsetHeight : 0;
-    setMicPos({
-      x: Math.max(0, Math.min(maxX, micDragOriginRef.current.x + dx)),
-      y: Math.max(0, Math.min(maxY, micDragOriginRef.current.y + dy)),
-    });
-  }, []);
-
-  const handleMicPointerUp = useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>) => {
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {}
-      if (!micDragMovedRef.current) openVoiceOverlay();
-      micDragMovedRef.current = false;
-    },
-    [openVoiceOverlay],
-  );
-
-  const mobileBottomInset =
-    isMobile && focusMode
-      ? (keyboardHeight ?? 0) + (showTerminalShortcuts ? 56 : 0)
-      : 0;
+  const mobileFocusFlow = isMobile && focusMode;
 
   const translateVoice = useCallback(async (text: string) => {
     try {
@@ -1583,7 +1595,10 @@ export const SSHPane = ({
         visibility: isActive ? "visible" : "hidden",
         position: "absolute",
         inset: 0,
-        paddingBottom: mobileBottomInset ? `${mobileBottomInset}px` : undefined,
+        // QuickBar is in-flow below; inset is keyboard-only on purpose.
+        paddingBottom: mobileFocusFlow ? `${keyboardHeight ?? 0}px` : undefined,
+        display: mobileFocusFlow ? "flex" : undefined,
+        flexDirection: mobileFocusFlow ? "column" : undefined,
       }}
       className={`bg-[#0a0a0a] ${
         isMobile
@@ -1598,7 +1613,7 @@ export const SSHPane = ({
       <div
         ref={terminalRef}
         onMouseDown={lockKeyboard}
-        className="w-full h-full"
+        className={mobileFocusFlow ? "w-full flex-1 min-h-0" : "w-full h-full"}
         style={
           enableTouchScroll && isMobile
             ? { touchAction: "pan-y", overscrollBehavior: "contain" }
@@ -1617,34 +1632,8 @@ export const SSHPane = ({
       {/* Mobile UI */}
       {status === "connected" && isMobile && focusMode && (
         <>
-          <button
-            onPointerDown={handleMicPointerDown}
-            onPointerMove={handleMicPointerMove}
-            onPointerUp={handleMicPointerUp}
-            onPointerCancel={handleMicPointerUp}
-            onTouchStart={(e) => e.stopPropagation()}
-            onTouchEnd={(e) => e.stopPropagation()}
-            className={`absolute z-30 mb-2 w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white shadow-xl transition-colors active:scale-95 touch-none cursor-grab active:cursor-grabbing ${
-              micPos ? "" : "left-1/2 -translate-x-1/2"
-            }`}
-            style={
-              micPos
-                ? { left: micPos.x, top: micPos.y }
-                : {
-                    position: "absolute",
-                    bottom: keyboardHeight ? `${keyboardHeight + 64}px` : "4rem",
-                  }
-            }
-            title="Voice Input"
-            aria-label="Voice Input"
-          >
-            <Mic className="w-6 h-6" />
-          </button>
           <div
-            className="absolute left-1 right-1 z-30"
-            style={{
-              bottom: keyboardHeight ? `${keyboardHeight + 4}px` : "0.25rem",
-            }}
+            className="relative z-30 mx-1 mb-1 shrink-0 empty:hidden"
             onTouchStart={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
           >
@@ -1655,6 +1644,7 @@ export const SSHPane = ({
                 onCopy={handleCopy}
                 onPaste={handlePaste}
                 onPasteImage={handlePasteImage}
+                onVoice={openVoiceOverlay}
                 onToggleDrawer={() => setDrawerOpen((o) => !o)}
                 copyFeedback={copyFeedback}
                 pasteFeedback={pasteFeedback}
@@ -1677,31 +1667,6 @@ export const SSHPane = ({
             anchorRef={terminalRef}
           />
         )}
-
-      {status === "connected" && (
-        <div
-          className={isMobile ? "absolute left-1 right-1 z-30" : "absolute left-2 right-2 z-40"}
-          style={
-            isMobile
-              ? {
-                  bottom: keyboardHeight
-                    ? `${keyboardHeight + (showTerminalShortcuts ? 68 : 4)}px`
-                    : showTerminalShortcuts
-                      ? "4.25rem"
-                      : "0.25rem",
-                }
-              : {
-                  bottom: showTerminalShortcuts
-                    ? showTmuxShortcuts
-                      ? "8.5rem"
-                      : "4.5rem"
-                    : "0.5rem",
-                }
-          }
-        >
-          <CommandSuggest input={suggestInput} onComplete={handleSuggestComplete} />
-        </div>
-      )}
 
       {/* Desktop UI */}
       {status === "connected" && !isMobile && (
@@ -2055,6 +2020,17 @@ export const registry: Record<AppId, AppDefinition> = {
     }>,
     defaultWidth: 800,
     defaultHeight: 600,
+  },
+  opencode: {
+    id: "opencode",
+    title: "OpenCode",
+    icon: <SquareTerminal />,
+    component: OpenCode as React.ComponentType<{
+      connectionId?: number;
+      windowId?: string;
+    }>,
+    defaultWidth: 720,
+    defaultHeight: 560,
   },
   devBrowser: {
     id: "devBrowser",

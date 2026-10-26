@@ -1,0 +1,12 @@
+[Unit]
+Description=Infinite OpenCode host daemon (spawns opencode serve for the Docker backend)
+
+[Service]
+ExecStart=__NODE_BIN__ __REPO_ROOT__/hostd/opencode-hostd.mjs
+EnvironmentFile=%h/.config/infinite/opencode-hostd.env
+Environment=PATH=__OPENCODE_DIR__:%h/.opencode/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

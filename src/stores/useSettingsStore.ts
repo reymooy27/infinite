@@ -61,6 +61,7 @@ interface SettingsState {
   showTmuxShortcuts: boolean;
   autoTmux: boolean;
   terminalFontSize: number;
+  chatFontSize: number;
   bgColor: string;
   quickBarSlots: QuickBarSlot[];
   routerUsageBaseUrl: string;
@@ -73,6 +74,7 @@ interface SettingsState {
   setShowTmuxShortcuts: (value: boolean) => void;
   setAutoTmux: (value: boolean) => void;
   setTerminalFontSize: (value: number) => void;
+  setChatFontSize: (value: number) => void;
   setBgColor: (color: string) => void;
   setQuickBarSlots: (slots: QuickBarSlot[]) => void;
   setRouterUsageBaseUrl: (value: string) => void;
@@ -90,6 +92,7 @@ export const useSettingsStore = create<SettingsState>()(
       showTmuxShortcuts: true,
       autoTmux: true,
       terminalFontSize: 13,
+      chatFontSize: 14,
       bgColor: "#171717",
       quickBarSlots: DEFAULT_QUICK_BAR,
       routerUsageBaseUrl: DEFAULT_ROUTER_USAGE_BASE_URL,
@@ -103,6 +106,7 @@ export const useSettingsStore = create<SettingsState>()(
       setShowTmuxShortcuts: (value) => set({ showTmuxShortcuts: value }),
       setAutoTmux: (value) => set({ autoTmux: value }),
       setTerminalFontSize: (value) => set({ terminalFontSize: value }),
+      setChatFontSize: (value) => set({ chatFontSize: value }),
       setBgColor: (color) => set({ bgColor: color }),
       setQuickBarSlots: (slots) => set({ quickBarSlots: slots }),
       setRouterUsageBaseUrl: (value) => set({ routerUsageBaseUrl: value }),

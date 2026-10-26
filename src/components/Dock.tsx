@@ -16,7 +16,7 @@ import { useSettingsStore } from "@/stores/useSettingsStore";
 import { centerWindowById } from "@/lib/focusWindow";
 import type { AppId, SSHConnection } from "@/types";
 
-const DOCK_APPS: AppId[] = ["notes", "ssh"];
+const DOCK_APPS: AppId[] = ["notes", "ssh", "opencode"];
 const BROWSER_DOCK_APPS: AppId[] = ["devBrowser"];
 const BROWSER_CHOICES: Array<{
   appId: (typeof BROWSER_DOCK_APPS)[number];
