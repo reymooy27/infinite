@@ -110,6 +110,30 @@ interface OcQuestion {
   questions: OcQuestionInfo[];
 }
 
+function toQuestion(p:
+  | { id?: string; sessionID?: string; questions?: unknown }
+  | undefined,
+): OcQuestion | null {
+  if (!p?.id) return null;
+  const raw = Array.isArray(p.questions) ? (p.questions as OcQuestionInfo[]) : [];
+  return {
+    requestID: String(p.id),
+    sessionID: String(p.sessionID ?? ""),
+    questions: raw.map((q) => ({
+      question: String(q?.question ?? ""),
+      header: q?.header ? String(q.header) : undefined,
+      options: Array.isArray(q?.options)
+        ? q.options.map((o: OcQuestionOption) => ({
+            label: String(o?.label ?? ""),
+            description: o?.description ? String(o.description) : undefined,
+          }))
+        : [],
+      multiple: Boolean(q?.multiple),
+      custom: q?.custom === undefined ? true : Boolean(q.custom),
+    })),
+  };
+}
+
 async function ocReq<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -526,6 +550,7 @@ export default function OpenCode({
   const projectIdRef = useRef<string | null>(null);
   projectIdRef.current = projectId;
   const activeSessionIdRef = useRef<string | null>(null);
+  const answeredQuestionsRef = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -961,32 +986,8 @@ export default function OpenCode({
         } else if (type === "permission.replied" || type === "permission.v2.replied") {
           setPermission(null);
         } else if (type === "question.asked" || type === "question.v2.asked") {
-          const p = data.properties as
-            | {
-                id?: string;
-                sessionID?: string;
-                questions?: OcQuestionInfo[];
-              }
-            | undefined;
-          if (p && p.id) {
-            const raw = Array.isArray(p.questions) ? p.questions : [];
-            setQuestion({
-              requestID: String(p.id),
-              sessionID: String(p.sessionID ?? ""),
-              questions: raw.map((q) => ({
-                question: String(q?.question ?? ""),
-                header: q?.header ? String(q.header) : undefined,
-                options: Array.isArray(q?.options)
-                  ? q.options.map((o: OcQuestionOption) => ({
-                      label: String(o?.label ?? ""),
-                      description: o?.description ? String(o.description) : undefined,
-                    }))
-                  : [],
-                multiple: Boolean(q?.multiple),
-                custom: q?.custom === undefined ? true : Boolean(q.custom),
-              })),
-            });
-          }
+          const q = toQuestion(data.properties as { id?: string; sessionID?: string; questions?: unknown });
+          if (q) setQuestion(q);
         } else if (
           type === "question.replied" ||
           type === "question.rejected" ||
@@ -1010,6 +1011,35 @@ export default function OpenCode({
       es?.close();
     };
   }, [projectId, running, fetchMessages, fetchSessions, markBusy]);
+
+  // Hydrate pending questions by polling GET /question. SSE only delivers
+  // questions asked while connected, so a reload, session switch, or SSE gap
+  // used to leave the panel spinning forever on an already-pending question.
+  // ponytail: 5s fixed poll; upgrade path is refetching on es.onopen + session
+  // switch instead of a timer if the request ever gets expensive.
+  useEffect(() => {
+    if (!projectId || !running) return;
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const list = await ocReq<
+          { id?: string; sessionID?: string; questions?: unknown }[]
+        >(`/api/opencode/${encodeURIComponent(projectId)}/proxy/question`);
+        if (stopped || !Array.isArray(list) || list.length === 0) return;
+        const q = toQuestion(list[0]);
+        if (q && !answeredQuestionsRef.current.has(q.requestID))
+          setQuestion((prev) => prev ?? q);
+      } catch {
+        // ignore — serve may be mid-restart
+      }
+    };
+    void tick();
+    const t = setInterval(() => void tick(), 5000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [projectId, running]);
 
   // Cleanup on unmount: abort in-flight fetches, drop pending debounce.
   useEffect(() => {
@@ -1345,6 +1375,7 @@ export default function OpenCode({
   const replyQuestion = async (answers: string[][]) => {
     if (!projectId || !question) return;
     const req = question;
+    answeredQuestionsRef.current.add(req.requestID);
     setQuestion(null);
     const ctrl = track(new AbortController());
     try {
