@@ -524,6 +524,7 @@ export default function OpenCode({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<OcMessageEntry[]>([]);
   const [sending, setSending] = useState(false);
+  const [aborting, setAborting] = useState(false);
   const [mode, setMode] = useState<"plan" | "build">("build");
   const [permission, setPermission] = useState<OcPermission | null>(null);
   const [question, setQuestion] = useState<OcQuestion | null>(null);
@@ -1341,6 +1342,7 @@ export default function OpenCode({
 
   const stop = async () => {
     if (!projectId || !activeSessionId) return;
+    setAborting(true);
     const ctrl = track(new AbortController());
     try {
       await ocReq(
@@ -1351,6 +1353,7 @@ export default function OpenCode({
       // ignore — session.idle will reconcile
     } finally {
       controllersRef.current.delete(ctrl);
+      setAborting(false);
     }
   };
 
@@ -1675,7 +1678,7 @@ export default function OpenCode({
                 {(sending || busy) && (
                   <div className="flex items-center gap-2 text-xs text-neutral-500">
                     <Loader2 size={12} className="animate-spin" />{" "}
-                    {sending ? "thinking…" : "working…"}
+                    {aborting ? "stopping…" : sending ? "thinking…" : "working…"}
                   </div>
                 )}
               </>
@@ -1908,10 +1911,16 @@ export default function OpenCode({
               {sending || busy ? (
                 <button
                   onClick={() => void stop()}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 text-rose-300 hover:bg-neutral-800 cursor-pointer"
-                  title="Stop generating"
+                  disabled={aborting}
+                  aria-busy={aborting}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 text-rose-300 hover:bg-neutral-800 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
+                  title={aborting ? "Stopping…" : "Stop generating"}
                 >
-                  <Square size={14} />
+                  {aborting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Square size={14} />
+                  )}
                 </button>
               ) : (
                 <button
