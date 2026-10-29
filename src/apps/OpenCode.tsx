@@ -35,6 +35,7 @@ import {
   appendDeltaIn,
   buildMentionParts,
   extractLastTodos,
+  historyStep,
   upsertInfoIn,
   upsertPartIn,
   type OcMessageEntry,
@@ -558,6 +559,7 @@ export default function OpenCode({
   const repairRef = useRef(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const historyRef = useRef<Record<string, { items: string[]; cursor: number; draft: string }>>({});
 
   activeSessionIdRef.current = activeSessionId;
 
@@ -1271,6 +1273,12 @@ export default function OpenCode({
     }
     const slash = /^\/([A-Za-z0-9][\w.:-]*)(?:\s+([\s\S]*))?$/.exec(text);
     const cmd = slash ? commands.find((c) => c.name === slash[1]) : undefined;
+    if (text) {
+      const rec = (historyRef.current[activeSessionId] ??= { items: [], cursor: 0, draft: "" });
+      if (rec.items[rec.items.length - 1] !== text) rec.items.push(text);
+      rec.cursor = rec.items.length;
+      rec.draft = "";
+    }
     setInput("");
     setError(null);
     setNotice(null);
@@ -1445,6 +1453,26 @@ export default function OpenCode({
         return;
       }
     }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const el = e.currentTarget;
+      const multiline =
+        e.key === "ArrowUp"
+          ? el.value.slice(0, el.selectionStart).includes("\n")
+          : el.value.slice(el.selectionEnd).includes("\n");
+      if (multiline || !activeSessionId) return;
+      const rec = (historyRef.current[activeSessionId] ??= { items: [], cursor: 0, draft: "" });
+      if (rec.cursor === rec.items.length) rec.draft = input;
+      const step = historyStep(rec.items, rec.cursor, e.key === "ArrowUp" ? -1 : 1, rec.draft);
+      if (!step) return;
+      rec.cursor = step.cursor;
+      e.preventDefault();
+      setInput(step.value);
+      requestAnimationFrame(() => {
+        const ta = taRef.current;
+        if (ta) ta.setSelectionRange(ta.value.length, ta.value.length);
+      });
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -1478,7 +1506,10 @@ export default function OpenCode({
   }, []);
 
   return (
-    <div className="flex h-full w-full flex-col bg-neutral-950 text-neutral-100">
+    <div
+      className="flex h-full w-full flex-col bg-neutral-950 text-neutral-100 select-text"
+      onContextMenu={(e) => e.stopPropagation()}
+    >
       <div className="flex shrink-0 items-center gap-1.5 border-b border-neutral-800 px-2 py-1">
         <SquareTerminal size={13} className="shrink-0 text-neutral-300" />
         <span className="shrink-0 text-xs font-medium text-neutral-100">OpenCode</span>
@@ -1662,7 +1693,7 @@ export default function OpenCode({
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-2.5"
+            className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-2.5 touch-auto"
           >
             {!activeSessionId ? (
               <div className="flex h-full items-center justify-center text-sm text-neutral-500">

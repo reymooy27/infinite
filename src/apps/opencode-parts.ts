@@ -124,6 +124,22 @@ function mimeFor(path: string): string {
   return MENTION_MIME[ext] ?? "text/plain";
 }
 
+// Cursor is the recall index into history; history.length is the "draft" slot.
+// ArrowUp = -1 (older), ArrowDown = +1 (newer). Draft restores at index len.
+export function historyStep(
+  history: string[],
+  cursor: number,
+  delta: 1 | -1,
+  draft: string,
+): { value: string; cursor: number } | null {
+  const len = history.length;
+  if (len === 0) return null;
+  const next = cursor + delta;
+  if (next < 0 || next > len) return null;
+  const value = next === len ? draft : history[next];
+  return { value, cursor: next };
+}
+
 // ponytail: mentions become file:// parts only when the same user picked them
 // from the picker AND the @token is still in the text — no filesystem check.
 // Ceiling: a renamed/picked-stale path 502s from opencode. Upgrade path:

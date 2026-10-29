@@ -4,6 +4,7 @@ import {
   appendDeltaIn,
   buildMentionParts,
   extractLastTodos,
+  historyStep,
   upsertInfoIn,
   upsertPartIn,
   type OcMessageEntry,
@@ -76,5 +77,19 @@ assert.equal(parts[0].url.replace(/%2F/g, "/"), "file:///home/dev/proj/src/a.ts"
 assert.equal(parts[0].filename, "src/a.ts");
 assert.equal(parts[0].mime, "text/typescript");
 assert.deepEqual(buildMentionParts("hello", ["src/a.ts"], ""), []);
+
+// historyStep: ArrowUp (-1) walks older, ArrowDown (+1) newer, draft at index len
+const hist = ["one", "two", "three"];
+const len = hist.length;
+assert.equal(historyStep([], len, -1, "draft"), null); // empty history no-op
+assert.equal(historyStep(hist, len, 1, "draft"), null); // ArrowDown at newest
+assert.deepEqual(historyStep(hist, len, -1, "draft"), { value: "three", cursor: 2 });
+assert.deepEqual(historyStep(hist, 2, -1, "draft"), { value: "two", cursor: 1 });
+assert.deepEqual(historyStep(hist, 1, -1, "draft"), { value: "one", cursor: 0 });
+assert.equal(historyStep(hist, 0, -1, "draft"), null); // ArrowUp at oldest
+assert.deepEqual(historyStep(hist, 0, 1, "draft"), { value: "two", cursor: 1 });
+assert.deepEqual(historyStep(hist, 1, 1, "draft"), { value: "three", cursor: 2 });
+assert.deepEqual(historyStep(hist, 2, 1, "draft"), { value: "draft", cursor: 3 });
+assert.equal(historyStep(hist, len, 1, "draft"), null);
 
 console.log("opencode-parts: all checks passed");
