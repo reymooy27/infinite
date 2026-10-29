@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.7.0](https://github.com/reymooy27/infinite/compare/infinite-v1.6.0...infinite-v1.7.0) (2026-10-27)
+
+
+### Features
+
+* **mobile:** move voice button into quick bar ([04e9681](https://github.com/reymooy27/infinite/commit/04e9681f2d82e35476cee519f35c9040c4b2953f))
+* **opencode:** @ file mention autocomplete ([151dc3c](https://github.com/reymooy27/infinite/commit/151dc3c3d2d05c4ad6203498730ab05c4a1ea0cf))
+* **opencode:** add chat font size setting ([a03b079](https://github.com/reymooy27/infinite/commit/a03b079e56f98aec73e582bd21ae114121ec868d))
+* **opencode:** add voice input to composer ([c18320d](https://github.com/reymooy27/infinite/commit/c18320dfc3ec92ebaf7d36001e83fe35fb531e3a))
+* **opencode:** attachments, plan checklist, highlighted code ([4fb8019](https://github.com/reymooy27/infinite/commit/4fb8019052878d1c1aa349af8534114ae11204e9))
+* **opencode:** fullscreen overlay in focus mode ([17c8993](https://github.com/reymooy27/infinite/commit/17c8993108b64590aaf05c842856d5108716cd1e))
+* **opencode:** model picker + mobile session bar ([1d3cb4d](https://github.com/reymooy27/infinite/commit/1d3cb4d020088c6dc1ac4ed09f3790d5bb46e47b))
+* **opencode:** OpenCode web workspace, full chain ([b3d7c81](https://github.com/reymooy27/infinite/commit/b3d7c815f1e15d97d6c6aa519c2ad71ec7653b0c))
+* **opencode:** plan/build mode toggle ([422761e](https://github.com/reymooy27/infinite/commit/422761e568a99f839561ce6b225c4697eaeb23ea))
+* **opencode:** portable hostd setup for open-source users ([9644cd9](https://github.com/reymooy27/infinite/commit/9644cd9316dfaff3802dd13ac63c119dcb2d2fc8))
+* **opencode:** real model picker from opencode catalog ([9072089](https://github.com/reymooy27/infinite/commit/90720891189c52c33c2f4aa12abaced0e6446121))
+* **opencode:** run serve on host via daemon ([09776ac](https://github.com/reymooy27/infinite/commit/09776ac57ab8675a57c7e9715d65bbbb6d98a547))
+* **opencode:** session picker modal like model picker ([2e4f57b](https://github.com/reymooy27/infinite/commit/2e4f57b9c995516591233846ec71451596dd41e1))
+* **opencode:** show busy indicator per session ([5770cfe](https://github.com/reymooy27/infinite/commit/5770cfedcf11e1ecff73ac248be65c229d98454e))
+* **opencode:** slash command autocomplete ([2fb3011](https://github.com/reymooy27/infinite/commit/2fb30119b5d5479d704ab762e51cbe051e12e8ee))
+* **server:** add opencode serve manager and HTTP/SSE proxy routes ([d98db3d](https://github.com/reymooy27/infinite/commit/d98db3dd1d427a4b0a78f7c3cc18a9e26b0563b8))
+* **terminal:** inline ghost completion at cursor ([512ea0a](https://github.com/reymooy27/infinite/commit/512ea0aba33e289b0a0e8da0c1d82d287ce9c5c3))
+* **ui:** inline opencode panel in focus mode ([d693ab8](https://github.com/reymooy27/infinite/commit/d693ab86a80384562b1c296bd1d470e013e583ca))
+* **ui:** OpenCode chat window app ([202ec75](https://github.com/reymooy27/infinite/commit/202ec7516c37fe7db1646cac09cccc440095cbda))
+* **ui:** OpenCode panel in focus mode ([95de81c](https://github.com/reymooy27/infinite/commit/95de81ce997779b91065e839c537f6f7caac0ce0))
+
+
+### Bug Fixes
+
+* **focus:** fit toolbars on narrow screens ([501fbb9](https://github.com/reymooy27/infinite/commit/501fbb90bf9453aa56b6f24d6803f4eb99409b6d))
+* **focus:** hide project tab strip on mobile ([77775ba](https://github.com/reymooy27/infinite/commit/77775ba9a7885b77c5995e2b776c8b1d5df3e2b5))
+* **focus:** move OpenCode btn next to editor ([ade7dab](https://github.com/reymooy27/infinite/commit/ade7dab18be30ca7ef30ce439153703a34644912))
+* **mobile:** anchor shortcut drawer to styled box ([ebed980](https://github.com/reymooy27/infinite/commit/ebed9809789e6129344ee3fae59a888713382632))
+* **mobile:** raise shortcut drawer above maximized window ([f0566bb](https://github.com/reymooy27/infinite/commit/f0566bb6093dfc864922922e0be1e1555a0a321d))
+* **nginx:** no-store index.html ([f7c1f85](https://github.com/reymooy27/infinite/commit/f7c1f854cc9c06ac7c1dd16c9058c1acfcc8ff71))
+* **opencode:** clear stuck sending state on project switch ([c5cfd8b](https://github.com/reymooy27/infinite/commit/c5cfd8bd2288f3c1d679ea9feeaaf8607a6e1ea9))
+* **opencode:** close button, block swipe while open ([d40a08c](https://github.com/reymooy27/infinite/commit/d40a08c67c042984b0d5483a030d86766486679b))
+* **opencode:** compact single-row header ([c4ea034](https://github.com/reymooy27/infinite/commit/c4ea034642bf6975bc7c589129a30f0bdb8c8af0))
+* **opencode:** derive busy from active session messages ([ba54bdf](https://github.com/reymooy27/infinite/commit/ba54bdf76ca0955766413d50b48e78ce6f8527c1))
+* **opencode:** drop extra session button, picker only from old selector row ([85f9ad4](https://github.com/reymooy27/infinite/commit/85f9ad4418672ee36aa990036c59eeb040f5b850))
+* **opencode:** handle question.v2 events ([a602166](https://github.com/reymooy27/infinite/commit/a602166f41a1530a52fe0300966bff8fc1e60bb0))
+* **opencode:** hydrate pending question on poll ([294eb06](https://github.com/reymooy27/infinite/commit/294eb064274be597ffa12770d838920c09bc266c))
+* **opencode:** keep server on close, add turn loader ([83c1d4d](https://github.com/reymooy27/infinite/commit/83c1d4de5bfccf11783f1048db5b77905f5ae447))
+* **opencode:** make stop kill process group and cancel in-flight start ([471cb4f](https://github.com/reymooy27/infinite/commit/471cb4feab66daf77721744a90cb5f633f3f8925))
+* **opencode:** raise nginx api proxy timeouts ([f3bac33](https://github.com/reymooy27/infinite/commit/f3bac33df83f4f20be67b6097520982c32f0e316))
+* **opencode:** reset running state on project switch ([77c36cf](https://github.com/reymooy27/infinite/commit/77c36cfdb4d595760ecf1a9640e1808241fb5094))
+* **opencode:** scope thinking spinner to active session ([bd8b1b9](https://github.com/reymooy27/infinite/commit/bd8b1b9ac0cf7ec1953cd7845edead1981033c92))
+* **opencode:** session delete, stale serve reaper ([bde139a](https://github.com/reymooy27/infinite/commit/bde139acfcf8ba9756f59aa9cbdf3fc0641ad552))
+* **opencode:** stable state, bottom scroll, role colors, real /model ([a8b4d8a](https://github.com/reymooy27/infinite/commit/a8b4d8a8a69724c07e84abe32f9fce3463e5d5da))
+* **opencode:** stop composer collapse & side-scroll ([e3f2f69](https://github.com/reymooy27/infinite/commit/e3f2f69d3d3222a4c03280e6f651c27b4b480e13))
+* **opencode:** wire onClose to overlay ([d898bb1](https://github.com/reymooy27/infinite/commit/d898bb18801ba7230e4383a4840ef8ef2baa627d))
+* **terminal:** gate ghost suggest on cursor row not buffer end ([a2b2892](https://github.com/reymooy27/infinite/commit/a2b2892fa0109ada66241e924d531fc6d1a584c5))
+* **terminal:** ghost suggest never rendered (xterm 6 decoration API) ([8b376ac](https://github.com/reymooy27/infinite/commit/8b376ac449ca93502512a830a2f35868278cf8f3))
+* **terminal:** pin ghost suggest to live cursor each frame ([2973059](https://github.com/reymooy27/infinite/commit/2973059d79b9a1ea54206e95b310edb08c84cac8))
+* **terminal:** quickbar flows above ghost row ([4d19764](https://github.com/reymooy27/infinite/commit/4d197648dbb93b35f584f3023093f4d824a889a3))
+
+
+### Performance Improvements
+
+* **opencode:** keep panel mounted, fix table overflow ([44b5527](https://github.com/reymooy27/infinite/commit/44b55272cbe7d295d6d5b804aa279c1c92f3df2b))
+* **opencode:** stream via local SSE apply ([a968039](https://github.com/reymooy27/infinite/commit/a968039c521e41a6da8bfb3faf54c4e6bed0bd06))
+
 ## [1.6.0](https://github.com/reymooy27/infinite/compare/infinite-v1.5.0...infinite-v1.6.0) (2026-09-30)
 
 
