@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import { useEffect } from "react";
+
 import FileExplorer from "@/components/FileExplorer";
 import { useCodeEditorStore } from "@/stores/useCodeEditorStore";
 
@@ -15,15 +15,6 @@ export default function CodeEditorPanel({
 }) {
   const open = useCodeEditorStore((s) => s.open);
   const closePanel = useCodeEditorStore((s) => s.closePanel);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closePanel();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [open, closePanel]);
 
   if (!open || !projectId) return null;
 

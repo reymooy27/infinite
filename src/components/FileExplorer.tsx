@@ -1,19 +1,24 @@
 // @ts-nocheck
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronRight,
   ChevronDown,
   File,
   FileCode2,
+  FilePlus2,
   FileText,
   Folder,
   FolderOpen,
+  FolderPlus,
   GitCompare,
   LoaderCircle,
   PanelLeft,
+  Pencil,
   RefreshCw,
   Save,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import CodeEditor from "./CodeEditor";
@@ -97,6 +102,79 @@ function sortEntries(entries: FileEntry[]): FileEntry[] {
   });
 }
 
+function parentOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i);
+}
+
+// --- Inline rename / create input ---
+
+type Draft = {
+  mode: "new-file" | "new-folder" | "rename";
+  parent: string;
+  path: string;
+  value: string;
+};
+
+interface TreeCtx {
+  isIgnored: (path: string) => boolean;
+  selectedPath: string | null;
+  draft: Draft | null;
+  onContext: (e: React.MouseEvent, entry: FileEntry | null) => void;
+  onSelectEntry: (entry: FileEntry) => void;
+  onDraftChange: (value: string) => void;
+  onDraftCommit: () => void;
+  onDraftCancel: () => void;
+}
+
+function InlineInput({
+  depth,
+  isDir,
+  value,
+  ctx,
+}: {
+  depth: number;
+  isDir: boolean;
+  value: string;
+  ctx: TreeCtx;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const settled = useRef(false);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  const finish = (commit: boolean) => {
+    if (settled.current) return;
+    settled.current = true;
+    if (commit) ctx.onDraftCommit();
+    else ctx.onDraftCancel();
+  };
+
+  const Icon = isDir ? Folder : File;
+
+  return (
+    <div
+      className="flex w-full items-center gap-1.5 rounded-md border border-sky-500/60 bg-neutral-900 py-1"
+      style={{ paddingLeft: `${depth * 12 + (isDir ? 8 : 24)}px`, paddingRight: 8 }}
+    >
+      <Icon size={14} className="shrink-0 text-sky-400" />
+      <input
+        ref={ref}
+        value={value}
+        onChange={(e) => ctx.onDraftChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") finish(true);
+        }}
+        onBlur={() => finish(true)}
+        className="min-w-0 flex-1 bg-transparent text-[12px] text-white outline-none"
+      />
+    </div>
+  );
+}
+
 // --- Tree Node ---
 
 interface TreeNodeProps {
@@ -106,6 +184,7 @@ interface TreeNodeProps {
   expandedFolders: Set<string>;
   activeFilePath: string | null;
   searchQuery: string;
+  ctx: TreeCtx;
   onToggleFolder: (path: string) => void;
   onFileSelect: (path: string) => void;
 }
@@ -117,13 +196,26 @@ function TreeNode({
   expandedFolders,
   activeFilePath,
   searchQuery,
+  ctx,
   onToggleFolder,
   onFileSelect,
 }: TreeNodeProps) {
   const isExpanded = expandedFolders.has(entry.path);
   const isActive = !entry.isDir && entry.path === activeFilePath;
+  const isSelected = entry.path === ctx.selectedPath;
   const childState = dirCache[entry.path];
   const indent = depth * 12;
+  const ignored = ctx.isIgnored(entry.path);
+  const dim = ignored ? " text-neutral-600 italic" : "";
+  const renaming = ctx.draft?.mode === "rename" && ctx.draft.path === entry.path;
+
+  if (renaming) {
+    return (
+      <div style={{ paddingLeft: `${indent + (entry.isDir ? 0 : 16)}px`, paddingRight: 8 }}>
+        <InlineInput depth={depth} isDir={entry.isDir} value={ctx.draft.value} ctx={ctx} />
+      </div>
+    );
+  }
 
   if (entry.isDir) {
     const sortedChildren = childState?.entries
@@ -135,12 +227,20 @@ function TreeNode({
           return fullPath.includes(searchQuery);
         })
       : sortedChildren;
+    const creatingHere = ctx.draft && ctx.draft.parent === entry.path && ctx.draft.mode !== "rename";
 
     return (
       <div>
         <button
-          onClick={() => onToggleFolder(entry.path)}
-          className="group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[12px] text-neutral-300 transition-colors hover:bg-neutral-800/70 hover:text-white cursor-pointer"
+          onClick={() => {
+            onToggleFolder(entry.path);
+            ctx.onSelectEntry(entry);
+          }}
+          onContextMenu={(e) => ctx.onContext(e, entry)}
+          className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[12px] transition-colors hover:bg-neutral-800/70 hover:text-white cursor-pointer ${
+            isSelected ? "bg-neutral-800/70" : ""
+          }${dim || " text-neutral-300"}`}
+          title={ignored ? "Ignored by git" : undefined}
           style={{ paddingLeft: `${indent + 8}px`, paddingRight: 8 }}
         >
           {isExpanded ? (
@@ -149,9 +249,9 @@ function TreeNode({
             <ChevronRight size={12} className="shrink-0 text-neutral-600" />
           )}
           {isExpanded ? (
-            <FolderOpen size={14} className="shrink-0 text-sky-400" />
+            <FolderOpen size={14} className={`shrink-0 ${ignored ? "text-neutral-600" : "text-sky-400"}`} />
           ) : (
-            <Folder size={14} className="shrink-0 text-sky-400" />
+            <Folder size={14} className={`shrink-0 ${ignored ? "text-neutral-600" : "text-sky-400"}`} />
           )}
           <span className="min-w-0 truncate">{entry.name}</span>
         </button>
@@ -175,10 +275,21 @@ function TreeNode({
               expandedFolders={expandedFolders}
               activeFilePath={activeFilePath}
               searchQuery={searchQuery}
+              ctx={ctx}
               onToggleFolder={onToggleFolder}
               onFileSelect={onFileSelect}
             />
           ))}
+        {isExpanded && creatingHere && (
+          <div style={{ paddingLeft: 16, paddingRight: 8 }}>
+            <InlineInput
+              depth={depth + 1}
+              isDir={ctx.draft.mode === "new-folder"}
+              value={ctx.draft.value}
+              ctx={ctx}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -187,15 +298,22 @@ function TreeNode({
 
   return (
     <button
-      onClick={() => onFileSelect(entry.path)}
+      onClick={() => {
+        onFileSelect(entry.path);
+        ctx.onSelectEntry(entry);
+      }}
+      onContextMenu={(e) => ctx.onContext(e, entry)}
       className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[12px] transition-colors cursor-pointer ${
         isActive
           ? "bg-neutral-800 text-white"
-          : "text-neutral-400 hover:bg-neutral-800/70 hover:text-white"
-      }`}
+          : isSelected && !ignored
+            ? "bg-neutral-800/70 text-neutral-400 hover:bg-neutral-800/70 hover:text-white"
+            : `${ignored ? "" : "text-neutral-400 "}hover:bg-neutral-800/70 hover:text-white`
+      }${dim}`}
+      title={ignored ? `${entry.path} — ignored by git` : undefined}
       style={{ paddingLeft: `${indent + 24}px`, paddingRight: 8 }}
     >
-      <Icon size={14} className="shrink-0 text-neutral-500" />
+      <Icon size={14} className={`shrink-0 ${ignored ? "text-neutral-700" : "text-neutral-500"}`} />
       <span className="min-w-0 truncate">{entry.name}</span>
     </button>
   );
@@ -251,6 +369,32 @@ export default function FileExplorer({
   // Recently-opened file paths (most-recent first) for the mobile quick-switch
   // strip. ponytail: in-memory only, capped at 6 — add persistence when needed.
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
+
+  // Explorer CRUD + gitignore state
+  const [ignored, setIgnored] = useState<Set<string>>(new Set());
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; entry: FileEntry | null } | null>(
+    null,
+  );
+  const [treeError, setTreeError] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // `git ls-files -o -i` lists excluded dirs with a trailing slash and excluded
+  // files without one, so a path is ignored when it matches exactly or sits
+  // under an ignored directory.
+  const isIgnored = useCallback(
+    (path: string) => {
+      if (ignored.size === 0) return false;
+      if (ignored.has(path) || ignored.has(`${path}/`)) return true;
+      for (let i = path.indexOf("/"); i !== -1; i = path.indexOf("/", i + 1)) {
+        if (ignored.has(path.slice(0, i + 1))) return true;
+      }
+      return false;
+    },
+    [ignored],
+  );
 
   // --- API calls ---
 
@@ -407,6 +551,131 @@ export default function FileExplorer({
     }
   }, [diffMode, fetchHeadContent]);
 
+  // --- Explorer CRUD ---
+
+  const postFiles = useCallback(
+    async (action: string, body: Record<string, unknown>) => {
+      const params = new URLSearchParams();
+      if (connectionId) params.set("connectionId", String(connectionId));
+      const res = await fetch(`/api/projects/${projectId}/files/${action}?${params}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Failed to ${action}`);
+      return json;
+    },
+    [projectId, connectionId],
+  );
+
+  const failTree = useCallback((err: unknown) => {
+    setTreeError(err instanceof Error ? err.message : "Operation failed");
+  }, []);
+
+  const beginCreate = useCallback(
+    (mode: "new-file" | "new-folder", parent: string) => {
+      setMenu(null);
+      if (parent && !expandedFolders.has(parent)) {
+        setExpandedFolders((prev) => new Set(prev).add(parent));
+        if (!dirCache[parent]?.entries?.length) void fetchDir(parent);
+      }
+      setDraft({ mode, parent, path: "", value: "" });
+    },
+    [expandedFolders, dirCache, fetchDir],
+  );
+
+  const beginRename = useCallback((entry: FileEntry) => {
+    setMenu(null);
+    setDraft({
+      mode: "rename",
+      parent: parentOf(entry.path),
+      path: entry.path,
+      value: entry.name,
+    });
+  }, []);
+
+  const commitDraft = useCallback(async () => {
+    if (!projectId || !draft) return;
+    const name = draft.value.trim();
+    setDraft(null);
+    if (!name) return;
+
+    try {
+      if (draft.mode === "rename") {
+        if (name === draft.path.split("/").pop()) return;
+        const newPath = draft.parent ? `${draft.parent}/${name}` : name;
+        await postFiles("rename", { path: draft.path, newPath });
+        if (openFile?.path === draft.path) {
+          setOpenFile(null);
+          setEditContent(null);
+        }
+        setSelectedPath(newPath);
+        void fetchDir(draft.parent);
+      } else {
+        const target = draft.parent ? `${draft.parent}/${name}` : name;
+        await postFiles("create", { path: target, isDir: draft.mode === "new-folder" });
+        void fetchDir(draft.parent);
+        if (draft.mode === "new-file") void fetchFile(target);
+      }
+      setRefreshNonce((n) => n + 1);
+    } catch (err) {
+      failTree(err);
+    }
+  }, [projectId, draft, postFiles, fetchDir, fetchFile, openFile, failTree]);
+
+  const deleteEntry = useCallback(
+    async (entry: FileEntry) => {
+      setMenu(null);
+      if (!projectId) return;
+      const suffix = entry.isDir ? " and its contents" : "";
+      if (!window.confirm(`Delete ${entry.path}${suffix}?`)) return;
+
+      try {
+        const params = new URLSearchParams({ path: entry.path });
+        if (connectionId) params.set("connectionId", String(connectionId));
+        const res = await fetch(`/api/projects/${projectId}/files?${params}`, {
+          method: "DELETE",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || "Failed to delete");
+
+        if (openFile && (openFile.path === entry.path || openFile.path.startsWith(`${entry.path}/`))) {
+          setOpenFile(null);
+          setEditContent(null);
+        }
+        setSelectedPath(null);
+        void fetchDir(parentOf(entry.path));
+        setRefreshNonce((n) => n + 1);
+      } catch (err) {
+        failTree(err);
+      }
+    },
+    [projectId, connectionId, fetchDir, openFile, failTree],
+  );
+
+  const openContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (entry) setSelectedPath(entry.path);
+    setMenu({
+      x: Math.max(4, Math.min(e.clientX, window.innerWidth - 180)),
+      y: Math.max(4, Math.min(e.clientY, window.innerHeight - 170)),
+      entry,
+    });
+  }, []);
+
+  const treeCtx: TreeCtx = {
+    isIgnored,
+    selectedPath,
+    draft,
+    onContext: openContextMenu,
+    onSelectEntry: (entry) => setSelectedPath(entry.path),
+    onDraftChange: (value) => setDraft((d) => (d ? { ...d, value } : d)),
+    onDraftCommit: () => void commitDraft(),
+    onDraftCancel: () => setDraft(null),
+  };
+
   // --- Effects ---
 
 
@@ -501,6 +770,62 @@ export default function FileExplorer({
     return () => clearTimeout(t);
   }, [saveFeedback]);
 
+  useEffect(() => {
+    if (!treeError) return;
+    const t = setTimeout(() => setTreeError(null), 4000);
+    return () => clearTimeout(t);
+  }, [treeError]);
+
+  // Gitignored paths, refetched on open/refresh.
+  useEffect(() => {
+    if (!open || !projectId) return;
+    const ctrl = new AbortController();
+    const params = new URLSearchParams();
+    if (connectionId) params.set("connectionId", String(connectionId));
+    fetch(`/api/projects/${projectId}/files/ignored?${params}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : { ignored: [] }))
+      .then((b) => setIgnored(new Set(b.ignored ?? [])))
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [open, projectId, connectionId, refreshNonce]);
+
+  // Escape belongs to the overlay while it is up. This listener is registered
+  // once, before the panel's own Escape handler, so it can win the race.
+  const overlayOpenRef = useRef(false);
+  overlayOpenRef.current = menu !== null || draft !== null;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !overlayOpenRef.current) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setMenu(null);
+      setDraft(null);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
+  useEffect(() => {
+    if (!menu) return;
+    // Closes on outside press only: a plain window mousedown listener would also
+    // fire for presses inside the menu, unmounting it before the item's click.
+    const onPointerDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenu(null);
+    };
+    const close = () => setMenu(null);
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("blur", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [menu]);
+
   // --- Tree interactions ---
 
   const toggleFolder = useCallback(
@@ -522,9 +847,9 @@ export default function FileExplorer({
   );
 
   const handleRefresh = () => {
-    setDirCache({});
-    setExpandedFolders(new Set());
     void fetchDir("");
+    expandedFolders.forEach((p) => void fetchDir(p));
+    setRefreshNonce((n) => n + 1);
   };
 
   const handleFileSelect = (path: string) => {
@@ -541,6 +866,14 @@ export default function FileExplorer({
   const rootEntries = dirCache[""]?.entries
     ? sortEntries(dirCache[""].entries)
     : [];
+
+  const siblingEntries = selectedPath ? (dirCache[parentOf(selectedPath)]?.entries ?? []) : [];
+  const selectedEntry = siblingEntries.find((e) => e.path === selectedPath) ?? null;
+  const actionDir = !selectedPath
+    ? ""
+    : selectedEntry?.isDir
+      ? selectedPath
+      : parentOf(selectedPath);
 
   // When searching, show the server's recursive results (reaches unfetched
   // subfolders); otherwise show the root tree as-is.
@@ -574,13 +907,27 @@ export default function FileExplorer({
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
+        return;
+      }
+
+      if (selectedPath && !draft) {
+        const entry = (dirCache[parentOf(selectedPath)]?.entries ?? []).find(
+          (en) => en.path === selectedPath,
+        );
+        if (e.key === "F2" && entry) {
+          e.preventDefault();
+          beginRename(entry);
+        } else if (e.key === "Delete" && entry) {
+          e.preventDefault();
+          void deleteEntry(entry);
+        }
       }
     };
 
     window.addEventListener("keydown", onKeyDown, true);
     return () =>
       window.removeEventListener("keydown", onKeyDown, true);
-  }, [open, saveFile, onClose]);
+  }, [open, saveFile, onClose, draft, selectedPath, dirCache, beginRename, deleteEntry]);
 
   // Expose fetchFile for git panel integration
   useEffect(() => {
@@ -611,6 +958,20 @@ export default function FileExplorer({
           <span className="flex-1 text-[11px] font-medium uppercase tracking-wider text-neutral-500">
             Explorer
           </span>
+          <button
+            onClick={() => beginCreate("new-file", actionDir)}
+            title="New File"
+            className="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white cursor-pointer"
+          >
+            <FilePlus2 size={12} />
+          </button>
+          <button
+            onClick={() => beginCreate("new-folder", actionDir)}
+            title="New Folder"
+            className="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white cursor-pointer"
+          >
+            <FolderPlus size={12} />
+          </button>
           <button
             onClick={handleRefresh}
             title="Refresh"
@@ -660,7 +1021,10 @@ export default function FileExplorer({
         </div>
 
         {/* Tree content */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
+        <div
+          className="flex-1 overflow-y-auto overflow-x-hidden py-1"
+          onContextMenu={(e) => openContextMenu(e, null)}
+        >
           {dirCache[""]?.loading && rootEntries.length === 0 && (
             <div className="flex items-center justify-center py-6 text-neutral-500">
               <LoaderCircle
@@ -674,6 +1038,12 @@ export default function FileExplorer({
           {dirCache[""]?.error && (
             <div className="mx-2 my-2 rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-2 text-[11px] text-red-200">
               {dirCache[""].error}
+            </div>
+          )}
+
+          {treeError && (
+            <div className="mx-2 my-2 rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-2 text-[11px] text-red-200">
+              {treeError}
             </div>
           )}
 
@@ -691,19 +1061,21 @@ export default function FileExplorer({
               filteredFlat.map((entry) => {
                 const Icon = entry.isDir ? Folder : getFileIcon(entry.name);
                 const isActive = !entry.isDir && entry.path === openFile?.path;
+                const dim = isIgnored(entry.path) ? " text-neutral-600 italic" : "";
                 return (
                   <button
                     key={entry.path}
-                    onClick={() =>
-                      entry.isDir
-                        ? toggleFolder(entry.path)
-                        : handleFileSelect(entry.path)
-                    }
+                    onClick={() => {
+                      setSelectedPath(entry.path);
+                      if (entry.isDir) toggleFolder(entry.path);
+                      else handleFileSelect(entry.path);
+                    }}
+                    onContextMenu={(e) => openContextMenu(e, entry)}
                     className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[12px] transition-colors cursor-pointer ${
                       isActive
                         ? "bg-neutral-800 text-white"
                         : "text-neutral-300 hover:bg-neutral-800/70 hover:text-white"
-                    }`}
+                    }${dim}`}
                     style={{ paddingLeft: 8, paddingRight: 8 }}
                     title={entry.path}
                   >
@@ -718,19 +1090,32 @@ export default function FileExplorer({
               })
             )
           ) : (
-            rootEntries.map((entry) => (
-              <TreeNode
-                key={entry.path}
-                entry={entry}
-                depth={0}
-                dirCache={dirCache}
-                expandedFolders={expandedFolders}
-                activeFilePath={openFile?.path ?? null}
-                searchQuery={searchQuery}
-                onToggleFolder={toggleFolder}
-                onFileSelect={handleFileSelect}
-              />
-            ))
+            <>
+              {rootEntries.map((entry) => (
+                <TreeNode
+                  key={entry.path}
+                  entry={entry}
+                  depth={0}
+                  dirCache={dirCache}
+                  expandedFolders={expandedFolders}
+                  activeFilePath={openFile?.path ?? null}
+                  searchQuery={searchQuery}
+                  ctx={treeCtx}
+                  onToggleFolder={toggleFolder}
+                  onFileSelect={handleFileSelect}
+                />
+              ))}
+              {draft && draft.parent === "" && draft.mode !== "rename" && (
+                <div style={{ paddingLeft: 16, paddingRight: 8 }}>
+                  <InlineInput
+                    depth={0}
+                    isDir={draft.mode === "new-folder"}
+                    value={draft.value}
+                    ctx={treeCtx}
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {filteredFlat === null &&
@@ -966,9 +1351,85 @@ export default function FileExplorer({
           <div className="border-t border-neutral-800 px-3 py-1.5 flex items-center gap-3 text-[9px] text-neutral-600 shrink-0">
             <span>⌘S save</span>
             <span>esc close</span>
+            <span>F2 rename</span>
+            <span>right-click menu</span>
           </div>
         )}
       </div>
+
+      {menu &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[10060] min-w-[11rem] overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900/95 py-1 shadow-2xl backdrop-blur-md"
+            style={{ left: menu.x, top: menu.y }}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {(menu.entry === null || menu.entry.isDir) && (
+              <>
+                <MenuItem
+                  icon={FilePlus2}
+                  label="New File"
+                  onClick={() => beginCreate("new-file", menu.entry?.path ?? actionDir)}
+                />
+                <MenuItem
+                  icon={FolderPlus}
+                  label="New Folder"
+                  onClick={() => beginCreate("new-folder", menu.entry?.path ?? actionDir)}
+                />
+                <div className="my-1 border-t border-neutral-800" />
+              </>
+            )}
+            {menu.entry && (
+              <>
+                <MenuItem icon={Pencil} label="Rename" onClick={() => beginRename(menu.entry)} />
+                <MenuItem
+                  icon={Trash2}
+                  label="Delete"
+                  danger
+                  onClick={() => void deleteEntry(menu.entry)}
+                />
+              </>
+            )}
+            {!menu.entry && (dirCache[""]?.entries?.length ?? 0) > 0 && (
+              <MenuItem
+                icon={RefreshCw}
+                label="Refresh"
+                onClick={() => {
+                  setMenu(null);
+                  handleRefresh();
+                }}
+              />
+            )}
+          </div>,
+          document.body,
+        )}
     </aside>
+  );
+}
+
+function MenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  danger = false,
+}: {
+  icon: typeof File;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors cursor-pointer ${
+        danger
+          ? "text-red-300 hover:bg-red-500/10"
+          : "text-neutral-300 hover:bg-neutral-800 hover:text-white"
+      }`}
+    >
+      <Icon size={13} className="shrink-0" />
+      <span>{label}</span>
+    </button>
   );
 }
