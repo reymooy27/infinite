@@ -522,6 +522,20 @@ export default function FileExplorer({
     }
   }, [projectId, connectionId, openFile, editContent]);
 
+  const closeFile = useCallback(() => {
+    if (
+      openFile &&
+      editContent !== null &&
+      editContent !== openFile.content &&
+      !window.confirm("Discard unsaved changes?")
+    )
+      return;
+    setOpenFile(null);
+    setEditContent(null);
+    setDiffMode(false);
+    setHeadContent(null);
+  }, [openFile, editContent]);
+
   const fetchHeadContent = useCallback(async () => {
     if (!projectId || !openFile) return;
     setDiffLoading(true);
@@ -1190,6 +1204,32 @@ export default function FileExplorer({
             </button>
           )}
 
+          {openFile && (
+            <button
+              onClick={toggleDiff}
+              title="Toggle git diff vs HEAD"
+              aria-pressed={diffMode}
+              className={`rounded p-1.5 transition-colors cursor-pointer shrink-0 ${
+                diffMode
+                  ? "bg-blue-500/20 text-blue-400"
+                  : "text-neutral-500 hover:bg-neutral-800 hover:text-white"
+              }`}
+            >
+              <GitCompare size={14} />
+            </button>
+          )}
+
+          {openFile && (
+            <button
+              onClick={closeFile}
+              title="Close file (Esc closes panel)"
+              aria-label="Close file"
+              className="rounded p-1.5 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white cursor-pointer shrink-0"
+            >
+              <X size={14} />
+            </button>
+          )}
+
           {/* Refresh + Close — mobile only, when tree collapsed */}
           {treeCollapsed && (
             <>
@@ -1273,30 +1313,16 @@ export default function FileExplorer({
                     </span>
                   )}
                   <button
-                    onClick={toggleDiff}
-                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                      diffMode
-                        ? "bg-blue-500/20 text-blue-400"
-                        : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800"
-                    }`}
-                    title="Toggle git diff view"
+                    onClick={saveFile}
+                    disabled={saving}
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
+                    title="Save (Ctrl+S)"
                   >
-                    <GitCompare size={11} />
-                    <span>Diff</span>
+                    <Save size={11} />
+                    <span>
+                      {saving ? "Saving..." : "Save"}
+                    </span>
                   </button>
-                  {!diffMode && (
-                    <button
-                      onClick={saveFile}
-                      disabled={saving}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
-                      title="Save (Ctrl+S)"
-                    >
-                      <Save size={11} />
-                      <span>
-                        {saving ? "Saving..." : "Save"}
-                      </span>
-                    </button>
-                  )}
                 </div>
               </div>
 
