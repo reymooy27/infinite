@@ -35,11 +35,13 @@ import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import {
   appendDeltaIn,
   buildMentionParts,
+  collectSessionDiffs,
   extractLastTodos,
   upsertInfoIn,
   upsertPartIn,
   type OcMessageEntry,
   type OcPart,
+  type SessionFileDiff,
 } from "./opencode-parts";
 import type { Project } from "@/types";
 
@@ -168,13 +170,6 @@ interface OcTodo {
   priority?: string;
 }
 
-interface OcFileDiff {
-  file?: string;
-  patch?: string;
-  additions?: number;
-  deletions?: number;
-}
-
 function PatchView({ patch }: { patch: string }) {
   return (
     <pre className="overflow-x-auto border-t border-neutral-800 font-mono text-[11px] leading-[1.5]">
@@ -197,54 +192,45 @@ function PatchView({ patch }: { patch: string }) {
   );
 }
 
-function SessionDiff({
-  diffs,
-  loading,
-  error,
-  onRefresh,
-}: {
-  diffs: OcFileDiff[] | null;
-  loading: boolean;
-  error: string | null;
-  onRefresh: () => void;
-}) {
+function SessionDiff({ diffs }: { diffs: SessionFileDiff[] }) {
+  if (diffs.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-neutral-500">
+        No file changes in this session yet.
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span className="flex-1 text-[10px] text-neutral-500">
-          {diffs ? `${diffs.length} file(s) changed in this session` : "Computing diff…"}
-        </span>
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          className="flex items-center gap-1 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
-          title="Refresh diff"
-        >
-          {loading ? <Loader2 size={10} className="animate-spin" /> : <GitCompare size={10} />}
-          Refresh
-        </button>
+      <div className="text-[10px] text-neutral-500">
+        {diffs.length} file(s) edited in this session
       </div>
-      {error && <div className="text-xs text-rose-300">{error}</div>}
-      {!loading && !error && diffs?.length === 0 && (
-        <div className="py-8 text-center text-sm text-neutral-500">No file changes in this session.</div>
-      )}
-      {(diffs ?? []).map((d, i) => (
-        <details key={`${d.file ?? i}`} className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/60">
+      {diffs.map((d) => (
+        <details
+          key={d.file}
+          className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/60"
+        >
           <summary className="flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-xs hover:bg-neutral-800/60">
             <FileText size={12} className="shrink-0 text-neutral-500" />
-            <span className="min-w-0 flex-1 truncate font-mono text-neutral-100">{d.file ?? "(unknown)"}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-neutral-100">{d.file}</span>
+            <span className="shrink-0 font-mono text-[10px] text-neutral-500">
+              {d.edits.length} edit{d.edits.length > 1 ? "s" : ""}
+            </span>
             <span className="shrink-0 font-mono text-[10px]">
-              <span className="text-emerald-300">+{d.additions ?? 0}</span>{" "}
-              <span className="text-rose-300">-{d.deletions ?? 0}</span>
+              <span className="text-emerald-300">+{d.additions}</span>{" "}
+              <span className="text-rose-300">-{d.deletions}</span>
             </span>
           </summary>
-          {d.patch ? (
-            <PatchView patch={d.patch} />
-          ) : (
-            <div className="border-t border-neutral-800 px-2 py-1.5 text-[11px] text-neutral-500">
-              No patch available.
+          {d.edits.map((e, i) => (
+            <div key={`${e.messageID}_${i}`}>
+              {d.edits.length > 1 && (
+                <div className="border-t border-neutral-800 bg-neutral-900/80 px-2 py-0.5 text-[10px] text-neutral-500">
+                  edit #{i + 1} · {e.tool}
+                </div>
+              )}
+              <PatchView patch={e.patch} />
             </div>
-          )}
+          ))}
         </details>
       ))}
     </div>
@@ -630,9 +616,6 @@ export default function OpenCode({
   const [fileIdx, setFileIdx] = useState(0);
   const [mentionDismissed, setMentionDismissed] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
-  const [diffs, setDiffs] = useState<OcFileDiff[] | null>(null);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [diffError, setDiffError] = useState<string | null>(null);
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const falseStreakRef = useRef(0);
@@ -737,30 +720,6 @@ export default function OpenCode({
     [track, reportFetchError],
   );
 
-  // GET /session/:id/diff — snapshot diff of every file the session edited.
-  const fetchDiffs = useCallback(
-    async (pid: string, sid: string) => {
-      const ctrl = track(new AbortController());
-      setDiffLoading(true);
-      setDiffError(null);
-      try {
-        const data = await ocReq<OcFileDiff[]>(
-          `/api/opencode/${encodeURIComponent(pid)}/proxy/session/${encodeURIComponent(sid)}/diff`,
-          { signal: ctrl.signal },
-        );
-        if (projectIdRef.current !== pid || activeSessionIdRef.current !== sid) return;
-        setDiffs(Array.isArray(data) ? data : []);
-      } catch (err) {
-        if ((err as { name?: string })?.name === "AbortError") return;
-        setDiffError(err instanceof Error ? err.message : "Failed to load diff");
-      } finally {
-        controllersRef.current.delete(ctrl);
-        if (projectIdRef.current === pid && activeSessionIdRef.current === sid) setDiffLoading(false);
-      }
-    },
-    [track],
-  );
-
   const markBusy = useCallback((sid: string, busy: boolean) => {
     setSessionBusy((prev) => {
       if (!!prev[sid] === busy) return prev;
@@ -826,8 +785,6 @@ export default function OpenCode({
     setFiles([]);
     setMentions([]);
     setShowDiff(false);
-    setDiffs(null);
-    setDiffError(null);
     let stopped = false;
     const poll = async () => {
       const ctrl = track(new AbortController());
@@ -858,20 +815,7 @@ export default function OpenCode({
     };
   }, [projectId, track]);
 
-  useEffect(() => {
-    if (!showDiff || !running || !projectId || !activeSessionId) return;
-    void fetchDiffs(projectId, activeSessionId);
-  }, [showDiff, running, projectId, activeSessionId, fetchDiffs]);
-
-  const wasBusyRef = useRef(false);
-  useEffect(() => {
-    const was = wasBusyRef.current;
-    wasBusyRef.current = activeBusy;
-    if (!was || activeBusy || !showDiff) return;
-    const pid = projectIdRef.current;
-    const sid = activeSessionIdRef.current;
-    if (pid && sid) void fetchDiffs(pid, sid);
-  }, [activeBusy, showDiff, fetchDiffs]);
+  const sessionDiffs = useMemo(() => collectSessionDiffs(messages), [messages]);
 
   // Load sessions whenever the server is up.
   useEffect(() => {    if (!projectId || !running) return;
@@ -1807,6 +1751,11 @@ export default function OpenCode({
             >
               <GitCompare size={12} />
               Changes
+              {showDiff === false && sessionDiffs.length > 0 && (
+                <span className="rounded bg-neutral-700 px-1 font-mono text-[9px] text-neutral-200">
+                  {sessionDiffs.length}
+                </span>
+              )}
             </button>
           </div>
           <div
@@ -1821,14 +1770,7 @@ export default function OpenCode({
                   : "Start the server, then pick a session."}
               </div>
             ) : showDiff ? (
-              <SessionDiff
-                diffs={diffs}
-                loading={diffLoading}
-                error={diffError}
-                onRefresh={() => {
-                  if (projectId && activeSessionId) void fetchDiffs(projectId, activeSessionId);
-                }}
-              />
+              <SessionDiff diffs={sessionDiffs} />
             ) : (
               <>
                 {messages.map((m) => (
