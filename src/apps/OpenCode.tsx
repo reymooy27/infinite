@@ -12,6 +12,7 @@ import {
   Copy,
   Cpu,
   FileText,
+  GitCompare,
   Hammer,
   ListChecks,
   Loader2,
@@ -165,6 +166,89 @@ interface OcTodo {
   content: string;
   status?: string;
   priority?: string;
+}
+
+interface OcFileDiff {
+  file?: string;
+  patch?: string;
+  additions?: number;
+  deletions?: number;
+}
+
+function PatchView({ patch }: { patch: string }) {
+  return (
+    <pre className="overflow-x-auto border-t border-neutral-800 font-mono text-[11px] leading-[1.5]">
+      {patch.split("\n").map((line, i) => {
+        const cls =
+          line.startsWith("+") && !line.startsWith("+++")
+            ? "bg-emerald-500/10 text-emerald-300"
+            : line.startsWith("-") && !line.startsWith("---")
+              ? "bg-rose-500/10 text-rose-300"
+              : line.startsWith("@@")
+                ? "text-sky-300"
+                : "text-neutral-400";
+        return (
+          <div key={i} className={`whitespace-pre px-2 ${cls}`}>
+            {line || " "}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
+function SessionDiff({
+  diffs,
+  loading,
+  error,
+  onRefresh,
+}: {
+  diffs: OcFileDiff[] | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="flex-1 text-[10px] text-neutral-500">
+          {diffs ? `${diffs.length} file(s) changed in this session` : "Computing diff…"}
+        </span>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="flex items-center gap-1 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
+          title="Refresh diff"
+        >
+          {loading ? <Loader2 size={10} className="animate-spin" /> : <GitCompare size={10} />}
+          Refresh
+        </button>
+      </div>
+      {error && <div className="text-xs text-rose-300">{error}</div>}
+      {!loading && !error && diffs?.length === 0 && (
+        <div className="py-8 text-center text-sm text-neutral-500">No file changes in this session.</div>
+      )}
+      {(diffs ?? []).map((d, i) => (
+        <details key={`${d.file ?? i}`} className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/60">
+          <summary className="flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-xs hover:bg-neutral-800/60">
+            <FileText size={12} className="shrink-0 text-neutral-500" />
+            <span className="min-w-0 flex-1 truncate font-mono text-neutral-100">{d.file ?? "(unknown)"}</span>
+            <span className="shrink-0 font-mono text-[10px]">
+              <span className="text-emerald-300">+{d.additions ?? 0}</span>{" "}
+              <span className="text-rose-300">-{d.deletions ?? 0}</span>
+            </span>
+          </summary>
+          {d.patch ? (
+            <PatchView patch={d.patch} />
+          ) : (
+            <div className="border-t border-neutral-800 px-2 py-1.5 text-[11px] text-neutral-500">
+              No patch available.
+            </div>
+          )}
+        </details>
+      ))}
+    </div>
+  );
 }
 
 interface DraftFile {
@@ -545,6 +629,10 @@ export default function OpenCode({
   const [mentions, setMentions] = useState<string[]>([]);
   const [fileIdx, setFileIdx] = useState(0);
   const [mentionDismissed, setMentionDismissed] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const [diffs, setDiffs] = useState<OcFileDiff[] | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const falseStreakRef = useRef(0);
@@ -646,6 +734,30 @@ export default function OpenCode({
         controllersRef.current.delete(ctrl);
       }
     },
+    [track, reportFetchError],
+  );
+
+  // GET /session/:id/diff — snapshot diff of every file the session edited.
+  const fetchDiffs = useCallback(
+    async (pid: string, sid: string) => {
+      const ctrl = track(new AbortController());
+      setDiffLoading(true);
+      setDiffError(null);
+      try {
+        const data = await ocReq<OcFileDiff[]>(
+          `/api/opencode/${encodeURIComponent(pid)}/proxy/session/${encodeURIComponent(sid)}/diff`,
+          { signal: ctrl.signal },
+        );
+        if (projectIdRef.current !== pid || activeSessionIdRef.current !== sid) return;
+        setDiffs(Array.isArray(data) ? data : []);
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return;
+        setDiffError(err instanceof Error ? err.message : "Failed to load diff");
+      } finally {
+        controllersRef.current.delete(ctrl);
+        if (projectIdRef.current === pid && activeSessionIdRef.current === sid) setDiffLoading(false);
+      }
+    },
     [track],
   );
 
@@ -713,6 +825,9 @@ export default function OpenCode({
     setTodos([]);
     setFiles([]);
     setMentions([]);
+    setShowDiff(false);
+    setDiffs(null);
+    setDiffError(null);
     let stopped = false;
     const poll = async () => {
       const ctrl = track(new AbortController());
@@ -743,9 +858,23 @@ export default function OpenCode({
     };
   }, [projectId, track]);
 
-  // Load sessions whenever the server is up.
   useEffect(() => {
-    if (!projectId || !running) return;
+    if (!showDiff || !running || !projectId || !activeSessionId) return;
+    void fetchDiffs(projectId, activeSessionId);
+  }, [showDiff, running, projectId, activeSessionId, fetchDiffs]);
+
+  const wasBusyRef = useRef(false);
+  useEffect(() => {
+    const was = wasBusyRef.current;
+    wasBusyRef.current = activeBusy;
+    if (!was || activeBusy || !showDiff) return;
+    const pid = projectIdRef.current;
+    const sid = activeSessionIdRef.current;
+    if (pid && sid) void fetchDiffs(pid, sid);
+  }, [activeBusy, showDiff, fetchDiffs]);
+
+  // Load sessions whenever the server is up.
+  useEffect(() => {    if (!projectId || !running) return;
     void fetchSessions(projectId);
     void fetchStatus(projectId);
   }, [projectId, running, fetchSessions, fetchStatus]);
@@ -1664,8 +1793,21 @@ export default function OpenCode({
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 px-3 py-2">
             <span className="flex-1 truncate text-[11px] font-medium uppercase tracking-wider text-neutral-500">
-              Conversation
+              {showDiff ? "Changes" : "Conversation"}
             </span>
+            <button
+              onClick={() => setShowDiff((v) => !v)}
+              disabled={!activeSessionId}
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:opacity-40 cursor-pointer ${
+                showDiff
+                  ? "border-neutral-700 bg-neutral-800 text-white"
+                  : "border-neutral-800 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+              }`}
+              title="View files edited in this session"
+            >
+              <GitCompare size={12} />
+              Changes
+            </button>
           </div>
           <div
             ref={scrollRef}
@@ -1678,6 +1820,15 @@ export default function OpenCode({
                   ? "Select or create a session to start chatting."
                   : "Start the server, then pick a session."}
               </div>
+            ) : showDiff ? (
+              <SessionDiff
+                diffs={diffs}
+                loading={diffLoading}
+                error={diffError}
+                onRefresh={() => {
+                  if (projectId && activeSessionId) void fetchDiffs(projectId, activeSessionId);
+                }}
+              />
             ) : (
               <>
                 {messages.map((m) => (
