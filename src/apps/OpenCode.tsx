@@ -523,7 +523,7 @@ export default function OpenCode({
   const [sessionBusy, setSessionBusy] = useState<Record<string, boolean>>({});
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<OcMessageEntry[]>([]);
-  const [sending, setSending] = useState(false);
+  const [sendingFor, setSendingFor] = useState<string | null>(null);
   const [aborting, setAborting] = useState(false);
   const [mode, setMode] = useState<"plan" | "build">("build");
   const [permission, setPermission] = useState<OcPermission | null>(null);
@@ -561,10 +561,12 @@ export default function OpenCode({
 
   activeSessionIdRef.current = activeSessionId;
 
-  const busy = useMemo(() => {
-    const last = messages[messages.length - 1];
-    return !!last && last.info.role === "assistant" && !last.info.time?.completed;
-  }, [messages]);
+  const sending = sendingFor !== null && sendingFor === activeSessionId;
+
+  // Server-truth busy, keyed per session. The old messages-derived busy (last
+  // assistant without time.completed) stuck forever on aborted turns, and a
+  // global sending flag leaked across session switches.
+  const activeBusy = sending || (activeSessionId !== null && !!sessionBusy[activeSessionId]);
 
   const track = useCallback((ctrl: AbortController) => {
     controllersRef.current.add(ctrl);
@@ -703,7 +705,7 @@ export default function OpenCode({
     falseStreakRef.current = 0;
     setRunning(false);
     setStarting(false);
-    setSending(false);
+    setSendingFor(null);
     setSessionBusy({});
     setError(null);
     setNotice(null);
@@ -1096,7 +1098,10 @@ export default function OpenCode({
           }
         : null,
     );
-    if (projectId) void fetchMessages(projectId, id);
+    if (projectId) {
+      void fetchMessages(projectId, id);
+      void fetchStatus(projectId);
+    }
   };
 
   const slashQuery = /^\/(\S*)$/.exec(input)?.[1];
@@ -1248,7 +1253,8 @@ export default function OpenCode({
 
   const send = async () => {
     const text = input.trim();
-    if ((!text && files.length === 0) || !projectId || !activeSessionId || sending) return;
+    const sid = activeSessionId;
+    if ((!text && files.length === 0) || !projectId || !sid || sendingFor === sid) return;
     const mc = /^\/model(?:\s+(\S*))?$/.exec(text);
     if (mc) {
       setInput("");
@@ -1274,7 +1280,7 @@ export default function OpenCode({
     setInput("");
     setError(null);
     setNotice(null);
-    setSending(true);
+    setSendingFor(sid);
     stickRef.current = true;
     const root = projects.find((p) => p.id === projectId)?.directory?.replace(/\/+$/, "") ?? "";
     const mentionParts = buildMentionParts(text, mentions, root);
@@ -1294,12 +1300,14 @@ export default function OpenCode({
       ],
     };
     setMessages((prev) => [...prev, optimistic]);
-    markBusy(activeSessionId, true);
+    markBusy(sid, true);
     const ctrl = track(new AbortController());
+    const sameSession = () =>
+      projectIdRef.current === projectId && activeSessionIdRef.current === sid;
     try {
       if (cmd) {
         await ocReq(
-          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/command`,
+          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(sid)}/command`,
           {
             method: "POST",
             body: JSON.stringify({ command: cmd.name, arguments: slash?.[2]?.trim() ?? "" }),
@@ -1309,7 +1317,7 @@ export default function OpenCode({
         setFiles([]);
       } else {
         const res = await ocReq<OcMessageEntry>(
-          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/message`,
+          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(sid)}/message`,
           {
             method: "POST",
             body: JSON.stringify({
@@ -1326,17 +1334,17 @@ export default function OpenCode({
             signal: ctrl.signal,
           },
         );
-        setMessages((prev) => [...prev.filter((m) => m.info.id !== optimisticId), res]);
+        if (sameSession()) setMessages((prev) => [...prev.filter((m) => m.info.id !== optimisticId), res]);
         setFiles([]);
         setMentions([]);
       }
     } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
+      if (sameSession()) setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
       setError(err instanceof Error ? err.message : "Failed to send");
     } finally {
       controllersRef.current.delete(ctrl);
-      setSending(false);
-      if (projectId && activeSessionId) void fetchMessages(projectId, activeSessionId);
+      setSendingFor((prev) => (prev === sid ? null : prev));
+      if (sameSession()) void fetchMessages(projectId, sid);
     }
   };
 
@@ -1675,7 +1683,7 @@ export default function OpenCode({
                 {messages.map((m) => (
                   <MessageRow key={m.info.id} entry={m} />
                 ))}
-                {(sending || busy) && (
+                {activeBusy && (
                   <div className="flex items-center gap-2 text-xs text-neutral-500">
                     <Loader2 size={12} className="animate-spin" />{" "}
                     {aborting ? "stopping…" : sending ? "thinking…" : "working…"}
@@ -1897,7 +1905,7 @@ export default function OpenCode({
                 placeholder={
                   running ? "Message…  (/ commands, @ files, Enter to send)" : "Start the server to chat…"
                 }
-                disabled={!running || sending}
+                disabled={!running || activeBusy}
                 className="flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700 disabled:opacity-50"
               />
               <button
@@ -1908,7 +1916,7 @@ export default function OpenCode({
               >
                 <Mic size={15} />
               </button>
-              {sending || busy ? (
+              {activeBusy ? (
                 <button
                   onClick={() => void stop()}
                   disabled={aborting}
