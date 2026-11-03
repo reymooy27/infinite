@@ -16,6 +16,7 @@ import {
   Hammer,
   ListChecks,
   Loader2,
+  MessageSquarePlus,
   Mic,
   Paperclip,
   Plus,
@@ -625,6 +626,11 @@ export default function OpenCode({
   const [fileIdx, setFileIdx] = useState(0);
   const [mentionDismissed, setMentionDismissed] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(false);
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const falseStreakRef = useRef(0);
@@ -685,6 +691,7 @@ export default function OpenCode({
 
   const fetchSessions = useCallback(
     async (pid: string): Promise<OcSession[]> => {
+      setSessionsLoading(true);
       const ctrl = track(new AbortController());
       try {
         const data = await ocReq<OcSession[]>(
@@ -699,6 +706,7 @@ export default function OpenCode({
         return [];
       } finally {
         controllersRef.current.delete(ctrl);
+        if (projectIdRef.current === pid) setSessionsLoading(false);
       }
     },
     [track, reportFetchError],
@@ -785,6 +793,8 @@ export default function OpenCode({
     falseStreakRef.current = 0;
     setRunning(false);
     setStarting(false);
+    setStatusLoading(true);
+    setLoadingHistory(false);
     setSendingFor(null);
     setSessionBusy({});
     setError(null);
@@ -814,6 +824,7 @@ export default function OpenCode({
         // keep last known state
       } finally {
         controllersRef.current.delete(ctrl);
+        if (!stopped && projectIdRef.current === projectId) setStatusLoading(false);
       }
     };
     void poll();
@@ -834,11 +845,14 @@ export default function OpenCode({
 
   // Load slash commands + model catalog whenever the server is up.
   useEffect(() => {
+    let live = true;
     if (!projectId || !running) {
       setCommands([]);
       setModels([]);
+      setModelsLoading(false);
       return;
     }
+    setModelsLoading(true);
     const ctrl = track(new AbortController());
     ocReq<OcCommand[]>(`/api/opencode/${encodeURIComponent(projectId)}/proxy/command`, {
       signal: ctrl.signal,
@@ -885,13 +899,34 @@ export default function OpenCode({
         setModels(list);
       })
       .catch(() => setModels([]))
-      .finally(() => controllersRef.current.delete(ctrl2));
+      .finally(() => {
+        controllersRef.current.delete(ctrl2);
+        if (live) setModelsLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, [projectId, running, track]);
+
+  // Pre-select the provider default so the model chip is never blank on open.
+  useEffect(() => {
+    if (selectedModel || models.length === 0) return;
+    const def = models.find((m) => m.isDefault);
+    if (def) setSelectedModel(def);
+  }, [models, selectedModel]);
 
   // Load history whenever the active session changes.
   useEffect(() => {
     if (!projectId || !running || !activeSessionId) return;
-    void fetchMessages(projectId, activeSessionId);
+    const sid = activeSessionId;
+    let live = true;
+    setLoadingHistory(true);
+    void fetchMessages(projectId, sid).finally(() => {
+      if (live && activeSessionIdRef.current === sid) setLoadingHistory(false);
+    });
+    return () => {
+      live = false;
+    };
   }, [projectId, running, activeSessionId, fetchMessages]);
 
   // Rebuild the plan checklist from history (last todowrite tool part) so the
@@ -1270,6 +1305,7 @@ export default function OpenCode({
       setActiveSessionId(null);
       activeSessionIdRef.current = null;
       setMessages([]);
+      setSelectedModel(null);
       setPermission(null);
       setQuestion(null);
       return;
@@ -1307,6 +1343,7 @@ export default function OpenCode({
 
   const newSession = async () => {
     if (!projectId || !running) return;
+    setCreatingSession(true);
     const ctrl = track(new AbortController());
     try {
       const s = await ocReq<OcSession>(
@@ -1319,6 +1356,7 @@ export default function OpenCode({
       setError(err instanceof Error ? err.message : "Failed to create session");
     } finally {
       controllersRef.current.delete(ctrl);
+      setCreatingSession(false);
     }
   };
 
@@ -1636,13 +1674,23 @@ export default function OpenCode({
         ) : (
           <button
             onClick={() => setShowPicker(true)}
-            disabled={!running || models.length === 0}
+            disabled={!running || modelsLoading || models.length === 0}
             className="flex max-w-40 shrink-0 items-center gap-1 rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 hover:text-neutral-200 disabled:opacity-40 cursor-pointer"
-            title={models.length === 0 ? "No models loaded" : "Select model"}
+            title={
+              modelsLoading
+                ? "Loading models…"
+                : models.length === 0
+                  ? "No models loaded"
+                  : "Select model"
+            }
           >
-            <Cpu size={11} className="shrink-0" />
+            {modelsLoading ? (
+              <Loader2 size={11} className="shrink-0 animate-spin" />
+            ) : (
+              <Cpu size={11} className="shrink-0" />
+            )}
             <span className="truncate">
-              {models.length === 0 ? "no models" : "select model"}
+              {modelsLoading ? "loading…" : models.length === 0 ? "no models" : "select model"}
             </span>
           </button>
         )}
@@ -1688,10 +1736,15 @@ export default function OpenCode({
           </button>
           <button
             onClick={() => void newSession()}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 cursor-pointer"
+            disabled={!running || creatingSession}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 disabled:opacity-40 cursor-pointer"
             title="New session"
           >
-            <Plus size={14} />
+            {creatingSession ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Plus size={14} />
+            )}
           </button>
         </div>
       )}
@@ -1705,15 +1758,24 @@ export default function OpenCode({
             </span>
             <button
               onClick={() => void newSession()}
-              disabled={!running}
+              disabled={!running || creatingSession}
               className="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white disabled:opacity-40 cursor-pointer"
               title="New session"
             >
-              <Plus size={14} />
+              {creatingSession ? (
+                <Loader2 size={14} className="animate-spin text-neutral-300" />
+              ) : (
+                <Plus size={14} />
+              )}
             </button>
           </div>
           <div className="flex-1 overflow-y-auto py-1">
-            {!running ? (
+            {statusLoading || (running && sessionsLoading && sessions.length === 0) ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-neutral-500">
+                <Loader2 size={12} className="shrink-0 animate-spin" />
+                {running ? "Loading sessions…" : "Connecting…"}
+              </div>
+            ) : !running ? (
               <div className="px-3 py-2.5 text-xs text-neutral-500">
                 Start the server to see sessions.
               </div>
@@ -1792,7 +1854,11 @@ export default function OpenCode({
             onScroll={handleScroll}
             className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-2.5"
           >
-            {!activeSessionId ? (
+            {statusLoading && !running ? (
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-neutral-500">
+                <Loader2 size={14} className="animate-spin" /> Checking server…
+              </div>
+            ) : !activeSessionId ? (
               <div className="flex h-full items-center justify-center text-sm text-neutral-500">
                 {running
                   ? "Select or create a session to start chatting."
@@ -1800,6 +1866,15 @@ export default function OpenCode({
               </div>
             ) : showDiff ? (
               <SessionDiff diffs={sessionDiffs} />
+            ) : loadingHistory ? (
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-neutral-500">
+                <Loader2 size={14} className="animate-spin" /> Loading conversation…
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2.5 text-neutral-600">
+                <MessageSquarePlus size={30} strokeWidth={1.5} />
+                <p className="text-sm">New session — type a message below to start.</p>
+              </div>
             ) : (
               <>
                 {messages.map((m) => (
@@ -2077,6 +2152,7 @@ export default function OpenCode({
               updated: s.time?.updated ?? s.time?.created,
             }),
           )}
+          loading={statusLoading || (sessionsLoading && sessions.length === 0)}
           selectedId={activeSessionId}
           onSelect={(id) => {
             setShowSessionPicker(false);
