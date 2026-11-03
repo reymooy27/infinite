@@ -37,6 +37,7 @@ import {
   buildMentionParts,
   collectSessionDiffs,
   extractLastTodos,
+  ocErrorMessage,
   upsertInfoIn,
   upsertPartIn,
   type OcMessageEntry,
@@ -568,6 +569,14 @@ const MessageRow = memo(function MessageRow({ entry }: { entry: OcMessageEntry }
         {entry.parts.map((p) => (
           <PartView key={p.id} part={p} isUser={isUser} />
         ))}
+        {!isUser && entry.info.error && (
+          <div className="flex items-start gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300">
+            <AlertCircle size={12} className="mt-0.5 shrink-0" />
+            <span className="break-words whitespace-pre-wrap">
+              {ocErrorMessage(entry.info.error) ?? "Model error"}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1035,9 +1044,20 @@ export default function OpenCode({
         } else if (type === "session.idle") {
           if (sid) markBusy(sid, false);
           if (isActive) {
+            // Server says the turn ended; a POST /message socket still pending
+            // is dead — drop "sending" so the composer unlocks.
+            setSendingFor((prev) => (prev === sid ? null : prev));
             repairRef.current = false;
             refetchHistory();
             if (projectId) void fetchSessions(projectId);
+          }
+        } else if (type === "session.error") {
+          if (sid) markBusy(sid, false);
+          if (isActive) {
+            setSendingFor((prev) => (prev === sid ? null : prev));
+            const msg = ocErrorMessage(data.properties?.error);
+            if (msg) setError(msg);
+            refetchHistory();
           }
         } else if (type === "todo.updated" && isActive) {
           const t = data.properties?.todos;
@@ -1125,6 +1145,14 @@ export default function OpenCode({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  // Server-truth reconcile while busy: a session.idle lost during an SSE gap
+  // would otherwise leave the spinner up and the composer locked forever.
+  useEffect(() => {
+    if (!projectId || !running || !activeBusy) return;
+    const t = setInterval(() => void fetchStatus(projectId), 4000);
+    return () => clearInterval(t);
+  }, [projectId, running, activeBusy, fetchStatus]);
 
   // Auto-scroll unless the user scrolled up. The ResizeObserver covers the
   // case where messages resolve while the container has no size yet (window
@@ -1413,6 +1441,7 @@ export default function OpenCode({
       }
     } catch (err) {
       if (sameSession()) setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
+      markBusy(sid, false);
       setError(err instanceof Error ? err.message : "Failed to send");
     } finally {
       controllersRef.current.delete(ctrl);

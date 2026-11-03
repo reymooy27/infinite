@@ -5,6 +5,7 @@ import {
   buildMentionParts,
   collectSessionDiffs,
   extractLastTodos,
+  ocErrorMessage,
   upsertInfoIn,
   upsertPartIn,
   type OcMessageEntry,
@@ -104,5 +105,11 @@ assert.equal(diffs[0].additions, 2);
 assert.equal(diffs[0].deletions, 2);
 assert.ok(diffs[1].edits[0].patch.includes("+line1"));
 assert.deepEqual(collectSessionDiffs([]), []);
+
+// ocErrorMessage: opencode ApiError/abort shapes → readable text; junk → null
+assert.equal(ocErrorMessage({ name: "ApiError", data: { message: "Request timed out" } }), "Request timed out");
+assert.equal(ocErrorMessage({ name: "MessageAbortedError" }), "MessageAbortedError");
+assert.equal(ocErrorMessage("boom"), null);
+assert.equal(ocErrorMessage(undefined), null);
 
 console.log("opencode-parts: all checks passed");

@@ -23,8 +23,18 @@ export interface OcMessageEntry {
     id: string;
     role?: string;
     time?: { created?: number; completed?: number };
+    error?: { name?: string; data?: { message?: string } };
   };
   parts: OcPart[];
+}
+
+// opencode puts model/turn failures on the assistant message as
+// { name, data: { message } } (e.g. ApiError on timeout, MessageAbortedError).
+// Without extracting it the thread renders an empty bubble and looks hung.
+export function ocErrorMessage(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as { name?: string; message?: string; data?: { message?: string } };
+  return e.data?.message || e.message || e.name || null;
 }
 
 export function upsertPartIn(prev: OcMessageEntry[], messageID: string, part: OcPart): OcMessageEntry[] {
