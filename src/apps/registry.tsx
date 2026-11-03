@@ -35,6 +35,7 @@ import { useTerminalSessionStore } from "@/stores/useTerminalSessionStore";
 import { useWindowStore } from "@/stores/useWindowStore";
 import { useSSHStore } from "@/stores/useSSHStore";
 import { useProjectStore } from "@/stores/useProjectStore";
+import { useActivityStore } from "@/stores/useActivityStore";
 import { buildWsUrl } from "@/lib/ws";
 import { getNextSSHTerminalTarget } from "@/lib/sshWindowNavigation";
 import { saveBuffer, getBuffer, deleteBuffer } from "@/lib/terminalBufferCache";
@@ -1263,6 +1264,7 @@ export const SSHPane = ({
       try {
         if (e.data instanceof ArrayBuffer) {
           if (term) {
+            useActivityStore.getState().bump(sessionId);
             if (!hasAutoNavigatedRef.current) {
               hasAutoNavigatedRef.current = true;
               if (windowId && tabId) {
@@ -1281,6 +1283,7 @@ export const SSHPane = ({
         const msg = JSON.parse(e.data);
 
         if (msg.type === "data" && term) {
+          useActivityStore.getState().bump(sessionId);
           // First data from server means the shell is ready — send auto-cd now
           if (!hasAutoNavigatedRef.current) {
             hasAutoNavigatedRef.current = true;

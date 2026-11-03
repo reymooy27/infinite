@@ -1,9 +1,10 @@
 // @ts-nocheck
 import { useEffect, useRef, useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { normalizeRouterUsageBaseUrl } from "@/lib/routerUsage";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
+import { useActivityStore, anyTerminalBusy } from "@/stores/useActivityStore";
 import type { Project } from "@/types";
 
 interface ProjectSwitcherProps {
@@ -19,6 +20,14 @@ const SIDEBAR_SECTIONS = [
 ] as const;
 
 const RECENT_PROJECTS_KEY = "infinite-recent-projects";
+const SESSIONS_PER_PROJECT = 5;
+const OC_POLL_MS = 5000;
+
+interface OcSession {
+  id: string;
+  title?: string;
+  time?: { created?: number; updated?: number };
+}
 
 function readRecentProjectIds(): string[] {
   if (typeof window === "undefined") return [];
@@ -92,6 +101,57 @@ function formatDate(value: string | undefined) {
   });
 }
 
+function formatSessionTime(updated: number | undefined) {
+  if (!updated) return "";
+  return formatDate(new Date(updated).toISOString());
+}
+
+function Spinner({ className = "text-blue-400" }: { className?: string }) {
+  return (
+    <svg
+      className={`animate-spin ${className}`}
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-label="working"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="3"
+        opacity="0.25"
+      />
+      <path
+        d="M21 12a9 9 0 00-9-9"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 text-neutral-500 transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+    >
+      <path d="M9 18l6-6-6-6" />
+    </svg>
+  );
+}
+
 export default function ProjectSwitcher({
   isOpen,
   onOpenChange,
@@ -102,17 +162,22 @@ export default function ProjectSwitcher({
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const switchProject = useProjectStore((s) => s.switchProject);
   const routerUsageBaseUrl = useSettingsStore((s) => s.routerUsageBaseUrl);
+  const terminals = useActivityStore((s) => s.terminals);
   const activeProjectName =
     projects.find((p) => p.id === activeProjectId)?.name ?? null;
   const [switching, setSwitching] = useState<string | null>(null);
-  const [focusedIdx, setFocusedIdx] = useState(0);
   const [usageStats, setUsageStats] =
     useState<ProjectSwitcherUsageStats | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [ocSessions, setOcSessions] = useState<Record<string, OcSession[]>>({});
+  const [ocBusy, setOcBusy] = useState<Record<string, Record<string, boolean>>>({});
+  const [, setTick] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const rowRefs = useRef<(HTMLElement | null)[]>([]);
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -151,9 +216,12 @@ export default function ProjectSwitcher({
     }
   }, [isOpen]);
 
+  // Refresh "terminal busy" countdown rendering + opencode busy state
   useEffect(() => {
-    rowRefs.current[focusedIdx]?.scrollIntoView({ block: "nearest" });
-  }, [focusedIdx]);
+    if (!isOpen) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [isOpen]);
 
   const loadUsage = useCallback(
     async (signal?: AbortSignal, silent = false) => {
@@ -205,8 +273,81 @@ export default function ProjectSwitcher({
     };
   }, [isOpen, loadUsage]);
 
+  // Poll opencode status/sessions per project while the panel is open.
+  // /status tells if serve runs; only then /proxy/session/status reports busy sessions.
+  useEffect(() => {
+    if (!isOpen || projects.length === 0) return;
+
+    const controller = new AbortController();
+    const fetchJson = async (path: string) => {
+      const res = await fetch(`${API_BASE}${path}`, {
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      return res.json();
+    };
+
+    const poll = async () => {
+      const nextBusy: Record<string, Record<string, boolean>> = {};
+      const nextSessions: Record<string, OcSession[]> = {};
+      await Promise.all(
+        projects.map(async (project) => {
+          const pid = encodeURIComponent(project.id);
+          try {
+            const st = await fetchJson(`/api/opencode/${pid}/status`);
+            if (!st?.running) return;
+            const status = await fetchJson(
+              `/api/opencode/${pid}/proxy/session/status`,
+            );
+            const busy: Record<string, boolean> = {};
+            for (const [sid, entry] of Object.entries(status ?? {})) {
+              const type = (entry as { type?: string })?.type;
+              if (type && type !== "idle") busy[sid] = true;
+            }
+            nextBusy[project.id] = busy;
+            if (expandedRef.current[project.id]) {
+              const list = await fetchJson(`/api/opencode/${pid}/proxy/session`);
+              if (Array.isArray(list)) {
+                nextSessions[project.id] = [...list]
+                  .sort(
+                    (a: OcSession, b: OcSession) =>
+                      (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
+                  )
+                  .slice(0, SESSIONS_PER_PROJECT);
+              }
+            }
+          } catch {
+            // serve down or proxy failed — no activity for this project
+          }
+        }),
+      );
+      if (!controller.signal.aborted) {
+        setOcBusy(nextBusy);
+        setOcSessions((prev) => {
+          const next = { ...prev };
+          for (const project of projects) {
+            const fresh = nextSessions[project.id];
+            const old = prev[project.id];
+            if (fresh) next[project.id] = fresh;
+            else if (expandedRef.current[project.id] && old === undefined)
+              next[project.id] = [];
+          }
+          return next;
+        });
+      }
+    };
+
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), OC_POLL_MS);
+    return () => {
+      controller.abort();
+      window.clearInterval(intervalId);
+    };
+  }, [isOpen, projects]);
+
   const nonActiveProjects = sortProjectsByRecentOpen(projects, activeProjectId);
   const recentRequests = (usageStats?.recentRequests ?? []).slice(0, 3);
+  const terminalBusy = anyTerminalBusy(terminals);
 
   const handleSwitch = useCallback(
     async (id: string) => {
@@ -227,21 +368,26 @@ export default function ProjectSwitcher({
     [onOpenChange, onOpenSection],
   );
 
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const [focusedIdx, setFocusedIdx] = useState(0);
+
   const handleDropdownKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       const items = nonActiveProjects;
       const totalItems = items.length + SIDEBAR_SECTIONS.length + 2;
-      if (e.key === "ArrowDown" || e.key === "j") {
+      if (e.key === "ArrowDown") {
         e.preventDefault();
         setFocusedIdx((prev) => Math.min(prev + 1, totalItems - 1));
-      } else if (e.key === "ArrowUp" || e.key === "k") {
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setFocusedIdx((prev) => Math.max(prev - 1, 0));
       } else if (e.key === "Enter") {
         e.preventDefault();
         const sectionIdx = items.length;
         const usageIdx = items.length + SIDEBAR_SECTIONS.length;
-        const manageIdx = usageIdx + 1;
         if (focusedIdx < items.length) {
           handleSwitch(items[focusedIdx].id);
         } else if (focusedIdx < usageIdx) {
@@ -253,6 +399,7 @@ export default function ProjectSwitcher({
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [focusedIdx, handleOpenSection, handleSwitch, nonActiveProjects],
   );
 
@@ -264,13 +411,91 @@ export default function ProjectSwitcher({
   const itemClassName = (index: number, base = "") =>
     `${base} ${focusedIdx === index ? "bg-neutral-800 text-neutral-100" : ""}`;
 
+  const renderProject = (project: Project, index: number, isActive: boolean) => {
+    const busyMap = ocBusy[project.id] ?? {};
+    const projectBusy = Object.keys(busyMap).length > 0;
+    const isOpenRow = !!expanded[project.id];
+    const sessions = ocSessions[project.id];
+    return (
+      <div key={project.id}>
+        <div
+          role="option"
+          aria-selected={isActive || focusedIdx === index}
+          onClick={() => (isActive ? onOpenChange(false) : handleSwitch(project.id))}
+          className={`${isActive ? "bg-blue-950/30" : "hover:bg-neutral-800"} ${itemClassName(index)} flex w-full items-center gap-1.5 px-2 py-2 text-left transition-colors cursor-pointer ${switching === project.id ? "opacity-50" : ""}`}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleExpanded(project.id);
+            }}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-neutral-700 cursor-pointer"
+            title={isOpenRow ? "Hide sessions" : "Show sessions"}
+            aria-expanded={isOpenRow}
+          >
+            <Chevron open={isOpenRow} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className={`text-[13px] truncate ${isActive ? "font-medium text-neutral-100" : "text-neutral-100"}`}>
+              {switching === project.id ? "Switching…" : project.name}
+            </div>
+            {project.directory && (
+              <div className="text-[10px] text-neutral-500 font-mono truncate">
+                {project.directory}
+              </div>
+            )}
+          </div>
+          {projectBusy && <Spinner />}
+          {isActive && (
+            <span className="text-[10px] text-blue-400 shrink-0">active</span>
+          )}
+        </div>
+
+        {isOpenRow && (
+          <div className="ml-6 border-l border-neutral-800 pl-2 pb-1">
+            {sessions === undefined ? (
+              <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-neutral-500">
+                <Spinner className="text-neutral-500" /> Sessions…
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="px-2 py-1.5 text-[11px] text-neutral-600">
+                No sessions
+              </div>
+            ) : (
+              sessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-neutral-800/60 cursor-pointer"
+                  onClick={() => !isActive && handleSwitch(project.id)}
+                  title={session.title}
+                >
+                  {busyMap[session.id] ? (
+                    <Spinner />
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-700 shrink-0" />
+                  )}
+                  <span className="flex-1 min-w-0 truncate text-[11px] text-neutral-300">
+                    {session.title || session.id}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-neutral-600 whitespace-nowrap">
+                    {formatSessionTime(session.time?.updated)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className={embedded ? "relative" : "fixed top-4 left-4 z-[10000]"}>
+    <div className={embedded ? "relative" : ""}>
       <button
         ref={buttonRef}
         onClick={handleButtonClick}
         className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 transition-colors cursor-pointer ${
-          embedded ? "" : "shadow-2xl backdrop-blur-md"
+          embedded ? "" : "fixed top-4 left-4 z-[10000] shadow-2xl backdrop-blur-md"
         } ${
           isOpen
             ? "border-blue-500 bg-blue-600 text-white"
@@ -297,6 +522,9 @@ export default function ProjectSwitcher({
         <span className="max-w-24 truncate text-[11px] font-medium">
           {activeProjectName ?? "Menu"}
         </span>
+        {(terminalBusy || Object.keys(ocBusy[activeProjectId ?? ""] ?? {}).length > 0) && (
+          <Spinner className="text-amber-300" />
+        )}
       </button>
 
       {isOpen && (
@@ -305,74 +533,58 @@ export default function ProjectSwitcher({
           role="listbox"
           tabIndex={-1}
           onKeyDown={handleDropdownKeyDown}
-          className="absolute top-full left-0 mt-1.5 w-56 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden animate-[fadeSlideIn_0.12s_ease-out]"
+          className="fixed top-0 left-0 bottom-0 z-[10002] w-72 max-w-[85vw] bg-neutral-900 border-r border-neutral-700 shadow-2xl flex flex-col outline-none animate-[fadeSlideIn_0.12s_ease-out]"
         >
-          <div className="max-h-40 overflow-y-auto py-1 sm:max-h-56">
+          <div className="flex items-center justify-between px-3 py-2.5 border-b border-neutral-800 shrink-0">
+            <h2 className="text-[13px] font-semibold text-neutral-200">
+              Projects
+            </h2>
+            <div className="flex items-center gap-2">
+              {terminalBusy && (
+                <span className="flex items-center gap-1 text-[10px] text-amber-300">
+                  <Spinner className="text-amber-300" /> terminal
+                </span>
+              )}
+              <button
+                onClick={() => onOpenChange(false)}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-400 transition-colors cursor-pointer hover:bg-neutral-800 hover:text-neutral-200"
+                title="Close"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto py-1">
             {projects.length === 0 && (
               <div className="px-3 py-3 text-[12px] text-neutral-500 text-center">
                 No projects yet
               </div>
             )}
 
-            {activeProjectId &&
-              (() => {
-                const active = projects.find((p) => p.id === activeProjectId);
-                if (!active) return null;
-                return (
-                  <button
-                    key={active.id}
-                    role="option"
-                    aria-selected
-                    onClick={() => onOpenChange(false)}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer bg-blue-950/30"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-medium text-neutral-100 truncate">
-                        {active.name}
-                      </div>
-                      {active.directory && (
-                        <div className="text-[10px] text-neutral-500 font-mono truncate">
-                          {active.directory}
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-blue-400 shrink-0">
-                      active
-                    </span>
-                  </button>
-                );
-              })()}
+            {(() => {
+              const active = projects.find((p) => p.id === activeProjectId);
+              if (!active) return null;
+              return renderProject(active, -1, true);
+            })()}
 
-            {nonActiveProjects.map((project, index) => (
-              <button
-                key={project.id}
-                role="option"
-                aria-selected={focusedIdx === index}
-                disabled={switching === project.id}
-                onClick={() => handleSwitch(project.id)}
-                ref={(el) => (rowRefs.current[index] = el)}
-                className={itemClassName(
-                  index,
-                  "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer hover:bg-neutral-800 disabled:opacity-50 text-neutral-100",
-                )}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-neutral-600 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] text-neutral-100 truncate">
-                    {switching === project.id ? "Switching…" : project.name}
-                  </div>
-                  {project.directory && (
-                    <div className="text-[10px] text-neutral-500 font-mono truncate">
-                      {project.directory}
-                    </div>
-                  )}
-                </div>
-              </button>
-            ))}
+            {nonActiveProjects.map((project, index) =>
+              renderProject(project, index, false),
+            )}
           </div>
 
-          <div className="border-t border-neutral-700">
+          <div className="shrink-0 border-t border-neutral-800">
             {SIDEBAR_SECTIONS.map((section, sectionIndex) => {
               const index = nonActiveProjects.length + sectionIndex;
               return (
@@ -381,7 +593,6 @@ export default function ProjectSwitcher({
                   role="option"
                   aria-selected={focusedIdx === index}
                   onClick={() => handleOpenSection(section.id)}
-                  ref={(el) => (rowRefs.current[nonActiveProjects.length + sectionIndex] = el)}
                   className={itemClassName(
                     index,
                     "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
@@ -435,55 +646,29 @@ export default function ProjectSwitcher({
                 </button>
               );
             })}
-          </div>
 
-          <button
-            type="button"
-            role="option"
-            aria-selected={
-              focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length
-            }
-            onClick={() => handleOpenSection("usage")}
-            ref={(el) => (rowRefs.current[nonActiveProjects.length + SIDEBAR_SECTIONS.length] = el)}
-            className={itemClassName(
-              nonActiveProjects.length + SIDEBAR_SECTIONS.length,
-              "block w-full border-t border-neutral-700 rounded-b-xl bg-neutral-950/70 px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-neutral-900",
-            )}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[10px] uppercase tracking-wide text-neutral-500">
-                Usage Today
-              </div>
-              <div className="text-[10px] text-neutral-400">
-                Input {formatCompact(usageStats?.totalPromptTokens)}
-              </div>
-            </div>
-
-            {usageLoading ? (
-              <div className="mt-2 text-[11px] text-neutral-500">
-                Loading usage...
-              </div>
-            ) : usageError ? (
-              <div className="mt-2 text-[11px] text-red-300">{usageError}</div>
-            ) : !usageStats?.totalPromptTokens ? (
-              <div className="mt-2 text-[11px] text-neutral-500">
-                No usage yet.
-              </div>
-            ) : (
-              <div className="mt-2 text-[11px] text-neutral-300">
-                Total input today:{" "}
-                <span className="font-mono text-neutral-100">
-                  {formatCompact(usageStats.totalPromptTokens)}
-                </span>
-              </div>
-            )}
-
-            {!usageLoading && !usageError && recentRequests.length > 0 && (
-              <div className="mt-2 border-t border-neutral-800 pt-2">
+            <button
+              type="button"
+              role="option"
+              aria-selected={
+                focusedIdx === nonActiveProjects.length + SIDEBAR_SECTIONS.length
+              }
+              onClick={() => handleOpenSection("usage")}
+              className={itemClassName(
+                nonActiveProjects.length + SIDEBAR_SECTIONS.length,
+                "block w-full border-t border-neutral-800 bg-neutral-950/70 px-3 py-2 text-left transition-colors cursor-pointer hover:bg-neutral-900",
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] uppercase tracking-wide text-neutral-500">
-                  Recent Usage
+                  Usage Today
                 </div>
-                <div className="mt-1.5 space-y-1">
+                <div className="text-[10px] text-neutral-400">
+                  Input {formatCompact(usageStats?.totalPromptTokens)}
+                </div>
+              </div>
+              {!usageLoading && !usageError && recentRequests.length > 0 && (
+                <div className="mt-1.5 border-t border-neutral-800 pt-1.5">
                   {recentRequests.map((item, index) => (
                     <div
                       key={`${item.timestamp}-${item.model}-${index}`}
@@ -498,11 +683,9 @@ export default function ProjectSwitcher({
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-          </button>
+              )}
+            </button>
 
-          <div className="border-t border-neutral-700">
             <button
               role="option"
               aria-selected={
@@ -510,10 +693,9 @@ export default function ProjectSwitcher({
                 nonActiveProjects.length + SIDEBAR_SECTIONS.length + 1
               }
               onClick={() => handleOpenSection("projects")}
-              ref={(el) => (rowRefs.current[nonActiveProjects.length + SIDEBAR_SECTIONS.length + 1] = el)}
               className={itemClassName(
                 nonActiveProjects.length + SIDEBAR_SECTIONS.length + 1,
-                "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
+                "flex w-full items-center gap-2 border-t border-neutral-800 px-3 py-2.5 text-left text-[12px] text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer",
               )}
             >
               <svg
