@@ -266,6 +266,21 @@ function nodeText(node: unknown): string {
   return nodeText((node as { props?: { children?: unknown } })?.props?.children);
 }
 
+function copyText(raw: string, done: () => void) {
+  navigator.clipboard
+    ?.writeText(raw)
+    .then(done)
+    .catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = raw;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      done();
+    });
+}
+
 function CodePre({ children }: { children?: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
   const codeEl = (Array.isArray(children) ? children[0] : children) as {
@@ -288,20 +303,7 @@ function CodePre({ children }: { children?: React.ReactNode }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   };
-  const copy = () => {
-    navigator.clipboard
-      ?.writeText(raw)
-      .then(flash)
-      .catch(() => {
-        const ta = document.createElement("textarea");
-        ta.value = raw;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-        flash();
-      });
-  };
+  const copy = () => copyText(raw, flash);
   const cls = `hljs${lang ? ` language-${lang}` : ""}`;
   return (
     <pre className="group relative">
@@ -555,17 +557,36 @@ function QuestionPanel({
 }
 const MessageRow = memo(function MessageRow({ entry }: { entry: OcMessageEntry }) {
   const isUser = entry.info.role === "user";
+  const [copied, setCopied] = useState(false);
+  const text = entry.parts
+    .filter((p) => p.type === "text")
+    .map((p) => p.text ?? "")
+    .filter(Boolean)
+    .join("\n\n");
   return (
     <div
       className={`overflow-hidden rounded-xl border ${
         isUser ? "border-[#EC5B2B]/25 bg-[#EC5B2B]/[0.07]" : "border-neutral-800 bg-neutral-900/80"
       }`}
     >
-      <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
+      <div className="group/head flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
         <span className={isUser ? "text-[#FFC799]" : "text-neutral-300"}>
           {isUser ? "You" : "OpenCode"}
         </span>
         {entry.info.time?.created && <span>· {relTime(entry.info.time.created)}</span>}
+        {text && (
+          <button
+            onClick={() => copyText(text, () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            })}
+            title="Copy message"
+            className="ml-auto flex items-center gap-1 rounded-md px-1 py-0.5 normal-case tracking-normal text-neutral-500 opacity-0 transition-opacity hover:text-neutral-200 group-hover/head:opacity-100 [@media(hover:none)]:opacity-100 cursor-pointer"
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        )}
       </div>
       <div className="space-y-1 px-3 py-2">
         {entry.parts.map((p) => (
