@@ -267,18 +267,23 @@ function nodeText(node: unknown): string {
 }
 
 function copyText(raw: string, done: () => void) {
-  navigator.clipboard
-    ?.writeText(raw)
-    .then(done)
-    .catch(() => {
-      const ta = document.createElement("textarea");
-      ta.value = raw;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
-      done();
-    });
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = raw;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    done();
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(raw).then(done, fallback);
+  } else {
+    fallback();
+  }
 }
 
 function CodePre({ children }: { children?: React.ReactNode }) {
