@@ -380,6 +380,8 @@ export default function FileExplorer({
   );
   const [treeError, setTreeError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const hydratedProjectRef = useRef<string | null>(null);
+  const [hasRendered, setHasRendered] = useState(open);
 
   // `git ls-files -o -i` lists excluded dirs with a trailing slash and excluded
   // files without one, so a path is ignored when it matches exactly or sits
@@ -692,6 +694,9 @@ export default function FileExplorer({
 
   // --- Effects ---
 
+  useEffect(() => {
+    if (open) setHasRendered(true);
+  }, [open]);
 
   // Persist state
   useEffect(() => {
@@ -704,9 +709,12 @@ export default function FileExplorer({
     });
   }, [open, openFile, editContent, expandedFolders, dirCache, projectId]);
 
-  // Reset on open
+  // Hydrate once per project. The panel stays mounted across open/close so
+  // reopening keeps live state (open file, expanded folders, editor scroll).
   useEffect(() => {
     if (!open || !projectId) return;
+    if (hydratedProjectRef.current === projectId) return;
+    hydratedProjectRef.current = projectId;
     // Restore dari sessionStorage jika ada; jika tidak, reset
     const s = loadState(projectId);
     if (s) {
@@ -952,13 +960,18 @@ export default function FileExplorer({
     };
   }, [open, fetchFile]);
 
-  if (!open) return null;
+  if (!open && !hasRendered) return null;
 
   return (
-    <aside className={embedded
-      ? "flex h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
-      : "absolute inset-y-0 right-0 z-40 flex w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
-    }>
+    <aside
+      aria-hidden={!open}
+      style={{ display: open ? undefined : "none" }}
+      className={
+        embedded
+          ? "flex h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
+          : "absolute inset-y-0 right-0 z-40 flex w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
+      }
+    >
       {/* --- Tree Panel (left) --- */}
       {/* Mobile: full-width overlay so file names have room; collapses on select.
           Desktop: fixed 15rem sidebar. */}

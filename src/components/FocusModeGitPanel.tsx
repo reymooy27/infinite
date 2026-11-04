@@ -445,6 +445,7 @@ export default function FocusModeGitPanel({
   >({});
   const branchSearchRef = useRef<HTMLInputElement>(null);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [hasRendered, setHasRendered] = useState(open);
 
   const loadStatus = useCallback(
     async (signal?: AbortSignal, silent = false, force = false) => {
@@ -628,6 +629,10 @@ export default function FocusModeGitPanel({
     },
     [projectId, directory, connectionId],
   );
+
+  useEffect(() => {
+    if (open) setHasRendered(true);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -1183,13 +1188,18 @@ export default function FocusModeGitPanel({
     );
   };
 
-  if (!open) return null;
+  if (!open && !hasRendered) return null;
 
   return (
-    <aside className={embedded
-      ? "h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
-      : "absolute inset-y-0 right-0 z-40 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
-    }>
+    <aside
+      aria-hidden={!open}
+      style={{ display: open ? undefined : "none" }}
+      className={
+        embedded
+          ? "h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
+          : "absolute inset-y-0 right-0 z-40 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
+      }
+    >
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
