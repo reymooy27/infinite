@@ -176,8 +176,6 @@ export default function ProjectSwitcher({
   const [, setTick] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const expandedRef = useRef(expanded);
-  expandedRef.current = expanded;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -295,7 +293,10 @@ export default function ProjectSwitcher({
           const pid = encodeURIComponent(project.id);
           try {
             const st = await fetchJson(`/api/opencode/${pid}/status`);
-            if (!st?.running) return;
+            if (!st?.running) {
+              nextSessions[project.id] = [];
+              return;
+            }
             const status = await fetchJson(
               `/api/opencode/${pid}/proxy/session/status`,
             );
@@ -305,16 +306,14 @@ export default function ProjectSwitcher({
               if (type && type !== "idle") busy[sid] = true;
             }
             nextBusy[project.id] = busy;
-            if (expandedRef.current[project.id]) {
-              const list = await fetchJson(`/api/opencode/${pid}/proxy/session`);
-              if (Array.isArray(list)) {
-                nextSessions[project.id] = [...list]
-                  .sort(
-                    (a: OcSession, b: OcSession) =>
-                      (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
-                  )
-                  .slice(0, SESSIONS_PER_PROJECT);
-              }
+            const list = await fetchJson(`/api/opencode/${pid}/proxy/session`);
+            if (Array.isArray(list)) {
+              nextSessions[project.id] = [...list]
+                .sort(
+                  (a: OcSession, b: OcSession) =>
+                    (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
+                )
+                .slice(0, SESSIONS_PER_PROJECT);
             }
           } catch {
             // serve down or proxy failed — no activity for this project
@@ -327,10 +326,7 @@ export default function ProjectSwitcher({
           const next = { ...prev };
           for (const project of projects) {
             const fresh = nextSessions[project.id];
-            const old = prev[project.id];
             if (fresh) next[project.id] = fresh;
-            else if (expandedRef.current[project.id] && old === undefined)
-              next[project.id] = [];
           }
           return next;
         });
@@ -368,9 +364,12 @@ export default function ProjectSwitcher({
     [onOpenChange, onOpenSection],
   );
 
-  const toggleExpanded = useCallback((id: string) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  }, []);
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const open = prev[id] ?? (ocSessions[id]?.length ?? 0) > 0;
+      return { ...prev, [id]: !open };
+    });
+  };
 
   const [focusedIdx, setFocusedIdx] = useState(0);
 
@@ -414,8 +413,8 @@ export default function ProjectSwitcher({
   const renderProject = (project: Project, index: number, isActive: boolean) => {
     const busyMap = ocBusy[project.id] ?? {};
     const projectBusy = Object.keys(busyMap).length > 0;
-    const isOpenRow = !!expanded[project.id];
     const sessions = ocSessions[project.id];
+    const isOpenRow = expanded[project.id] ?? (sessions?.length ?? 0) > 0;
     return (
       <div key={project.id}>
         <div

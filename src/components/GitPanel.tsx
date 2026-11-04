@@ -21,7 +21,12 @@ export default function GitPanel({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closePanel();
+      if (
+        e.key === "Escape" &&
+        !document.querySelector('[data-commit-details-modal="true"]')
+      ) {
+        closePanel();
+      }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);

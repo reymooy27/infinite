@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
+import { clip, notify } from "@/lib/notify";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import ModelPicker from "@/components/ModelPicker";
@@ -636,8 +637,19 @@ export default function OpenCode({
   const falseStreakRef = useRef(0);
   const projectIdRef = useRef<string | null>(null);
   projectIdRef.current = projectId;
+  const projectsRef = useRef<Project[]>([]);
+  projectsRef.current = projects;
+  // Read at fire time: the SSE/poll closures capture the first render's state.
+  const notifyOc = (action: string, body: string, tag: string) => {
+    const name = projectsRef.current.find((p) => p.id === projectIdRef.current)?.name;
+    notify(`${name ?? "Project"} — OpenCode ${action}`, body, tag);
+  };
   const activeSessionIdRef = useRef<string | null>(null);
+  const sendingForRef = useRef<string | null>(null);
+  sendingForRef.current = sendingFor;
   const answeredQuestionsRef = useRef<Set<string>>(new Set());
+  const questionRef = useRef<OcQuestion | null>(null);
+  questionRef.current = question;
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1081,17 +1093,22 @@ export default function OpenCode({
           if (isActive) {
             // Server says the turn ended; a POST /message socket still pending
             // is dead — drop "sending" so the composer unlocks.
+            const wasSending = sendingForRef.current === sid;
             setSendingFor((prev) => (prev === sid ? null : prev));
             repairRef.current = false;
             refetchHistory();
             if (projectId) void fetchSessions(projectId);
+            if (wasSending) notifyOc("selesai", "Turn selesai, siap input lagi", "opencode-done");
           }
         } else if (type === "session.error") {
           if (sid) markBusy(sid, false);
           if (isActive) {
             setSendingFor((prev) => (prev === sid ? null : prev));
             const msg = ocErrorMessage(data.properties?.error);
-            if (msg) setError(msg);
+            if (msg) {
+              setError(msg);
+              notifyOc("error", msg, "opencode-error");
+            }
             refetchHistory();
           }
         } else if (type === "todo.updated" && isActive) {
@@ -1107,18 +1124,28 @@ export default function OpenCode({
             const patterns = [p.patterns, p.resources].flatMap((x) =>
               Array.isArray(x) ? x.map(String) : [],
             );
+            const label = String(p.permission ?? p.action ?? "permission");
             setPermission({
               requestID: String(p.id),
               sessionID: String(p.sessionID ?? ""),
-              label: String(p.permission ?? p.action ?? "permission"),
+              label,
               detail: patterns.join(" "),
             });
+            notifyOc(
+              "butuh izin",
+              `${label}${patterns.length ? ` — ${clip(patterns.join(" "))}` : ""}`,
+              "opencode-permission",
+            );
           }
         } else if (type === "permission.replied" || type === "permission.v2.replied") {
           setPermission(null);
         } else if (type === "question.asked" || type === "question.v2.asked") {
           const q = toQuestion(data.properties as { id?: string; sessionID?: string; questions?: unknown });
-          if (q) setQuestion(q);
+          if (q) {
+            setQuestion(q);
+            const first = q.questions.map((x) => x.question).filter(Boolean).join(" | ");
+            notifyOc("bertanya", first || "Menunggu jawaban", "opencode-question");
+          }
         } else if (
           type === "question.replied" ||
           type === "question.rejected" ||
@@ -1158,8 +1185,13 @@ export default function OpenCode({
         >(`/api/opencode/${encodeURIComponent(projectId)}/proxy/question`);
         if (stopped || !Array.isArray(list) || list.length === 0) return;
         const q = toQuestion(list[0]);
-        if (q && !answeredQuestionsRef.current.has(q.requestID))
+        if (q && !answeredQuestionsRef.current.has(q.requestID)) {
+          if (!questionRef.current) {
+            const first = q.questions.map((x) => x.question).filter(Boolean).join(" | ");
+            notifyOc("bertanya", first || "Menunggu jawaban", "opencode-question");
+          }
           setQuestion((prev) => prev ?? q);
+        }
       } catch {
         // ignore — serve may be mid-restart
       }

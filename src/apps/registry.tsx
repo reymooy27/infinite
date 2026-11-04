@@ -43,6 +43,7 @@ import { resolveTerminalLinkTarget } from "@/lib/terminalLinks";
 import { registerTerminalCleanup, unregisterTerminalCleanup } from "@/lib/terminalCleanup";
 import { isSwipeSuppressed } from "@/lib/swipeGuard";
 import { isProjectSwitchSuppressingFocus } from "@/lib/switchFocusGuard";
+import { notify } from "@/lib/notify";
 
 const CHUNK_SIZE = 64 * 1024;
 
@@ -701,29 +702,23 @@ export const SSHPane = ({
     // Claude Code (and any CLI) rings the bell when it finishes; forward it to the OS
     // only while the tab is in the background, otherwise it's just noise.
     term.onBell(() => {
-      if (!("Notification" in window) || Notification.permission !== "granted") return;
-      if (!document.hidden && document.hasFocus()) return;
       // Read stores at fire time, not capture time: this closure outlives project
       // switches and cwd changes, so a captured value would go stale.
       const { projects, activeProjectId: pid } = useProjectStore.getState();
       const projectName = projects.find((p) => p.id === pid)?.name;
       const cwd = useTerminalSessionStore.getState().terminalCwds[sessionId];
-      const n = new Notification(
-        projectName ? `${projectName} — ${bellTitle}` : bellTitle,
-        {
-          // bellTitle is the terminal title, which Claude Code sets to what it is
-          // working on; cwd answers "where", so together they identify the turn.
-          body: cwd ? `Selesai di ${cwd}` : "Proses selesai",
-          icon: "/icon-192.png",
-          // Same tag as the service worker's push notification so the two paths
-          // collapse into one entry instead of double-notifying.
-          tag: "claude-code",
-        },
-      );
-      n.onclick = () => {
-        window.focus();
-        n.close();
-      };
+      // Last non-empty output line answers "what happened"; cwd answers "where".
+      const buf = term.buffer.active;
+      let lastLine = "";
+      for (let y = buf.baseY + buf.cursorY; y >= 0 && !lastLine; y--) {
+        lastLine = buf.getLine(y)?.translateToString().trim() ?? "";
+      }
+      const body =
+        [lastLine && `→ ${lastLine}`, cwd && `di ${cwd}`].filter(Boolean).join("  ") ||
+        "Proses selesai";
+      // Same tag as the service worker's push notification so the two paths
+      // collapse into one entry instead of double-notifying.
+      notify(projectName ? `${projectName} — ${bellTitle}` : bellTitle, body, "claude-code");
     });
 
     term.onResize(({ cols, rows }) => {

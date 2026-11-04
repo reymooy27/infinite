@@ -362,6 +362,35 @@ function flattenVisibleRows(
   return rows;
 }
 
+function DiffPre({ diff }: { diff: string }) {
+  return (
+    <pre className="whitespace-pre font-mono text-[11px] leading-relaxed">
+      {diff.split("\n").map((line, index) => {
+        let className = "text-neutral-400";
+        if (line.startsWith("+") && !line.startsWith("+++")) {
+          className = "text-emerald-400";
+        } else if (line.startsWith("-") && !line.startsWith("---")) {
+          className = "text-rose-400";
+        } else if (line.startsWith("@@")) {
+          className = "text-sky-400";
+        } else if (
+          line.startsWith("diff") ||
+          line.startsWith("index") ||
+          line.startsWith("---") ||
+          line.startsWith("+++")
+        ) {
+          className = "text-neutral-500";
+        }
+        return (
+          <div key={index} className={className}>
+            {line || "\u00A0"}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
 function formatTimestamp(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Now";
@@ -436,6 +465,10 @@ export default function FocusModeGitPanel({
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
+  const [commitModalOpen, setCommitModalOpen] = useState(false);
+  const [commitFilePath, setCommitFilePath] = useState<string | null>(null);
+  const [commitFileDiff, setCommitFileDiff] = useState<string | null>(null);
+  const [commitFileDiffLoading, setCommitFileDiffLoading] = useState(false);
   const [commitDiff, setCommitDiff] = useState<string | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDetails, setCommitDetails] = useState<GitCommitDetails | null>(null);
@@ -595,6 +628,9 @@ export default function FocusModeGitPanel({
       setSelectedCommitHash(hash);
       setCommitDetails(null);
       setCommitDiff(null);
+      setCommitFilePath(null);
+      setCommitFileDiff(null);
+      setCommitFileDiffLoading(false);
       setCommitFilesCollapsed({});
 
       try {
@@ -632,6 +668,10 @@ export default function FocusModeGitPanel({
 
   useEffect(() => {
     if (open) setHasRendered(true);
+    else {
+      setHistoryOpen(false);
+      setCommitModalOpen(false);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -926,6 +966,14 @@ export default function FocusModeGitPanel({
         return;
       }
 
+      if (commitModalOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setCommitModalOpen(false);
+        }
+        return;
+      }
+
       if (isTextTarget) {
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
           event.preventDefault();
@@ -1040,6 +1088,7 @@ export default function FocusModeGitPanel({
     discardRow,
     executeAction,
     handleCommit,
+    commitModalOpen,
     loadStatus,
     open,
     requestAction,
@@ -1526,33 +1575,7 @@ export default function FocusModeGitPanel({
                         <span className="text-xs">Loading diff...</span>
                       </div>
                     ) : (
-                      <pre className="text-[11px] font-mono whitespace-pre leading-relaxed">
-                        {selectedFileDiff.split("\n").map((line, i) => {
-                          let className = "text-neutral-400";
-                          if (line.startsWith("+") && !line.startsWith("+++")) {
-                            className = "text-emerald-400";
-                          } else if (
-                            line.startsWith("-") &&
-                            !line.startsWith("---")
-                          ) {
-                            className = "text-rose-400";
-                          } else if (line.startsWith("@@")) {
-                            className = "text-sky-400";
-                          } else if (
-                            line.startsWith("diff") ||
-                            line.startsWith("index") ||
-                            line.startsWith("---") ||
-                            line.startsWith("+++")
-                          ) {
-                            className = "text-neutral-500";
-                          }
-                          return (
-                            <div key={i} className={className}>
-                              {line || "\u00A0"}
-                            </div>
-                          );
-                        })}
-                      </pre>
+                      <DiffPre diff={selectedFileDiff} />
                     )}
                   </div>
                 </div>
@@ -1560,14 +1583,22 @@ export default function FocusModeGitPanel({
               <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                 <button
                   onClick={() => setHistoryOpen((prev) => !prev)}
-                  className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500"
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500 hover:bg-neutral-800/40 ${
+                    historyOpen ? "border-b border-neutral-800" : ""
+                  }`}
                 >
-                  <span>Commit history</span>
-                  {historyOpen ? (
-                    <ChevronDown size={12} />
-                  ) : (
-                    <ChevronRight size={12} />
-                  )}
+                  <span className="flex items-center gap-2">
+                    <GitCommitHorizontal size={12} />
+                    Commit history
+                  </span>
+                  <span className="flex items-center gap-2 normal-case tracking-normal text-[10px] text-neutral-500">
+                    {data.recentCommits.length} commits
+                    {historyOpen ? (
+                      <ChevronDown size={12} />
+                    ) : (
+                      <ChevronRight size={12} />
+                    )}
+                  </span>
                 </button>
                 {historyOpen && (
                   <div className="max-h-48 overflow-y-auto py-1">
@@ -1576,155 +1607,31 @@ export default function FocusModeGitPanel({
                         No commit history
                       </div>
                     )}
-                    {data.recentCommits.map((commit) => {
-                      const selected = selectedCommitHash === commit.hash;
-                      return (
-                        <button
-                          key={`${commit.hash}-${commit.subject}`}
-                          onClick={() => {
-                            if (selected) {
-                              setSelectedCommitHash(null);
-                              setCommitDetails(null);
-                              setCommitDiff(null);
-                            } else {
-                              void fetchCommitDetails(commit.hash);
-                            }
-                          }}
-                          className={`block w-full px-3 py-1.5 text-left text-xs text-neutral-300 transition-colors hover:bg-neutral-800/60 ${
-                            selected ? "bg-neutral-800/80" : ""
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-[11px] text-neutral-500">
-                              {commit.hash}
-                            </span>
-                            <span className="truncate text-neutral-100">
-                              {commit.subject}
-                            </span>
-                          </div>
-                          <div className="mt-1 text-[10px] text-neutral-500">
-                            {commit.authorName} · {commit.relativeDate}
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {data.recentCommits.map((commit) => (
+                      <button
+                        key={`${commit.hash}-${commit.subject}`}
+                        onClick={() => {
+                          setCommitModalOpen(true);
+                          void fetchCommitDetails(commit.hash);
+                        }}
+                        className="block w-full px-3 py-1.5 text-left text-xs text-neutral-300 transition-colors hover:bg-neutral-800/60"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] text-neutral-500">
+                            {commit.hash}
+                          </span>
+                          <span className="truncate text-neutral-100">
+                            {commit.subject}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-neutral-500">
+                          {commit.authorName} · {commit.relativeDate}
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
-
-              {selectedCommitHash && (
-                <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
-                  <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
-                    <span className="truncate flex-1 mr-2 font-mono">
-                      {commitDetails?.hash.slice(0, 8) ?? selectedCommitHash} · {commitDetails?.subject ?? "commit"}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setSelectedCommitHash(null);
-                        setCommitDetails(null);
-                        setCommitDiff(null);
-                      }}
-                      className="rounded p-1 hover:bg-neutral-800"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                  {commitDetails && (
-                    <div className="flex flex-col h-[calc(100vh-280px)] max-h-[80vh] overflow-hidden">
-                      <div className="w-full border-b border-neutral-800 overflow-y-auto bg-neutral-950/50 flex-shrink-0">
-                        <div className="px-2 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500 border-b border-neutral-800">
-                          Files ({commitDetails.files.length})
-                        </div>
-                        <div className="py-1 max-h-[calc(100vh-400px)] overflow-y-auto">
-                          {commitDetails.files.map((file, idx) => {
-                            const isSelected = selectedFilePath === file.path;
-                            return (
-                              <button
-                                key={`${idx}-${file.path}`}
-                                onClick={() => {
-                                  if (isSelected) {
-                                    setSelectedFileDiff(null);
-                                    setSelectedFilePath(null);
-                                  } else {
-                                    setSelectedFilePath(file.path);
-                                    setSelectedFileDiff(null);
-                                    setDiffLoading(true);
-                                    fetch(`/api/projects/${projectId}/git/diff?${new URLSearchParams({ file: file.path, hash: commitDetails.hash, staged: "false", ...(directory ? { directory } : {}), ...(connectionId ? { connectionId: String(connectionId) } : {}) })}`)
-                                      .then(r => r.json())
-                                      .then(b => setSelectedFileDiff(b.diff || "No changes"))
-                                      .catch(() => setSelectedFileDiff("Failed to load diff"))
-                                      .finally(() => setDiffLoading(false));
-                                  }
-                                }}
-                                className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors ${
-                                  isSelected
-                                    ? "bg-neutral-800/80 text-white"
-                                    : "text-neutral-300 hover:bg-neutral-800/60 hover:text-white"
-                                }`}
-                                title={file.originalPath ? `${file.originalPath} → ${file.path}` : file.path}
-                              >
-                                <span
-                                  className={`shrink-0 text-[10px] font-medium ${
-                                    file.status === "added"
-                                      ? "text-emerald-300"
-                                      : file.status === "deleted"
-                                      ? "text-rose-300"
-                                      : file.status === "renamed"
-                                      ? "text-sky-300"
-                                      : "text-amber-300"
-                                  }`}
-                                >
-                                  {file.status === "added" ? "A" : file.status === "deleted" ? "D" : file.status === "renamed" ? "R" : "M"}
-                                </span>
-                                <span className="truncate flex-1 font-mono">{file.path}</span>
-                                {file.originalPath && (
-                                  <span className="text-[9px] text-neutral-500 ml-1">
-                                    from {file.originalPath}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0 min-h-[450px] overflow-auto p-2">
-                        {commitDetailsLoading || diffLoading ? (
-                          <div className="flex items-center justify-center h-[450px] text-neutral-500">
-                            <LoaderCircle size={14} className="animate-spin mr-2" />
-                            <span className="text-xs">Loading...</span>
-                          </div>
-                        ) : (
-                          <pre className="text-[11px] font-mono whitespace-pre leading-relaxed h-full overflow-auto">
-                            {(() => {
-                              if (selectedFileDiff) {
-                                return selectedFileDiff.split("\n").map((line, i) => {
-                                  let className = "text-neutral-400";
-                                  if (line.startsWith("+") && !line.startsWith("+++")) className = "text-emerald-400";
-                                  else if (line.startsWith("-") && !line.startsWith("---")) className = "text-rose-400";
-                                  else if (line.startsWith("@@")) className = "text-sky-400";
-                                  else if (line.startsWith("diff") || line.startsWith("index") || line.startsWith("---") || line.startsWith("+++")) className = "text-neutral-500";
-                                  return <div key={i} className={className}>{line || "\u00A0"}</div>;
-                                });
-                              }
-                              if (commitDiff) {
-                                return commitDiff.split("\n").map((line, i) => {
-                                  let className = "text-neutral-400";
-                                  if (line.startsWith("+") && !line.startsWith("+++")) className = "text-emerald-400";
-                                  else if (line.startsWith("-") && !line.startsWith("---")) className = "text-rose-400";
-                                  else if (line.startsWith("@@")) className = "text-sky-400";
-                                  else if (line.startsWith("diff") || line.startsWith("index") || line.startsWith("---") || line.startsWith("+++")) className = "text-neutral-500";
-                                  return <div key={i} className={className}>{line || "\u00A0"}</div>;
-                                });
-                              }
-                              return <div className="text-neutral-500 text-center py-8 text-xs">Select a file to view diff</div>;
-                            })()}
-                          </pre>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                 <button
@@ -1854,6 +1761,182 @@ export default function FocusModeGitPanel({
             </>
           )}
         </div>
+
+        {commitModalOpen && selectedCommitHash && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Commit details"
+            data-commit-details-modal="true"
+            onClick={() => setCommitModalOpen(false)}
+            className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm md:p-6"
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              className="flex h-full max-h-[90dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 shadow-2xl"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <GitCommitHorizontal
+                    size={16}
+                    className="shrink-0 text-neutral-300"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-neutral-100">
+                      Commit details
+                    </p>
+                    <p className="truncate font-mono text-[11px] text-neutral-500">
+                      {selectedCommitHash.slice(0, 8)}
+                      {commitDetails ? ` · ${commitDetails.subject}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCommitModalOpen(false)}
+                  className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-white"
+                  title="Close commit details"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="flex min-h-0 flex-1 flex-col">
+                {commitDetailsLoading && !commitDetails ? (
+                  <div className="flex flex-1 items-center justify-center text-neutral-500">
+                    <LoaderCircle size={16} className="mr-2 animate-spin" />
+                    <span className="text-xs">Loading commit...</span>
+                  </div>
+                ) : !commitDetails ? (
+                  <div className="flex flex-1 items-center justify-center px-6 text-center text-xs text-rose-300">
+                    {commitDiff ?? "Failed to load commit details"}
+                  </div>
+                ) : (
+                  <>
+                    <div className="border-b border-neutral-800 px-4 py-3">
+                      <p className="truncate text-sm font-medium text-neutral-100">
+                        {commitDetails.subject}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-neutral-500">
+                        <span className="font-mono text-neutral-400">
+                          {commitDetails.hash.slice(0, 8)}
+                        </span>
+                        <span>
+                          {commitDetails.authorName} ·{" "}
+                          {commitDetails.relativeDate}
+                        </span>
+                      </div>
+                      {commitDetails.body.trim() && (
+                        <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-[11px] text-neutral-400">
+                          {commitDetails.body}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-1 overflow-x-auto border-b border-neutral-800 bg-neutral-900/40 px-2 py-2">
+                      {commitDetails.files.map((file, idx) => {
+                        const isSelected = commitFilePath === file.path;
+                        return (
+                          <button
+                            key={`${idx}-${file.path}`}
+                            onClick={() => {
+                              if (isSelected) {
+                                setCommitFilePath(null);
+                                setCommitFileDiff(null);
+                                return;
+                              }
+
+                              setCommitFilePath(file.path);
+                              setCommitFileDiff(null);
+                              setCommitFileDiffLoading(true);
+                              fetch(
+                                `/api/projects/${projectId}/git/diff?${new URLSearchParams(
+                                  {
+                                    file: file.path,
+                                    hash: commitDetails.hash,
+                                    staged: "false",
+                                    ...(directory ? { directory } : {}),
+                                    ...(connectionId
+                                      ? {
+                                          connectionId: String(connectionId),
+                                        }
+                                      : {}),
+                                  },
+                                )}`,
+                              )
+                                .then((response) => response.json())
+                                .then((body) =>
+                                  setCommitFileDiff(body.diff || "No changes"),
+                                )
+                                .catch(() =>
+                                  setCommitFileDiff("Failed to load diff"),
+                                )
+                                .finally(() =>
+                                  setCommitFileDiffLoading(false),
+                                );
+                            }}
+                            className={`inline-flex max-w-[18rem] shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] transition-colors ${
+                              isSelected
+                                ? "border-neutral-600 bg-neutral-800 text-white"
+                                : "border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700 hover:text-white"
+                            }`}
+                            title={
+                              file.originalPath
+                                ? `${file.originalPath} → ${file.path}`
+                                : file.path
+                            }
+                          >
+                            <span
+                              className={`shrink-0 font-medium ${
+                                file.status === "added"
+                                  ? "text-emerald-300"
+                                  : file.status === "deleted"
+                                    ? "text-rose-300"
+                                    : file.status === "renamed"
+                                      ? "text-sky-300"
+                                      : "text-amber-300"
+                              }`}
+                            >
+                              {file.status === "added"
+                                ? "A"
+                                : file.status === "deleted"
+                                  ? "D"
+                                  : file.status === "renamed"
+                                    ? "R"
+                                    : "M"}
+                            </span>
+                            <span className="truncate font-mono">
+                              {file.path}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-auto p-3">
+                      {commitFileDiffLoading ? (
+                        <div className="flex items-center justify-center py-8 text-neutral-500">
+                          <LoaderCircle
+                            size={14}
+                            className="mr-2 animate-spin"
+                          />
+                          <span className="text-xs">Loading diff...</span>
+                        </div>
+                      ) : (
+                        <DiffPre
+                          diff={
+                            commitFilePath
+                              ? (commitFileDiff ?? "")
+                              : commitDetails.diff
+                          }
+                        />
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {confirmation && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
