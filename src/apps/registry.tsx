@@ -1264,7 +1264,7 @@ export const SSHPane = ({
       try {
         if (e.data instanceof ArrayBuffer) {
           if (term) {
-            useActivityStore.getState().bump(sessionId);
+            useActivityStore.getState().bumpTerminal(sessionId);
             if (!hasAutoNavigatedRef.current) {
               hasAutoNavigatedRef.current = true;
               if (windowId && tabId) {
@@ -1283,7 +1283,7 @@ export const SSHPane = ({
         const msg = JSON.parse(e.data);
 
         if (msg.type === "data" && term) {
-          useActivityStore.getState().bump(sessionId);
+          useActivityStore.getState().bumpTerminal(sessionId);
           // First data from server means the shell is ready — send auto-cd now
           if (!hasAutoNavigatedRef.current) {
             hasAutoNavigatedRef.current = true;
