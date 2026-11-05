@@ -11,6 +11,8 @@ import {
   FolderOpen,
   GitBranch,
   GitCommitHorizontal,
+  GitMerge,
+  GitPullRequest,
   LoaderCircle,
   Minus,
   Plus,
@@ -107,7 +109,17 @@ type GitAction =
   | "checkout_branch"
   | "create_branch"
   | "pull"
-  | "push";
+  | "push"
+  | "fetch"
+  | "stash"
+  | "stash_pop"
+  | "stash_apply"
+  | "stash_drop"
+  | "merge"
+  | "revert"
+  | "cherry_pick"
+  | "resolve_ours"
+  | "resolve_theirs";
 
 type GitActionResponse = {
   ok: boolean;
@@ -163,6 +175,7 @@ type ConfirmationState = null | {
   branch?: string;
   paths?: string[];
   messageText?: string;
+  hash?: string;
   confirmLabel?: string;
 };
 
@@ -427,6 +440,16 @@ const BUSY_LABELS: Record<string, string> = {
   create_branch: "Creating branch…",
   pull: "Pulling…",
   push: "Pushing…",
+  fetch: "Fetching…",
+  stash: "Stashing…",
+  stash_pop: "Popping stash…",
+  stash_apply: "Applying stash…",
+  stash_drop: "Dropping stash…",
+  merge: "Merging…",
+  revert: "Reverting…",
+  cherry_pick: "Cherry-picking…",
+  resolve_ours: "Resolving (ours)…",
+  resolve_theirs: "Resolving (theirs)…",
 };
 
 function hasPendingStage(changes: GitChange[]) {
@@ -756,6 +779,7 @@ export default function FocusModeGitPanel({
       paths?: string[];
       branch?: string;
       message?: string;
+      hash?: string;
     }) => {
       if (!projectId) return;
 
@@ -772,6 +796,7 @@ export default function FocusModeGitPanel({
           paths: payload.paths,
           branch: payload.branch,
           message: payload.message,
+          hash: payload.hash,
         });
 
         if (!body.ok || !body.nextStatus) {
@@ -811,6 +836,16 @@ export default function FocusModeGitPanel({
             create_branch: `Created ${payload.branch}`,
             pull: "Pull complete",
             push: "Push complete",
+            fetch: "Fetch complete",
+            stash: "Changes stashed",
+            stash_pop: "Stash popped",
+            stash_apply: "Stash applied",
+            stash_drop: "Stash dropped",
+            merge: `Merged ${payload.branch}`,
+            revert: `Reverted ${payload.hash?.slice(0, 8) ?? "commit"}`,
+            cherry_pick: `Cherry-picked ${payload.hash?.slice(0, 8) ?? "commit"}`,
+            resolve_ours: "Resolved with ours",
+            resolve_theirs: "Resolved with theirs",
           }[payload.action] ??
             "Git action complete");
 
@@ -833,6 +868,7 @@ export default function FocusModeGitPanel({
       paths?: string[];
       branch?: string;
       message?: string;
+      hash?: string;
     }) => {
       if (payload.action === "discard") {
         setConfirmation({
@@ -840,6 +876,46 @@ export default function FocusModeGitPanel({
           message:
             "This will restore tracked files and remove untracked files for selected paths.",
           confirmLabel: "Discard",
+          ...payload,
+        });
+        return;
+      }
+
+      if (payload.action === "merge" && payload.branch) {
+        setConfirmation({
+          title: "Merge branch?",
+          message: `Merge "${payload.branch}" into ${data?.branch ?? "current branch"}.`,
+          confirmLabel: "Merge",
+          ...payload,
+        });
+        return;
+      }
+
+      if (payload.action === "revert" && payload.hash) {
+        setConfirmation({
+          title: "Revert commit?",
+          message: `Create a new commit that undoes ${payload.hash.slice(0, 8)}.`,
+          confirmLabel: "Revert",
+          ...payload,
+        });
+        return;
+      }
+
+      if (payload.action === "cherry_pick" && payload.hash) {
+        setConfirmation({
+          title: "Cherry-pick commit?",
+          message: `Apply ${payload.hash.slice(0, 8)} onto ${data?.branch ?? "current branch"}.`,
+          confirmLabel: "Cherry-pick",
+          ...payload,
+        });
+        return;
+      }
+
+      if (payload.action === "stash_drop" && payload.branch) {
+        setConfirmation({
+          title: "Drop stash?",
+          message: `Permanently drop ${payload.branch}.`,
+          confirmLabel: "Drop",
           ...payload,
         });
         return;
@@ -973,12 +1049,13 @@ export default function FocusModeGitPanel({
           event.preventDefault();
           const next = confirmation;
           setConfirmation(null);
-          void executeAction({
-            action: next.action,
-            branch: next.branch,
-            paths: next.paths,
-            message: next.messageText,
-          });
+           void executeAction({
+             action: next.action,
+             branch: next.branch,
+             paths: next.paths,
+             message: next.messageText,
+             hash: next.hash,
+           });
         }
         return;
       }
@@ -1079,6 +1156,10 @@ export default function FocusModeGitPanel({
           event.preventDefault();
           void loadStatus(undefined, false, true);
           break;
+        case "f":
+          event.preventDefault();
+          requestAction({ action: "fetch" });
+          break;
         case "a":
           event.preventDefault();
           requestAction({ action: "stage_all" });
@@ -1121,6 +1202,10 @@ export default function FocusModeGitPanel({
     const canStage = hasPendingStage(fileChanges);
     const canUnstage = hasStagedOnly(fileChanges);
     const canDiscard = hasDiscardable(fileChanges);
+    const conflictPaths = fileChanges
+      .filter((change) => change.conflicted)
+      .map((change) => change.path);
+    const hasConflicts = conflictPaths.length > 0;
 
     return (
       <div
@@ -1128,6 +1213,30 @@ export default function FocusModeGitPanel({
           showSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         }`}
       >
+        {hasConflicts && (
+          <>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                requestAction({ action: "resolve_ours", paths: conflictPaths });
+              }}
+              className="rounded px-1 py-0.5 text-[9px] text-sky-200 hover:bg-sky-500/10"
+              title="Resolve keeping our version"
+            >
+              ours
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                requestAction({ action: "resolve_theirs", paths: conflictPaths });
+              }}
+              className="rounded px-1 py-0.5 text-[9px] text-emerald-200 hover:bg-emerald-500/10"
+              title="Resolve keeping their version"
+            >
+              theirs
+            </button>
+          </>
+        )}
         {canStage && (
           <button
             onClick={(event) => {
@@ -1376,27 +1485,48 @@ export default function FocusModeGitPanel({
                         </div>
                         <div className="max-h-48 overflow-y-auto p-1">
                           {filteredBranches.map((branch) => (
-                            <button
+                            <div
                               key={branch}
-                              onClick={() =>
-                                requestAction({
-                                  action: "checkout_branch",
-                                  branch,
-                                })
-                              }
-                              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs ${
+                              className={`group/branch flex w-full items-center rounded-lg pr-1 ${
                                 branch === data.branch
-                                  ? "bg-neutral-800 text-white"
-                                  : "text-neutral-300 hover:bg-neutral-800 hover:text-white"
+                                  ? "bg-neutral-800"
+                                  : "hover:bg-neutral-800/60"
                               }`}
                             >
-                              <span className="truncate">{branch}</span>
-                              {branch === data.branch && (
-                                <span className="text-[10px] uppercase text-sky-300">
-                                  current
-                                </span>
+                              <button
+                                onClick={() =>
+                                  requestAction({
+                                    action: "checkout_branch",
+                                    branch,
+                                  })
+                                }
+                                className={`flex min-w-0 flex-1 items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs ${
+                                  branch === data.branch
+                                    ? "text-white"
+                                    : "text-neutral-300 hover:text-white"
+                                }`}
+                              >
+                                <span className="truncate">{branch}</span>
+                                {branch === data.branch && (
+                                  <span className="text-[10px] uppercase text-sky-300">
+                                    current
+                                  </span>
+                                )}
+                              </button>
+                              {branch !== data.branch && (
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    requestAction({ action: "merge", branch });
+                                  }}
+                                  disabled={actionBusy}
+                                  className="shrink-0 rounded p-1 text-neutral-500 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-sky-200 group-hover/branch:opacity-100 disabled:opacity-0"
+                                  title={`Merge ${branch} into ${data.branch ?? "current"}`}
+                                >
+                                  <GitMerge size={12} />
+                                </button>
                               )}
-                            </button>
+                            </div>
                           ))}
                           {filteredBranches.length === 0 && (
                             <div className="px-3 py-2.5 text-xs text-neutral-500">
@@ -1492,6 +1622,18 @@ export default function FocusModeGitPanel({
                         <Folder size={12} />
                         Repo
                       </a>
+                      {data.branch && (
+                        <a
+                          href={`https://github.com/${gh.owner}/${gh.repo}/compare/${encodeURIComponent(data.branch)}?expand=1`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800"
+                          title="Open pull request form for this branch"
+                        >
+                          <GitPullRequest size={12} />
+                          PR
+                        </a>
+                      )}
                     </div>
                   );
                 })()}
@@ -1520,6 +1662,25 @@ export default function FocusModeGitPanel({
                       <Upload size={12} />
                     )}
                     {busyAction === "push" ? "Pushing…" : "Push"}
+                  </button>
+                  <button
+                    onClick={() => requestAction({ action: "fetch" })}
+                    disabled={actionBusy || !data.isRepo}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busyAction === "fetch" ? (
+                      <LoaderCircle size={12} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={12} />
+                    )}
+                    {busyAction === "fetch" ? "Fetching…" : "Fetch"}
+                  </button>
+                  <button
+                    onClick={() => requestAction({ action: "stash" })}
+                    disabled={actionBusy || !data.isRepo || data.clean}
+                    className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busyAction === "stash" ? "Stashing…" : "Stash"}
                   </button>
                   <button
                     onClick={() => requestAction({ action: "stage_all" })}
@@ -1705,11 +1866,56 @@ export default function FocusModeGitPanel({
                         key={`${stash.selector}-${stash.subject}`}
                         className="px-3 py-1.5 text-xs text-neutral-300"
                       >
-                        <div className="font-mono text-[10px] text-neutral-500">
-                          {stash.selector}
-                        </div>
-                        <div className="mt-1 text-neutral-100">
-                          {stash.subject}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-mono text-[10px] text-neutral-500">
+                              {stash.selector}
+                            </div>
+                            <div className="mt-1 truncate text-neutral-100">
+                              {stash.subject}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              onClick={() =>
+                                requestAction({
+                                  action: "stash_apply",
+                                  branch: stash.selector,
+                                })
+                              }
+                              disabled={actionBusy}
+                              className="rounded px-1.5 py-0.5 text-[10px] text-sky-200 hover:bg-sky-500/10 disabled:opacity-40"
+                              title="Apply (keep in list)"
+                            >
+                              apply
+                            </button>
+                            <button
+                              onClick={() =>
+                                requestAction({
+                                  action: "stash_pop",
+                                  branch: stash.selector,
+                                })
+                              }
+                              disabled={actionBusy}
+                              className="rounded px-1.5 py-0.5 text-[10px] text-emerald-200 hover:bg-emerald-500/10 disabled:opacity-40"
+                              title="Pop (apply and remove)"
+                            >
+                              pop
+                            </button>
+                            <button
+                              onClick={() =>
+                                requestAction({
+                                  action: "stash_drop",
+                                  branch: stash.selector,
+                                })
+                              }
+                              disabled={actionBusy}
+                              className="rounded px-1.5 py-0.5 text-[10px] text-red-200 hover:bg-red-500/10 disabled:opacity-40"
+                              title="Drop stash"
+                            >
+                              drop
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1839,13 +2045,40 @@ export default function FocusModeGitPanel({
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setCommitModalOpen(false)}
-                  className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-white"
-                  title="Close commit details"
-                >
-                  <X size={16} />
-                </button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    onClick={() => {
+                      setCommitModalOpen(false);
+                      requestAction({
+                        action: "cherry_pick",
+                        hash: selectedCommitHash,
+                      });
+                    }}
+                    disabled={actionBusy}
+                    className="rounded-lg border border-neutral-700 px-2 py-1 text-[10px] text-neutral-300 hover:bg-neutral-800 hover:text-white disabled:opacity-40"
+                    title="Cherry-pick this commit onto the current branch"
+                  >
+                    Cherry-pick
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCommitModalOpen(false);
+                      requestAction({ action: "revert", hash: selectedCommitHash });
+                    }}
+                    disabled={actionBusy}
+                    className="rounded-lg border border-neutral-700 px-2 py-1 text-[10px] text-neutral-300 hover:bg-neutral-800 hover:text-white disabled:opacity-40"
+                    title="Create a commit that undoes this commit"
+                  >
+                    Revert
+                  </button>
+                  <button
+                    onClick={() => setCommitModalOpen(false)}
+                    className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-white"
+                    title="Close commit details"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
               </div>
 
               <div className="flex min-h-0 flex-1 flex-col">
@@ -2011,6 +2244,7 @@ export default function FocusModeGitPanel({
                       branch: next.branch,
                       paths: next.paths,
                       message: next.messageText,
+                      hash: next.hash,
                     });
                   }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-500"

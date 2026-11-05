@@ -349,6 +349,7 @@ router.post("/:id/git/action", async (req, res) => {
       paths: body.paths,
       message: body.message,
       branch: body.branch,
+      hash: body.hash,
     });
 
     res.json(result);
