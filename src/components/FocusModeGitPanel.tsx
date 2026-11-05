@@ -387,6 +387,19 @@ function getFeedbackToneClass(kind: "success" | "error") {
     : "border-red-500/20 bg-red-500/10 text-red-200";
 }
 
+const BUSY_LABELS: Record<string, string> = {
+  stage: "Staging…",
+  stage_all: "Staging all…",
+  unstage: "Unstaging…",
+  unstage_all: "Unstaging all…",
+  discard: "Discarding…",
+  commit: "Committing…",
+  checkout_branch: "Switching branch…",
+  create_branch: "Creating branch…",
+  pull: "Pulling…",
+  push: "Pushing…",
+};
+
 function hasPendingStage(changes: GitChange[]) {
   return changes.some((change) => change.unstaged || change.untracked);
 }
@@ -411,7 +424,9 @@ export default function FocusModeGitPanel({
   const [data, setData] = useState<GitStatusPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [actionBusy, setActionBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<GitAction | null>(null);
+  const [busyPaths, setBusyPaths] = useState<Set<string>>(() => new Set());
+  const actionBusy = busyAction !== null;
   const [collapsedFolders, setCollapsedFolders] = useState<
     Record<string, boolean>
   >({});
@@ -699,7 +714,8 @@ export default function FocusModeGitPanel({
     }) => {
       if (!projectId) return;
 
-      setActionBusy(true);
+      setBusyAction(payload.action);
+      setBusyPaths(new Set(payload.paths ?? []));
       setFeedback(null);
       setError("");
 
@@ -759,7 +775,8 @@ export default function FocusModeGitPanel({
           err instanceof Error ? err.message : "Git action failed";
         setFeedback({ kind: "error", text: message });
       } finally {
-        setActionBusy(false);
+        setBusyAction(null);
+        setBusyPaths(new Set());
       }
     },
     [connectionId, directory, projectId],
@@ -841,7 +858,7 @@ export default function FocusModeGitPanel({
     } finally {
       setCommitGenerating(false);
     }
-  }, [projectId, directory, connectionId, setFeedback]);
+  }, [projectId, directory, connectionId]);
 
   const handleBranchCreate = useCallback(() => {
     const branch = newBranchName.trim();
@@ -1129,9 +1146,13 @@ export default function FocusModeGitPanel({
             <span className="truncate">{row.name}</span>
             <div className="flex items-center gap-2">
               <span
-                className={`shrink-0 text-[11px] font-semibold ${getStatusClassName(row.change)}`}
+                className={`flex shrink-0 items-center text-[11px] font-semibold ${getStatusClassName(row.change)}`}
               >
-                {getStatusText(row.change)}
+                {busyPaths.has(row.change.path) ? (
+                  <LoaderCircle size={11} className="animate-spin" />
+                ) : (
+                  getStatusText(row.change)
+                )}
               </span>
               {renderActionIcons(row, selected)}
             </div>
@@ -1203,6 +1224,12 @@ export default function FocusModeGitPanel({
               </p>
             </div>
           </div>
+          {actionBusy && (
+            <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-sky-300">
+              <LoaderCircle size={12} className="animate-spin" />
+              {BUSY_LABELS[busyAction]}
+            </span>
+          )}
           <button
             onClick={() => void loadStatus(undefined, false, true)}
             title="Refresh git status"
@@ -1255,10 +1282,18 @@ export default function FocusModeGitPanel({
                           ? "Detached HEAD"
                           : (data.branch ?? "No branch")}
                       </span>
-                      <ChevronDown
-                        size={14}
-                        className="shrink-0 text-neutral-500"
-                      />
+                      {busyAction === "checkout_branch" ||
+                      busyAction === "create_branch" ? (
+                        <LoaderCircle
+                          size={14}
+                          className="shrink-0 animate-spin text-sky-300"
+                        />
+                      ) : (
+                        <ChevronDown
+                          size={14}
+                          className="shrink-0 text-neutral-500"
+                        />
+                      )}
                     </button>
 
                     {branchMenuOpen && data.isRepo && (
@@ -1408,16 +1443,24 @@ export default function FocusModeGitPanel({
                     disabled={actionBusy || !data.isRepo}
                     className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <Download size={12} />
-                    Pull
+                    {busyAction === "pull" ? (
+                      <LoaderCircle size={12} className="animate-spin" />
+                    ) : (
+                      <Download size={12} />
+                    )}
+                    {busyAction === "pull" ? "Pulling…" : "Pull"}
                   </button>
                   <button
                     onClick={() => requestAction({ action: "push" })}
                     disabled={actionBusy || !data.isRepo}
                     className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <Upload size={12} />
-                    Push
+                    {busyAction === "push" ? (
+                      <LoaderCircle size={12} className="animate-spin" />
+                    ) : (
+                      <Upload size={12} />
+                    )}
+                    {busyAction === "push" ? "Pushing…" : "Push"}
                   </button>
                   <button
                     onClick={() => requestAction({ action: "stage_all" })}
@@ -1426,7 +1469,7 @@ export default function FocusModeGitPanel({
                     }
                     className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Stage all
+                    {busyAction === "stage_all" ? "Staging…" : "Stage all"}
                   </button>
                   <button
                     onClick={() => requestAction({ action: "unstage_all" })}
@@ -1435,7 +1478,7 @@ export default function FocusModeGitPanel({
                     }
                     className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Unstage all
+                    {busyAction === "unstage_all" ? "Unstaging…" : "Unstage all"}
                   </button>
                 </div>
               </div>
@@ -1470,7 +1513,12 @@ export default function FocusModeGitPanel({
                 <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                   <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
                     <span>Changes</span>
-                    <span>{data.changes.length}</span>
+                    <span className="flex items-center gap-1">
+                      {actionBusy && (
+                        <LoaderCircle size={11} className="animate-spin text-sky-300" />
+                      )}
+                      {data.changes.length}
+                    </span>
                   </div>
                   <div className="py-1">
                     {visibleRows.map((row) =>
