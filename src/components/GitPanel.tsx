@@ -21,16 +21,25 @@ export default function GitPanel({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closePanel();
+      if (
+        e.key === "Escape" &&
+        !document.querySelector('[data-commit-details-modal="true"]')
+      ) {
+        closePanel();
+      }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [open, closePanel]);
 
-  if (!open || !projectId) return null;
+  if (!projectId) return null;
 
   return (
-    <div className="fixed inset-0 z-[10050] flex justify-end">
+    <div
+      aria-hidden={!open}
+      style={{ display: open ? undefined : "none" }}
+      className="fixed inset-0 z-[10050] flex justify-end"
+    >
       <button
         type="button"
         aria-label="Close Git panel"
@@ -40,7 +49,7 @@ export default function GitPanel({
       <aside className="relative z-[10051] h-full w-full max-w-[24rem]">
         <FocusModeGitPanel
           key={`${projectId}:${connectionId ?? "none"}:${directory ?? ""}`}
-          open
+          open={open}
           projectId={projectId}
           connectionId={connectionId}
           directory={directory}

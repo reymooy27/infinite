@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   appendDeltaIn,
   buildMentionParts,
+  collectSessionDiffs,
   extractLastTodos,
+  ocErrorMessage,
   upsertInfoIn,
   upsertPartIn,
   type OcMessageEntry,
@@ -76,5 +78,38 @@ assert.equal(parts[0].url.replace(/%2F/g, "/"), "file:///home/dev/proj/src/a.ts"
 assert.equal(parts[0].filename, "src/a.ts");
 assert.equal(parts[0].mime, "text/typescript");
 assert.deepEqual(buildMentionParts("hello", ["src/a.ts"], ""), []);
+
+// collectSessionDiffs: groups edit/write parts per file in order, survives
+// commits (pure message data), counts +/-, synthesizes patch without metadata
+const editPart = (id: string, tool: string, input: unknown, diff?: string): OcMessageEntry => ({
+  info: { id: `m_${id}`, role: "assistant" },
+  parts: [
+    {
+      id: `p_${id}`,
+      type: "tool",
+      tool,
+      state: { status: "completed", input, metadata: diff ? { diff } : undefined },
+    },
+  ],
+});
+const diffs = collectSessionDiffs([
+  editPart("1", "edit", { path: "a.ts", oldString: "x", newString: "y" }, "--- a/a.ts\n+++ b/a.ts\n-x\n+y"),
+  editPart("2", "bash", { command: "git commit -am x" }),
+  editPart("3", "write", { path: "b.ts", content: "line1\nline2" }),
+  editPart("4", "edit", { filePath: "a.ts", oldString: "y", newString: "z" }, "-y\n+z"),
+  { info: { id: "m_5", role: "assistant" }, parts: [{ id: "p_5", type: "tool", tool: "edit", state: { status: "running", input: { path: "c.ts" } } }] },
+]);
+assert.deepEqual(diffs.map((d) => d.file), ["a.ts", "b.ts"]);
+assert.equal(diffs[0].edits.length, 2);
+assert.equal(diffs[0].additions, 2);
+assert.equal(diffs[0].deletions, 2);
+assert.ok(diffs[1].edits[0].patch.includes("+line1"));
+assert.deepEqual(collectSessionDiffs([]), []);
+
+// ocErrorMessage: opencode ApiError/abort shapes → readable text; junk → null
+assert.equal(ocErrorMessage({ name: "ApiError", data: { message: "Request timed out" } }), "Request timed out");
+assert.equal(ocErrorMessage({ name: "MessageAbortedError" }), "MessageAbortedError");
+assert.equal(ocErrorMessage("boom"), null);
+assert.equal(ocErrorMessage(undefined), null);
 
 console.log("opencode-parts: all checks passed");

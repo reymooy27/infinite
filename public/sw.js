@@ -31,8 +31,8 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Claude Code', {
-      body: data.body || 'Proses selesai',
+    self.registration.showNotification(data.title || 'Infinite', {
+      body: data.body || 'Ada kabar dari Claude Code',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       tag: 'claude-code',

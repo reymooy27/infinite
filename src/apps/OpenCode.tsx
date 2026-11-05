@@ -12,9 +12,11 @@ import {
   Copy,
   Cpu,
   FileText,
+  GitCompare,
   Hammer,
   ListChecks,
   Loader2,
+  MessageSquarePlus,
   Mic,
   Paperclip,
   Plus,
@@ -26,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
+import { clip, notify } from "@/lib/notify";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import ModelPicker from "@/components/ModelPicker";
@@ -34,11 +37,14 @@ import VoiceInputOverlay from "@/components/VoiceInputOverlay";
 import {
   appendDeltaIn,
   buildMentionParts,
+  collectSessionDiffs,
   extractLastTodos,
+  ocErrorMessage,
   upsertInfoIn,
   upsertPartIn,
   type OcMessageEntry,
   type OcPart,
+  type SessionFileDiff,
 } from "./opencode-parts";
 import type { Project } from "@/types";
 
@@ -167,6 +173,73 @@ interface OcTodo {
   priority?: string;
 }
 
+function PatchView({ patch }: { patch: string }) {
+  return (
+    <pre className="overflow-x-auto border-t border-neutral-800 font-mono text-[11px] leading-[1.5]">
+      {patch.split("\n").map((line, i) => {
+        const cls =
+          line.startsWith("+") && !line.startsWith("+++")
+            ? "bg-emerald-500/10 text-emerald-300"
+            : line.startsWith("-") && !line.startsWith("---")
+              ? "bg-rose-500/10 text-rose-300"
+              : line.startsWith("@@")
+                ? "text-sky-300"
+                : "text-neutral-400";
+        return (
+          <div key={i} className={`whitespace-pre px-2 ${cls}`}>
+            {line || " "}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
+function SessionDiff({ diffs }: { diffs: SessionFileDiff[] }) {
+  if (diffs.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-neutral-500">
+        No file changes in this session yet.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[10px] text-neutral-500">
+        {diffs.length} file(s) edited in this session
+      </div>
+      {diffs.map((d) => (
+        <details
+          key={d.file}
+          className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/60"
+        >
+          <summary className="flex cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-xs hover:bg-neutral-800/60">
+            <FileText size={12} className="shrink-0 text-neutral-500" />
+            <span className="min-w-0 flex-1 truncate font-mono text-neutral-100">{d.file}</span>
+            <span className="shrink-0 font-mono text-[10px] text-neutral-500">
+              {d.edits.length} edit{d.edits.length > 1 ? "s" : ""}
+            </span>
+            <span className="shrink-0 font-mono text-[10px]">
+              <span className="text-emerald-300">+{d.additions}</span>{" "}
+              <span className="text-rose-300">-{d.deletions}</span>
+            </span>
+          </summary>
+          {d.edits.map((e, i) => (
+            <div key={`${e.messageID}_${i}`}>
+              {d.edits.length > 1 && (
+                <div className="border-t border-neutral-800 bg-neutral-900/80 px-2 py-0.5 text-[10px] text-neutral-500">
+                  edit #{i + 1} · {e.tool}
+                </div>
+              )}
+              <PatchView patch={e.patch} />
+            </div>
+          ))}
+        </details>
+      ))}
+    </div>
+  );
+}
+
 interface DraftFile {
   id: string;
   name: string;
@@ -193,6 +266,26 @@ function nodeText(node: unknown): string {
   return nodeText((node as { props?: { children?: unknown } })?.props?.children);
 }
 
+function copyText(raw: string, done: () => void) {
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = raw;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    done();
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(raw).then(done, fallback);
+  } else {
+    fallback();
+  }
+}
+
 function CodePre({ children }: { children?: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
   const codeEl = (Array.isArray(children) ? children[0] : children) as {
@@ -215,20 +308,7 @@ function CodePre({ children }: { children?: React.ReactNode }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   };
-  const copy = () => {
-    navigator.clipboard
-      ?.writeText(raw)
-      .then(flash)
-      .catch(() => {
-        const ta = document.createElement("textarea");
-        ta.value = raw;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-        flash();
-      });
-  };
+  const copy = () => copyText(raw, flash);
   const cls = `hljs${lang ? ` language-${lang}` : ""}`;
   return (
     <pre className="group relative">
@@ -482,22 +562,49 @@ function QuestionPanel({
 }
 const MessageRow = memo(function MessageRow({ entry }: { entry: OcMessageEntry }) {
   const isUser = entry.info.role === "user";
+  const [copied, setCopied] = useState(false);
+  const text = entry.parts
+    .filter((p) => p.type === "text")
+    .map((p) => p.text ?? "")
+    .filter(Boolean)
+    .join("\n\n");
   return (
     <div
       className={`overflow-hidden rounded-xl border ${
         isUser ? "border-[#EC5B2B]/25 bg-[#EC5B2B]/[0.07]" : "border-neutral-800 bg-neutral-900/80"
       }`}
     >
-      <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
+      <div className="group/head flex items-center gap-2 border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
         <span className={isUser ? "text-[#FFC799]" : "text-neutral-300"}>
           {isUser ? "You" : "OpenCode"}
         </span>
         {entry.info.time?.created && <span>· {relTime(entry.info.time.created)}</span>}
+        {text && (
+          <button
+            onClick={() => copyText(text, () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            })}
+            title="Copy message"
+            className="ml-auto flex items-center gap-1 rounded-md px-1 py-0.5 normal-case tracking-normal text-neutral-500 opacity-0 transition-opacity hover:text-neutral-200 group-hover/head:opacity-100 [@media(hover:none)]:opacity-100 cursor-pointer"
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        )}
       </div>
       <div className="space-y-1 px-3 py-2">
         {entry.parts.map((p) => (
           <PartView key={p.id} part={p} isUser={isUser} />
         ))}
+        {!isUser && entry.info.error && (
+          <div className="flex items-start gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300">
+            <AlertCircle size={12} className="mt-0.5 shrink-0" />
+            <span className="break-words whitespace-pre-wrap">
+              {ocErrorMessage(entry.info.error) ?? "Model error"}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -523,7 +630,8 @@ export default function OpenCode({
   const [sessionBusy, setSessionBusy] = useState<Record<string, boolean>>({});
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<OcMessageEntry[]>([]);
-  const [sending, setSending] = useState(false);
+  const [sendingFor, setSendingFor] = useState<string | null>(null);
+  const [aborting, setAborting] = useState(false);
   const [mode, setMode] = useState<"plan" | "build">("build");
   const [permission, setPermission] = useState<OcPermission | null>(null);
   const [question, setQuestion] = useState<OcQuestion | null>(null);
@@ -544,13 +652,30 @@ export default function OpenCode({
   const [mentions, setMentions] = useState<string[]>([]);
   const [fileIdx, setFileIdx] = useState(0);
   const [mentionDismissed, setMentionDismissed] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(false);
 
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const falseStreakRef = useRef(0);
   const projectIdRef = useRef<string | null>(null);
   projectIdRef.current = projectId;
+  const projectsRef = useRef<Project[]>([]);
+  projectsRef.current = projects;
+  // Read at fire time: the SSE/poll closures capture the first render's state.
+  const notifyOc = (action: string, body: string, tag: string) => {
+    const name = projectsRef.current.find((p) => p.id === projectIdRef.current)?.name;
+    notify(`${name ?? "Project"} — OpenCode ${action}`, body, tag);
+  };
   const activeSessionIdRef = useRef<string | null>(null);
+  const sendingForRef = useRef<string | null>(null);
+  sendingForRef.current = sendingFor;
   const answeredQuestionsRef = useRef<Set<string>>(new Set());
+  const questionRef = useRef<OcQuestion | null>(null);
+  questionRef.current = question;
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -560,10 +685,12 @@ export default function OpenCode({
 
   activeSessionIdRef.current = activeSessionId;
 
-  const busy = useMemo(() => {
-    const last = messages[messages.length - 1];
-    return !!last && last.info.role === "assistant" && !last.info.time?.completed;
-  }, [messages]);
+  const sending = sendingFor !== null && sendingFor === activeSessionId;
+
+  // Server-truth busy, keyed per session. The old messages-derived busy (last
+  // assistant without time.completed) stuck forever on aborted turns, and a
+  // global sending flag leaked across session switches.
+  const activeBusy = sending || (activeSessionId !== null && !!sessionBusy[activeSessionId]);
 
   const track = useCallback((ctrl: AbortController) => {
     controllersRef.current.add(ctrl);
@@ -602,6 +729,7 @@ export default function OpenCode({
 
   const fetchSessions = useCallback(
     async (pid: string): Promise<OcSession[]> => {
+      setSessionsLoading(true);
       const ctrl = track(new AbortController());
       try {
         const data = await ocReq<OcSession[]>(
@@ -616,6 +744,7 @@ export default function OpenCode({
         return [];
       } finally {
         controllersRef.current.delete(ctrl);
+        if (projectIdRef.current === pid) setSessionsLoading(false);
       }
     },
     [track, reportFetchError],
@@ -643,7 +772,7 @@ export default function OpenCode({
         controllersRef.current.delete(ctrl);
       }
     },
-    [track],
+    [track, reportFetchError],
   );
 
   const markBusy = useCallback((sid: string, busy: boolean) => {
@@ -702,7 +831,9 @@ export default function OpenCode({
     falseStreakRef.current = 0;
     setRunning(false);
     setStarting(false);
-    setSending(false);
+    setStatusLoading(true);
+    setLoadingHistory(false);
+    setSendingFor(null);
     setSessionBusy({});
     setError(null);
     setNotice(null);
@@ -710,6 +841,7 @@ export default function OpenCode({
     setTodos([]);
     setFiles([]);
     setMentions([]);
+    setShowDiff(false);
     let stopped = false;
     const poll = async () => {
       const ctrl = track(new AbortController());
@@ -730,6 +862,7 @@ export default function OpenCode({
         // keep last known state
       } finally {
         controllersRef.current.delete(ctrl);
+        if (!stopped && projectIdRef.current === projectId) setStatusLoading(false);
       }
     };
     void poll();
@@ -740,20 +873,24 @@ export default function OpenCode({
     };
   }, [projectId, track]);
 
+  const sessionDiffs = useMemo(() => collectSessionDiffs(messages), [messages]);
+
   // Load sessions whenever the server is up.
-  useEffect(() => {
-    if (!projectId || !running) return;
+  useEffect(() => {    if (!projectId || !running) return;
     void fetchSessions(projectId);
     void fetchStatus(projectId);
   }, [projectId, running, fetchSessions, fetchStatus]);
 
   // Load slash commands + model catalog whenever the server is up.
   useEffect(() => {
+    let live = true;
     if (!projectId || !running) {
       setCommands([]);
       setModels([]);
+      setModelsLoading(false);
       return;
     }
+    setModelsLoading(true);
     const ctrl = track(new AbortController());
     ocReq<OcCommand[]>(`/api/opencode/${encodeURIComponent(projectId)}/proxy/command`, {
       signal: ctrl.signal,
@@ -800,13 +937,34 @@ export default function OpenCode({
         setModels(list);
       })
       .catch(() => setModels([]))
-      .finally(() => controllersRef.current.delete(ctrl2));
+      .finally(() => {
+        controllersRef.current.delete(ctrl2);
+        if (live) setModelsLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, [projectId, running, track]);
+
+  // Pre-select the provider default so the model chip is never blank on open.
+  useEffect(() => {
+    if (selectedModel || models.length === 0) return;
+    const def = models.find((m) => m.isDefault);
+    if (def) setSelectedModel(def);
+  }, [models, selectedModel]);
 
   // Load history whenever the active session changes.
   useEffect(() => {
     if (!projectId || !running || !activeSessionId) return;
-    void fetchMessages(projectId, activeSessionId);
+    const sid = activeSessionId;
+    let live = true;
+    setLoadingHistory(true);
+    void fetchMessages(projectId, sid).finally(() => {
+      if (live && activeSessionIdRef.current === sid) setLoadingHistory(false);
+    });
+    return () => {
+      live = false;
+    };
   }, [projectId, running, activeSessionId, fetchMessages]);
 
   // Rebuild the plan checklist from history (last todowrite tool part) so the
@@ -959,9 +1117,25 @@ export default function OpenCode({
         } else if (type === "session.idle") {
           if (sid) markBusy(sid, false);
           if (isActive) {
+            // Server says the turn ended; a POST /message socket still pending
+            // is dead — drop "sending" so the composer unlocks.
+            const wasSending = sendingForRef.current === sid;
+            setSendingFor((prev) => (prev === sid ? null : prev));
             repairRef.current = false;
             refetchHistory();
             if (projectId) void fetchSessions(projectId);
+            if (wasSending) notifyOc("selesai", "Turn selesai, siap input lagi", "opencode-done");
+          }
+        } else if (type === "session.error") {
+          if (sid) markBusy(sid, false);
+          if (isActive) {
+            setSendingFor((prev) => (prev === sid ? null : prev));
+            const msg = ocErrorMessage(data.properties?.error);
+            if (msg) {
+              setError(msg);
+              notifyOc("error", msg, "opencode-error");
+            }
+            refetchHistory();
           }
         } else if (type === "todo.updated" && isActive) {
           const t = data.properties?.todos;
@@ -976,18 +1150,28 @@ export default function OpenCode({
             const patterns = [p.patterns, p.resources].flatMap((x) =>
               Array.isArray(x) ? x.map(String) : [],
             );
+            const label = String(p.permission ?? p.action ?? "permission");
             setPermission({
               requestID: String(p.id),
               sessionID: String(p.sessionID ?? ""),
-              label: String(p.permission ?? p.action ?? "permission"),
+              label,
               detail: patterns.join(" "),
             });
+            notifyOc(
+              "butuh izin",
+              `${label}${patterns.length ? ` — ${clip(patterns.join(" "))}` : ""}`,
+              "opencode-permission",
+            );
           }
         } else if (type === "permission.replied" || type === "permission.v2.replied") {
           setPermission(null);
         } else if (type === "question.asked" || type === "question.v2.asked") {
           const q = toQuestion(data.properties as { id?: string; sessionID?: string; questions?: unknown });
-          if (q) setQuestion(q);
+          if (q) {
+            setQuestion(q);
+            const first = q.questions.map((x) => x.question).filter(Boolean).join(" | ");
+            notifyOc("bertanya", first || "Menunggu jawaban", "opencode-question");
+          }
         } else if (
           type === "question.replied" ||
           type === "question.rejected" ||
@@ -1027,8 +1211,13 @@ export default function OpenCode({
         >(`/api/opencode/${encodeURIComponent(projectId)}/proxy/question`);
         if (stopped || !Array.isArray(list) || list.length === 0) return;
         const q = toQuestion(list[0]);
-        if (q && !answeredQuestionsRef.current.has(q.requestID))
+        if (q && !answeredQuestionsRef.current.has(q.requestID)) {
+          if (!questionRef.current) {
+            const first = q.questions.map((x) => x.question).filter(Boolean).join(" | ");
+            notifyOc("bertanya", first || "Menunggu jawaban", "opencode-question");
+          }
           setQuestion((prev) => prev ?? q);
+        }
       } catch {
         // ignore — serve may be mid-restart
       }
@@ -1049,6 +1238,14 @@ export default function OpenCode({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  // Server-truth reconcile while busy: a session.idle lost during an SSE gap
+  // would otherwise leave the spinner up and the composer locked forever.
+  useEffect(() => {
+    if (!projectId || !running || !activeBusy) return;
+    const t = setInterval(() => void fetchStatus(projectId), 4000);
+    return () => clearInterval(t);
+  }, [projectId, running, activeBusy, fetchStatus]);
 
   // Auto-scroll unless the user scrolled up. The ResizeObserver covers the
   // case where messages resolve while the container has no size yet (window
@@ -1095,7 +1292,10 @@ export default function OpenCode({
           }
         : null,
     );
-    if (projectId) void fetchMessages(projectId, id);
+    if (projectId) {
+      void fetchMessages(projectId, id);
+      void fetchStatus(projectId);
+    }
   };
 
   const slashQuery = /^\/(\S*)$/.exec(input)?.[1];
@@ -1163,6 +1363,7 @@ export default function OpenCode({
       setActiveSessionId(null);
       activeSessionIdRef.current = null;
       setMessages([]);
+      setSelectedModel(null);
       setPermission(null);
       setQuestion(null);
       return;
@@ -1200,6 +1401,7 @@ export default function OpenCode({
 
   const newSession = async () => {
     if (!projectId || !running) return;
+    setCreatingSession(true);
     const ctrl = track(new AbortController());
     try {
       const s = await ocReq<OcSession>(
@@ -1212,6 +1414,7 @@ export default function OpenCode({
       setError(err instanceof Error ? err.message : "Failed to create session");
     } finally {
       controllersRef.current.delete(ctrl);
+      setCreatingSession(false);
     }
   };
 
@@ -1247,7 +1450,8 @@ export default function OpenCode({
 
   const send = async () => {
     const text = input.trim();
-    if ((!text && files.length === 0) || !projectId || !activeSessionId || sending) return;
+    const sid = activeSessionId;
+    if ((!text && files.length === 0) || !projectId || !sid || sendingFor === sid) return;
     const mc = /^\/model(?:\s+(\S*))?$/.exec(text);
     if (mc) {
       setInput("");
@@ -1273,7 +1477,7 @@ export default function OpenCode({
     setInput("");
     setError(null);
     setNotice(null);
-    setSending(true);
+    setSendingFor(sid);
     stickRef.current = true;
     const root = projects.find((p) => p.id === projectId)?.directory?.replace(/\/+$/, "") ?? "";
     const mentionParts = buildMentionParts(text, mentions, root);
@@ -1293,12 +1497,14 @@ export default function OpenCode({
       ],
     };
     setMessages((prev) => [...prev, optimistic]);
-    markBusy(activeSessionId, true);
+    markBusy(sid, true);
     const ctrl = track(new AbortController());
+    const sameSession = () =>
+      projectIdRef.current === projectId && activeSessionIdRef.current === sid;
     try {
       if (cmd) {
         await ocReq(
-          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/command`,
+          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(sid)}/command`,
           {
             method: "POST",
             body: JSON.stringify({ command: cmd.name, arguments: slash?.[2]?.trim() ?? "" }),
@@ -1308,7 +1514,7 @@ export default function OpenCode({
         setFiles([]);
       } else {
         const res = await ocReq<OcMessageEntry>(
-          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(activeSessionId)}/message`,
+          `/api/opencode/${encodeURIComponent(projectId)}/proxy/session/${encodeURIComponent(sid)}/message`,
           {
             method: "POST",
             body: JSON.stringify({
@@ -1325,22 +1531,24 @@ export default function OpenCode({
             signal: ctrl.signal,
           },
         );
-        setMessages((prev) => [...prev.filter((m) => m.info.id !== optimisticId), res]);
+        if (sameSession()) setMessages((prev) => [...prev.filter((m) => m.info.id !== optimisticId), res]);
         setFiles([]);
         setMentions([]);
       }
     } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
+      if (sameSession()) setMessages((prev) => prev.filter((m) => m.info.id !== optimisticId));
+      markBusy(sid, false);
       setError(err instanceof Error ? err.message : "Failed to send");
     } finally {
       controllersRef.current.delete(ctrl);
-      setSending(false);
-      if (projectId && activeSessionId) void fetchMessages(projectId, activeSessionId);
+      setSendingFor((prev) => (prev === sid ? null : prev));
+      if (sameSession()) void fetchMessages(projectId, sid);
     }
   };
 
   const stop = async () => {
     if (!projectId || !activeSessionId) return;
+    setAborting(true);
     const ctrl = track(new AbortController());
     try {
       await ocReq(
@@ -1351,6 +1559,7 @@ export default function OpenCode({
       // ignore — session.idle will reconcile
     } finally {
       controllersRef.current.delete(ctrl);
+      setAborting(false);
     }
   };
 
@@ -1523,13 +1732,23 @@ export default function OpenCode({
         ) : (
           <button
             onClick={() => setShowPicker(true)}
-            disabled={!running || models.length === 0}
+            disabled={!running || modelsLoading || models.length === 0}
             className="flex max-w-40 shrink-0 items-center gap-1 rounded-md border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 hover:text-neutral-200 disabled:opacity-40 cursor-pointer"
-            title={models.length === 0 ? "No models loaded" : "Select model"}
+            title={
+              modelsLoading
+                ? "Loading models…"
+                : models.length === 0
+                  ? "No models loaded"
+                  : "Select model"
+            }
           >
-            <Cpu size={11} className="shrink-0" />
+            {modelsLoading ? (
+              <Loader2 size={11} className="shrink-0 animate-spin" />
+            ) : (
+              <Cpu size={11} className="shrink-0" />
+            )}
             <span className="truncate">
-              {models.length === 0 ? "no models" : "select model"}
+              {modelsLoading ? "loading…" : models.length === 0 ? "no models" : "select model"}
             </span>
           </button>
         )}
@@ -1575,10 +1794,15 @@ export default function OpenCode({
           </button>
           <button
             onClick={() => void newSession()}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 cursor-pointer"
+            disabled={!running || creatingSession}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 disabled:opacity-40 cursor-pointer"
             title="New session"
           >
-            <Plus size={14} />
+            {creatingSession ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Plus size={14} />
+            )}
           </button>
         </div>
       )}
@@ -1592,15 +1816,24 @@ export default function OpenCode({
             </span>
             <button
               onClick={() => void newSession()}
-              disabled={!running}
+              disabled={!running || creatingSession}
               className="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-white disabled:opacity-40 cursor-pointer"
               title="New session"
             >
-              <Plus size={14} />
+              {creatingSession ? (
+                <Loader2 size={14} className="animate-spin text-neutral-300" />
+              ) : (
+                <Plus size={14} />
+              )}
             </button>
           </div>
           <div className="flex-1 overflow-y-auto py-1">
-            {!running ? (
+            {statusLoading || (running && sessionsLoading && sessions.length === 0) ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-neutral-500">
+                <Loader2 size={12} className="shrink-0 animate-spin" />
+                {running ? "Loading sessions…" : "Connecting…"}
+              </div>
+            ) : !running ? (
               <div className="px-3 py-2.5 text-xs text-neutral-500">
                 Start the server to see sessions.
               </div>
@@ -1653,29 +1886,62 @@ export default function OpenCode({
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 px-3 py-2">
             <span className="flex-1 truncate text-[11px] font-medium uppercase tracking-wider text-neutral-500">
-              Conversation
+              {showDiff ? "Changes" : "Conversation"}
             </span>
+            <button
+              onClick={() => setShowDiff((v) => !v)}
+              disabled={!activeSessionId}
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:opacity-40 cursor-pointer ${
+                showDiff
+                  ? "border-neutral-700 bg-neutral-800 text-white"
+                  : "border-neutral-800 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+              }`}
+              title="View files edited in this session"
+            >
+              <GitCompare size={12} />
+              Changes
+              {showDiff === false && sessionDiffs.length > 0 && (
+                <span className="rounded bg-neutral-700 px-1 font-mono text-[9px] text-neutral-200">
+                  {sessionDiffs.length}
+                </span>
+              )}
+            </button>
           </div>
           <div
             ref={scrollRef}
             onScroll={handleScroll}
             className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-2.5"
           >
-            {!activeSessionId ? (
+            {statusLoading && !running ? (
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-neutral-500">
+                <Loader2 size={14} className="animate-spin" /> Checking server…
+              </div>
+            ) : !activeSessionId ? (
               <div className="flex h-full items-center justify-center text-sm text-neutral-500">
                 {running
                   ? "Select or create a session to start chatting."
                   : "Start the server, then pick a session."}
+              </div>
+            ) : showDiff ? (
+              <SessionDiff diffs={sessionDiffs} />
+            ) : loadingHistory ? (
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-neutral-500">
+                <Loader2 size={14} className="animate-spin" /> Loading conversation…
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2.5 text-neutral-600">
+                <MessageSquarePlus size={30} strokeWidth={1.5} />
+                <p className="text-sm">New session — type a message below to start.</p>
               </div>
             ) : (
               <>
                 {messages.map((m) => (
                   <MessageRow key={m.info.id} entry={m} />
                 ))}
-                {(sending || busy) && (
+                {activeBusy && (
                   <div className="flex items-center gap-2 text-xs text-neutral-500">
                     <Loader2 size={12} className="animate-spin" />{" "}
-                    {sending ? "thinking…" : "working…"}
+                    {aborting ? "stopping…" : sending ? "thinking…" : "working…"}
                   </div>
                 )}
               </>
@@ -1894,7 +2160,7 @@ export default function OpenCode({
                 placeholder={
                   running ? "Message…  (/ commands, @ files, Enter to send)" : "Start the server to chat…"
                 }
-                disabled={!running || sending}
+                disabled={!running || activeBusy}
                 className="flex-1 resize-none rounded-xl border border-neutral-800 bg-neutral-900 px-2.5 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-700 disabled:opacity-50"
               />
               <button
@@ -1905,13 +2171,19 @@ export default function OpenCode({
               >
                 <Mic size={15} />
               </button>
-              {sending || busy ? (
+              {activeBusy ? (
                 <button
                   onClick={() => void stop()}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 text-rose-300 hover:bg-neutral-800 cursor-pointer"
-                  title="Stop generating"
+                  disabled={aborting}
+                  aria-busy={aborting}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950/70 text-rose-300 hover:bg-neutral-800 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
+                  title={aborting ? "Stopping…" : "Stop generating"}
                 >
-                  <Square size={14} />
+                  {aborting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Square size={14} />
+                  )}
                 </button>
               ) : (
                 <button
@@ -1938,6 +2210,7 @@ export default function OpenCode({
               updated: s.time?.updated ?? s.time?.created,
             }),
           )}
+          loading={statusLoading || (sessionsLoading && sessions.length === 0)}
           selectedId={activeSessionId}
           onSelect={(id) => {
             setShowSessionPicker(false);

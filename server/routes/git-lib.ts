@@ -74,7 +74,17 @@ export type GitAction =
   | "checkout_branch"
   | "create_branch"
   | "pull"
-  | "push";
+  | "push"
+  | "fetch"
+  | "stash"
+  | "stash_pop"
+  | "stash_apply"
+  | "stash_drop"
+  | "merge"
+  | "revert"
+  | "cherry_pick"
+  | "resolve_ours"
+  | "resolve_theirs";
 
 export type GitActionResult = {
   ok: boolean;
@@ -654,6 +664,21 @@ function requirePaths(paths: unknown) {
   return sanitized;
 }
 
+function requireHash(hash: unknown) {
+  if (typeof hash !== "string" || !/^[0-9a-f]{4,40}$/i.test(hash.trim())) {
+    throw new GitActionError("Invalid commit hash");
+  }
+  return hash.trim();
+}
+
+function requireStashRef(ref: unknown) {
+  const value = typeof ref === "string" ? ref.trim() : "";
+  if (!/^stash@\{\d+\}$/.test(value)) {
+    throw new GitActionError("Invalid stash reference");
+  }
+  return value;
+}
+
 export async function runGitAction(options: {
   projectId: string;
   requestedDirectory?: string | null;
@@ -662,6 +687,7 @@ export async function runGitAction(options: {
   paths?: string[];
   message?: string;
   branch?: string;
+  hash?: string;
 }) {
   const ctx = await createExecutionContext(options.projectId, options.requestedDirectory, options.connectionId);
 
@@ -741,9 +767,76 @@ export async function runGitAction(options: {
     case "pull":
       args = ["pull", "--ff-only"];
       break;
-    case "push":
-      args = ["push"];
+    case "push": {
+      let result = await ctx.runGit(["push"]);
+      if (
+        !result.ok &&
+        /no upstream branch|set-upstream/i.test(`${result.stdout} ${result.stderr}`)
+      ) {
+        result = await ctx.runGit(["push", "--set-upstream", "origin", "HEAD"]);
+      }
+      if (!result.ok) {
+        throw formatGitCommandError(result.stdout, result.stderr, result.exitCode);
+      }
+      const pushStatus = await getGitStatus({
+        projectId: options.projectId,
+        requestedDirectory: ctx.directory,
+        connectionId: options.connectionId,
+      });
+      return { ok: true, stdout: result.stdout, stderr: result.stderr, nextStatus: pushStatus } satisfies GitActionResult;
+    }
+    case "fetch":
+      args = ["fetch", "--all", "--prune"];
       break;
+    case "stash": {
+      const message = options.message?.trim();
+      args = message ? ["stash", "push", "-u", "-m", message] : ["stash", "push", "-u"];
+      break;
+    }
+    case "stash_pop":
+      args = ["stash", "pop", requireStashRef(options.branch)];
+      break;
+    case "stash_apply":
+      args = ["stash", "apply", requireStashRef(options.branch)];
+      break;
+    case "stash_drop":
+      args = ["stash", "drop", requireStashRef(options.branch)];
+      break;
+    case "merge": {
+      const branch = options.branch?.trim();
+      if (!branch) {
+        throw new GitActionError("Branch name is required");
+      }
+      args = ["merge", "--no-edit", branch];
+      break;
+    }
+    case "revert":
+      args = ["revert", "--no-edit", requireHash(options.hash)];
+      break;
+    case "cherry_pick":
+      args = ["cherry-pick", requireHash(options.hash)];
+      break;
+    case "resolve_ours":
+    case "resolve_theirs": {
+      const side = options.action === "resolve_ours" ? "ours" : "theirs";
+      const paths = requirePaths(options.paths);
+      for (const path of paths) {
+        const checkout = await ctx.runGit(["checkout", `--${side}`, "--", path]);
+        if (!checkout.ok) {
+          throw formatGitCommandError(checkout.stdout, checkout.stderr, checkout.exitCode);
+        }
+      }
+      const add = await ctx.runGit(["add", "--", ...paths]);
+      if (!add.ok) {
+        throw formatGitCommandError(add.stdout, add.stderr, add.exitCode);
+      }
+      const resolvedStatus = await getGitStatus({
+        projectId: options.projectId,
+        requestedDirectory: ctx.directory,
+        connectionId: options.connectionId,
+      });
+      return { ok: true, stdout: "", stderr: "", nextStatus: resolvedStatus } satisfies GitActionResult;
+    }
     default:
       throw new GitActionError("Unsupported git action");
   }

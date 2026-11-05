@@ -100,6 +100,9 @@ export default function CodeEditor({
 }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<any>(null);
+  // Monaco addCommand closures freeze at mount — call through a ref to stay current.
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
   const [mounted, setMounted] = useState(false);
   const [kbInset, setKbInset] = useState(0);
   const language = useMemo(() => getLanguage(path), [path]);
@@ -193,7 +196,7 @@ export default function CodeEditor({
 
       // Ctrl+S / Cmd+S save
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-        onSave?.();
+        onSaveRef.current?.();
       });
 
       // Alt+Z toggle word wrap (matches VS Code)

@@ -11,6 +11,8 @@ import {
   FolderOpen,
   GitBranch,
   GitCommitHorizontal,
+  GitMerge,
+  GitPullRequest,
   LoaderCircle,
   Minus,
   Plus,
@@ -107,7 +109,17 @@ type GitAction =
   | "checkout_branch"
   | "create_branch"
   | "pull"
-  | "push";
+  | "push"
+  | "fetch"
+  | "stash"
+  | "stash_pop"
+  | "stash_apply"
+  | "stash_drop"
+  | "merge"
+  | "revert"
+  | "cherry_pick"
+  | "resolve_ours"
+  | "resolve_theirs";
 
 type GitActionResponse = {
   ok: boolean;
@@ -163,6 +175,7 @@ type ConfirmationState = null | {
   branch?: string;
   paths?: string[];
   messageText?: string;
+  hash?: string;
   confirmLabel?: string;
 };
 
@@ -362,6 +375,35 @@ function flattenVisibleRows(
   return rows;
 }
 
+function DiffPre({ diff }: { diff: string }) {
+  return (
+    <pre className="whitespace-pre font-mono text-[11px] leading-relaxed">
+      {diff.split("\n").map((line, index) => {
+        let className = "text-neutral-400";
+        if (line.startsWith("+") && !line.startsWith("+++")) {
+          className = "text-emerald-400";
+        } else if (line.startsWith("-") && !line.startsWith("---")) {
+          className = "text-rose-400";
+        } else if (line.startsWith("@@")) {
+          className = "text-sky-400";
+        } else if (
+          line.startsWith("diff") ||
+          line.startsWith("index") ||
+          line.startsWith("---") ||
+          line.startsWith("+++")
+        ) {
+          className = "text-neutral-500";
+        }
+        return (
+          <div key={index} className={className}>
+            {line || "\u00A0"}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
 function formatTimestamp(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Now";
@@ -387,6 +429,29 @@ function getFeedbackToneClass(kind: "success" | "error") {
     : "border-red-500/20 bg-red-500/10 text-red-200";
 }
 
+const BUSY_LABELS: Record<string, string> = {
+  stage: "Staging…",
+  stage_all: "Staging all…",
+  unstage: "Unstaging…",
+  unstage_all: "Unstaging all…",
+  discard: "Discarding…",
+  commit: "Committing…",
+  checkout_branch: "Switching branch…",
+  create_branch: "Creating branch…",
+  pull: "Pulling…",
+  push: "Pushing…",
+  fetch: "Fetching…",
+  stash: "Stashing…",
+  stash_pop: "Popping stash…",
+  stash_apply: "Applying stash…",
+  stash_drop: "Dropping stash…",
+  merge: "Merging…",
+  revert: "Reverting…",
+  cherry_pick: "Cherry-picking…",
+  resolve_ours: "Resolving (ours)…",
+  resolve_theirs: "Resolving (theirs)…",
+};
+
 function hasPendingStage(changes: GitChange[]) {
   return changes.some((change) => change.unstaged || change.untracked);
 }
@@ -411,7 +476,9 @@ export default function FocusModeGitPanel({
   const [data, setData] = useState<GitStatusPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [actionBusy, setActionBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<GitAction | null>(null);
+  const [busyPaths, setBusyPaths] = useState<Set<string>>(() => new Set());
+  const actionBusy = busyAction !== null;
   const [collapsedFolders, setCollapsedFolders] = useState<
     Record<string, boolean>
   >({});
@@ -436,6 +503,10 @@ export default function FocusModeGitPanel({
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
+  const [commitModalOpen, setCommitModalOpen] = useState(false);
+  const [commitFilePath, setCommitFilePath] = useState<string | null>(null);
+  const [commitFileDiff, setCommitFileDiff] = useState<string | null>(null);
+  const [commitFileDiffLoading, setCommitFileDiffLoading] = useState(false);
   const [commitDiff, setCommitDiff] = useState<string | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDetails, setCommitDetails] = useState<GitCommitDetails | null>(null);
@@ -445,6 +516,7 @@ export default function FocusModeGitPanel({
   >({});
   const branchSearchRef = useRef<HTMLInputElement>(null);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [hasRendered, setHasRendered] = useState(open);
 
   const loadStatus = useCallback(
     async (signal?: AbortSignal, silent = false, force = false) => {
@@ -594,6 +666,9 @@ export default function FocusModeGitPanel({
       setSelectedCommitHash(hash);
       setCommitDetails(null);
       setCommitDiff(null);
+      setCommitFilePath(null);
+      setCommitFileDiff(null);
+      setCommitFileDiffLoading(false);
       setCommitFilesCollapsed({});
 
       try {
@@ -628,6 +703,14 @@ export default function FocusModeGitPanel({
     },
     [projectId, directory, connectionId],
   );
+
+  useEffect(() => {
+    if (open) setHasRendered(true);
+    else {
+      setHistoryOpen(false);
+      setCommitModalOpen(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -696,10 +779,12 @@ export default function FocusModeGitPanel({
       paths?: string[];
       branch?: string;
       message?: string;
+      hash?: string;
     }) => {
       if (!projectId) return;
 
-      setActionBusy(true);
+      setBusyAction(payload.action);
+      setBusyPaths(new Set(payload.paths ?? []));
       setFeedback(null);
       setError("");
 
@@ -711,6 +796,7 @@ export default function FocusModeGitPanel({
           paths: payload.paths,
           branch: payload.branch,
           message: payload.message,
+          hash: payload.hash,
         });
 
         if (!body.ok || !body.nextStatus) {
@@ -750,6 +836,16 @@ export default function FocusModeGitPanel({
             create_branch: `Created ${payload.branch}`,
             pull: "Pull complete",
             push: "Push complete",
+            fetch: "Fetch complete",
+            stash: "Changes stashed",
+            stash_pop: "Stash popped",
+            stash_apply: "Stash applied",
+            stash_drop: "Stash dropped",
+            merge: `Merged ${payload.branch}`,
+            revert: `Reverted ${payload.hash?.slice(0, 8) ?? "commit"}`,
+            cherry_pick: `Cherry-picked ${payload.hash?.slice(0, 8) ?? "commit"}`,
+            resolve_ours: "Resolved with ours",
+            resolve_theirs: "Resolved with theirs",
           }[payload.action] ??
             "Git action complete");
 
@@ -759,7 +855,8 @@ export default function FocusModeGitPanel({
           err instanceof Error ? err.message : "Git action failed";
         setFeedback({ kind: "error", text: message });
       } finally {
-        setActionBusy(false);
+        setBusyAction(null);
+        setBusyPaths(new Set());
       }
     },
     [connectionId, directory, projectId],
@@ -771,6 +868,7 @@ export default function FocusModeGitPanel({
       paths?: string[];
       branch?: string;
       message?: string;
+      hash?: string;
     }) => {
       if (payload.action === "discard") {
         setConfirmation({
@@ -778,6 +876,46 @@ export default function FocusModeGitPanel({
           message:
             "This will restore tracked files and remove untracked files for selected paths.",
           confirmLabel: "Discard",
+          ...payload,
+        });
+        return;
+      }
+
+      if (payload.action === "merge" && payload.branch) {
+        setConfirmation({
+          title: "Merge branch?",
+          message: `Merge "${payload.branch}" into ${data?.branch ?? "current branch"}.`,
+          confirmLabel: "Merge",
+          ...payload,
+        });
+        return;
+      }
+
+      if (payload.action === "revert" && payload.hash) {
+        setConfirmation({
+          title: "Revert commit?",
+          message: `Create a new commit that undoes ${payload.hash.slice(0, 8)}.`,
+          confirmLabel: "Revert",
+          ...payload,
+        });
+        return;
+      }
+
+      if (payload.action === "cherry_pick" && payload.hash) {
+        setConfirmation({
+          title: "Cherry-pick commit?",
+          message: `Apply ${payload.hash.slice(0, 8)} onto ${data?.branch ?? "current branch"}.`,
+          confirmLabel: "Cherry-pick",
+          ...payload,
+        });
+        return;
+      }
+
+      if (payload.action === "stash_drop" && payload.branch) {
+        setConfirmation({
+          title: "Drop stash?",
+          message: `Permanently drop ${payload.branch}.`,
+          confirmLabel: "Drop",
           ...payload,
         });
         return;
@@ -841,7 +979,7 @@ export default function FocusModeGitPanel({
     } finally {
       setCommitGenerating(false);
     }
-  }, [projectId, directory, connectionId, setFeedback]);
+  }, [projectId, directory, connectionId]);
 
   const handleBranchCreate = useCallback(() => {
     const branch = newBranchName.trim();
@@ -911,12 +1049,21 @@ export default function FocusModeGitPanel({
           event.preventDefault();
           const next = confirmation;
           setConfirmation(null);
-          void executeAction({
-            action: next.action,
-            branch: next.branch,
-            paths: next.paths,
-            message: next.messageText,
-          });
+           void executeAction({
+             action: next.action,
+             branch: next.branch,
+             paths: next.paths,
+             message: next.messageText,
+             hash: next.hash,
+           });
+        }
+        return;
+      }
+
+      if (commitModalOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setCommitModalOpen(false);
         }
         return;
       }
@@ -1009,6 +1156,10 @@ export default function FocusModeGitPanel({
           event.preventDefault();
           void loadStatus(undefined, false, true);
           break;
+        case "f":
+          event.preventDefault();
+          requestAction({ action: "fetch" });
+          break;
         case "a":
           event.preventDefault();
           requestAction({ action: "stage_all" });
@@ -1035,6 +1186,7 @@ export default function FocusModeGitPanel({
     discardRow,
     executeAction,
     handleCommit,
+    commitModalOpen,
     loadStatus,
     open,
     requestAction,
@@ -1050,6 +1202,10 @@ export default function FocusModeGitPanel({
     const canStage = hasPendingStage(fileChanges);
     const canUnstage = hasStagedOnly(fileChanges);
     const canDiscard = hasDiscardable(fileChanges);
+    const conflictPaths = fileChanges
+      .filter((change) => change.conflicted)
+      .map((change) => change.path);
+    const hasConflicts = conflictPaths.length > 0;
 
     return (
       <div
@@ -1057,6 +1213,30 @@ export default function FocusModeGitPanel({
           showSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         }`}
       >
+        {hasConflicts && (
+          <>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                requestAction({ action: "resolve_ours", paths: conflictPaths });
+              }}
+              className="rounded px-1 py-0.5 text-[9px] text-sky-200 hover:bg-sky-500/10"
+              title="Resolve keeping our version"
+            >
+              ours
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                requestAction({ action: "resolve_theirs", paths: conflictPaths });
+              }}
+              className="rounded px-1 py-0.5 text-[9px] text-emerald-200 hover:bg-emerald-500/10"
+              title="Resolve keeping their version"
+            >
+              theirs
+            </button>
+          </>
+        )}
         {canStage && (
           <button
             onClick={(event) => {
@@ -1129,9 +1309,13 @@ export default function FocusModeGitPanel({
             <span className="truncate">{row.name}</span>
             <div className="flex items-center gap-2">
               <span
-                className={`shrink-0 text-[11px] font-semibold ${getStatusClassName(row.change)}`}
+                className={`flex shrink-0 items-center text-[11px] font-semibold ${getStatusClassName(row.change)}`}
               >
-                {getStatusText(row.change)}
+                {busyPaths.has(row.change.path) ? (
+                  <LoaderCircle size={11} className="animate-spin" />
+                ) : (
+                  getStatusText(row.change)
+                )}
               </span>
               {renderActionIcons(row, selected)}
             </div>
@@ -1183,13 +1367,18 @@ export default function FocusModeGitPanel({
     );
   };
 
-  if (!open) return null;
+  if (!open && !hasRendered) return null;
 
   return (
-    <aside className={embedded
-      ? "h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
-      : "absolute inset-y-0 right-0 z-40 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
-    }>
+    <aside
+      aria-hidden={!open}
+      style={{ display: open ? undefined : "none" }}
+      className={
+        embedded
+          ? "h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
+          : "absolute inset-y-0 right-0 z-40 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
+      }
+    >
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1203,6 +1392,12 @@ export default function FocusModeGitPanel({
               </p>
             </div>
           </div>
+          {actionBusy && (
+            <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-sky-300">
+              <LoaderCircle size={12} className="animate-spin" />
+              {BUSY_LABELS[busyAction]}
+            </span>
+          )}
           <button
             onClick={() => void loadStatus(undefined, false, true)}
             title="Refresh git status"
@@ -1255,10 +1450,18 @@ export default function FocusModeGitPanel({
                           ? "Detached HEAD"
                           : (data.branch ?? "No branch")}
                       </span>
-                      <ChevronDown
-                        size={14}
-                        className="shrink-0 text-neutral-500"
-                      />
+                      {busyAction === "checkout_branch" ||
+                      busyAction === "create_branch" ? (
+                        <LoaderCircle
+                          size={14}
+                          className="shrink-0 animate-spin text-sky-300"
+                        />
+                      ) : (
+                        <ChevronDown
+                          size={14}
+                          className="shrink-0 text-neutral-500"
+                        />
+                      )}
                     </button>
 
                     {branchMenuOpen && data.isRepo && (
@@ -1282,27 +1485,48 @@ export default function FocusModeGitPanel({
                         </div>
                         <div className="max-h-48 overflow-y-auto p-1">
                           {filteredBranches.map((branch) => (
-                            <button
+                            <div
                               key={branch}
-                              onClick={() =>
-                                requestAction({
-                                  action: "checkout_branch",
-                                  branch,
-                                })
-                              }
-                              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs ${
+                              className={`group/branch flex w-full items-center rounded-lg pr-1 ${
                                 branch === data.branch
-                                  ? "bg-neutral-800 text-white"
-                                  : "text-neutral-300 hover:bg-neutral-800 hover:text-white"
+                                  ? "bg-neutral-800"
+                                  : "hover:bg-neutral-800/60"
                               }`}
                             >
-                              <span className="truncate">{branch}</span>
-                              {branch === data.branch && (
-                                <span className="text-[10px] uppercase text-sky-300">
-                                  current
-                                </span>
+                              <button
+                                onClick={() =>
+                                  requestAction({
+                                    action: "checkout_branch",
+                                    branch,
+                                  })
+                                }
+                                className={`flex min-w-0 flex-1 items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs ${
+                                  branch === data.branch
+                                    ? "text-white"
+                                    : "text-neutral-300 hover:text-white"
+                                }`}
+                              >
+                                <span className="truncate">{branch}</span>
+                                {branch === data.branch && (
+                                  <span className="text-[10px] uppercase text-sky-300">
+                                    current
+                                  </span>
+                                )}
+                              </button>
+                              {branch !== data.branch && (
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    requestAction({ action: "merge", branch });
+                                  }}
+                                  disabled={actionBusy}
+                                  className="shrink-0 rounded p-1 text-neutral-500 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-sky-200 group-hover/branch:opacity-100 disabled:opacity-0"
+                                  title={`Merge ${branch} into ${data.branch ?? "current"}`}
+                                >
+                                  <GitMerge size={12} />
+                                </button>
                               )}
-                            </button>
+                            </div>
                           ))}
                           {filteredBranches.length === 0 && (
                             <div className="px-3 py-2.5 text-xs text-neutral-500">
@@ -1398,6 +1622,18 @@ export default function FocusModeGitPanel({
                         <Folder size={12} />
                         Repo
                       </a>
+                      {data.branch && (
+                        <a
+                          href={`https://github.com/${gh.owner}/${gh.repo}/compare/${encodeURIComponent(data.branch)}?expand=1`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800"
+                          title="Open pull request form for this branch"
+                        >
+                          <GitPullRequest size={12} />
+                          PR
+                        </a>
+                      )}
                     </div>
                   );
                 })()}
@@ -1408,16 +1644,43 @@ export default function FocusModeGitPanel({
                     disabled={actionBusy || !data.isRepo}
                     className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <Download size={12} />
-                    Pull
+                    {busyAction === "pull" ? (
+                      <LoaderCircle size={12} className="animate-spin" />
+                    ) : (
+                      <Download size={12} />
+                    )}
+                    {busyAction === "pull" ? "Pulling…" : "Pull"}
                   </button>
                   <button
                     onClick={() => requestAction({ action: "push" })}
                     disabled={actionBusy || !data.isRepo}
                     className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <Upload size={12} />
-                    Push
+                    {busyAction === "push" ? (
+                      <LoaderCircle size={12} className="animate-spin" />
+                    ) : (
+                      <Upload size={12} />
+                    )}
+                    {busyAction === "push" ? "Pushing…" : "Push"}
+                  </button>
+                  <button
+                    onClick={() => requestAction({ action: "fetch" })}
+                    disabled={actionBusy || !data.isRepo}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busyAction === "fetch" ? (
+                      <LoaderCircle size={12} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={12} />
+                    )}
+                    {busyAction === "fetch" ? "Fetching…" : "Fetch"}
+                  </button>
+                  <button
+                    onClick={() => requestAction({ action: "stash" })}
+                    disabled={actionBusy || !data.isRepo || data.clean}
+                    className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busyAction === "stash" ? "Stashing…" : "Stash"}
                   </button>
                   <button
                     onClick={() => requestAction({ action: "stage_all" })}
@@ -1426,7 +1689,7 @@ export default function FocusModeGitPanel({
                     }
                     className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Stage all
+                    {busyAction === "stage_all" ? "Staging…" : "Stage all"}
                   </button>
                   <button
                     onClick={() => requestAction({ action: "unstage_all" })}
@@ -1435,7 +1698,7 @@ export default function FocusModeGitPanel({
                     }
                     className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Unstage all
+                    {busyAction === "unstage_all" ? "Unstaging…" : "Unstage all"}
                   </button>
                 </div>
               </div>
@@ -1470,7 +1733,12 @@ export default function FocusModeGitPanel({
                 <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                   <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
                     <span>Changes</span>
-                    <span>{data.changes.length}</span>
+                    <span className="flex items-center gap-1">
+                      {actionBusy && (
+                        <LoaderCircle size={11} className="animate-spin text-sky-300" />
+                      )}
+                      {data.changes.length}
+                    </span>
                   </div>
                   <div className="py-1">
                     {visibleRows.map((row) =>
@@ -1516,33 +1784,7 @@ export default function FocusModeGitPanel({
                         <span className="text-xs">Loading diff...</span>
                       </div>
                     ) : (
-                      <pre className="text-[11px] font-mono whitespace-pre leading-relaxed">
-                        {selectedFileDiff.split("\n").map((line, i) => {
-                          let className = "text-neutral-400";
-                          if (line.startsWith("+") && !line.startsWith("+++")) {
-                            className = "text-emerald-400";
-                          } else if (
-                            line.startsWith("-") &&
-                            !line.startsWith("---")
-                          ) {
-                            className = "text-rose-400";
-                          } else if (line.startsWith("@@")) {
-                            className = "text-sky-400";
-                          } else if (
-                            line.startsWith("diff") ||
-                            line.startsWith("index") ||
-                            line.startsWith("---") ||
-                            line.startsWith("+++")
-                          ) {
-                            className = "text-neutral-500";
-                          }
-                          return (
-                            <div key={i} className={className}>
-                              {line || "\u00A0"}
-                            </div>
-                          );
-                        })}
-                      </pre>
+                      <DiffPre diff={selectedFileDiff} />
                     )}
                   </div>
                 </div>
@@ -1550,14 +1792,22 @@ export default function FocusModeGitPanel({
               <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                 <button
                   onClick={() => setHistoryOpen((prev) => !prev)}
-                  className="flex w-full items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500"
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500 hover:bg-neutral-800/40 ${
+                    historyOpen ? "border-b border-neutral-800" : ""
+                  }`}
                 >
-                  <span>Commit history</span>
-                  {historyOpen ? (
-                    <ChevronDown size={12} />
-                  ) : (
-                    <ChevronRight size={12} />
-                  )}
+                  <span className="flex items-center gap-2">
+                    <GitCommitHorizontal size={12} />
+                    Commit history
+                  </span>
+                  <span className="flex items-center gap-2 normal-case tracking-normal text-[10px] text-neutral-500">
+                    {data.recentCommits.length} commits
+                    {historyOpen ? (
+                      <ChevronDown size={12} />
+                    ) : (
+                      <ChevronRight size={12} />
+                    )}
+                  </span>
                 </button>
                 {historyOpen && (
                   <div className="max-h-48 overflow-y-auto py-1">
@@ -1566,155 +1816,31 @@ export default function FocusModeGitPanel({
                         No commit history
                       </div>
                     )}
-                    {data.recentCommits.map((commit) => {
-                      const selected = selectedCommitHash === commit.hash;
-                      return (
-                        <button
-                          key={`${commit.hash}-${commit.subject}`}
-                          onClick={() => {
-                            if (selected) {
-                              setSelectedCommitHash(null);
-                              setCommitDetails(null);
-                              setCommitDiff(null);
-                            } else {
-                              void fetchCommitDetails(commit.hash);
-                            }
-                          }}
-                          className={`block w-full px-3 py-1.5 text-left text-xs text-neutral-300 transition-colors hover:bg-neutral-800/60 ${
-                            selected ? "bg-neutral-800/80" : ""
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-[11px] text-neutral-500">
-                              {commit.hash}
-                            </span>
-                            <span className="truncate text-neutral-100">
-                              {commit.subject}
-                            </span>
-                          </div>
-                          <div className="mt-1 text-[10px] text-neutral-500">
-                            {commit.authorName} · {commit.relativeDate}
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {data.recentCommits.map((commit) => (
+                      <button
+                        key={`${commit.hash}-${commit.subject}`}
+                        onClick={() => {
+                          setCommitModalOpen(true);
+                          void fetchCommitDetails(commit.hash);
+                        }}
+                        className="block w-full px-3 py-1.5 text-left text-xs text-neutral-300 transition-colors hover:bg-neutral-800/60"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] text-neutral-500">
+                            {commit.hash}
+                          </span>
+                          <span className="truncate text-neutral-100">
+                            {commit.subject}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-neutral-500">
+                          {commit.authorName} · {commit.relativeDate}
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
-
-              {selectedCommitHash && (
-                <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
-                  <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
-                    <span className="truncate flex-1 mr-2 font-mono">
-                      {commitDetails?.hash.slice(0, 8) ?? selectedCommitHash} · {commitDetails?.subject ?? "commit"}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setSelectedCommitHash(null);
-                        setCommitDetails(null);
-                        setCommitDiff(null);
-                      }}
-                      className="rounded p-1 hover:bg-neutral-800"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                  {commitDetails && (
-                    <div className="flex flex-col h-[calc(100vh-280px)] max-h-[80vh] overflow-hidden">
-                      <div className="w-full border-b border-neutral-800 overflow-y-auto bg-neutral-950/50 flex-shrink-0">
-                        <div className="px-2 py-1.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500 border-b border-neutral-800">
-                          Files ({commitDetails.files.length})
-                        </div>
-                        <div className="py-1 max-h-[calc(100vh-400px)] overflow-y-auto">
-                          {commitDetails.files.map((file, idx) => {
-                            const isSelected = selectedFilePath === file.path;
-                            return (
-                              <button
-                                key={`${idx}-${file.path}`}
-                                onClick={() => {
-                                  if (isSelected) {
-                                    setSelectedFileDiff(null);
-                                    setSelectedFilePath(null);
-                                  } else {
-                                    setSelectedFilePath(file.path);
-                                    setSelectedFileDiff(null);
-                                    setDiffLoading(true);
-                                    fetch(`/api/projects/${projectId}/git/diff?${new URLSearchParams({ file: file.path, hash: commitDetails.hash, staged: "false", ...(directory ? { directory } : {}), ...(connectionId ? { connectionId: String(connectionId) } : {}) })}`)
-                                      .then(r => r.json())
-                                      .then(b => setSelectedFileDiff(b.diff || "No changes"))
-                                      .catch(() => setSelectedFileDiff("Failed to load diff"))
-                                      .finally(() => setDiffLoading(false));
-                                  }
-                                }}
-                                className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors ${
-                                  isSelected
-                                    ? "bg-neutral-800/80 text-white"
-                                    : "text-neutral-300 hover:bg-neutral-800/60 hover:text-white"
-                                }`}
-                                title={file.originalPath ? `${file.originalPath} → ${file.path}` : file.path}
-                              >
-                                <span
-                                  className={`shrink-0 text-[10px] font-medium ${
-                                    file.status === "added"
-                                      ? "text-emerald-300"
-                                      : file.status === "deleted"
-                                      ? "text-rose-300"
-                                      : file.status === "renamed"
-                                      ? "text-sky-300"
-                                      : "text-amber-300"
-                                  }`}
-                                >
-                                  {file.status === "added" ? "A" : file.status === "deleted" ? "D" : file.status === "renamed" ? "R" : "M"}
-                                </span>
-                                <span className="truncate flex-1 font-mono">{file.path}</span>
-                                {file.originalPath && (
-                                  <span className="text-[9px] text-neutral-500 ml-1">
-                                    from {file.originalPath}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0 min-h-[450px] overflow-auto p-2">
-                        {commitDetailsLoading || diffLoading ? (
-                          <div className="flex items-center justify-center h-[450px] text-neutral-500">
-                            <LoaderCircle size={14} className="animate-spin mr-2" />
-                            <span className="text-xs">Loading...</span>
-                          </div>
-                        ) : (
-                          <pre className="text-[11px] font-mono whitespace-pre leading-relaxed h-full overflow-auto">
-                            {(() => {
-                              if (selectedFileDiff) {
-                                return selectedFileDiff.split("\n").map((line, i) => {
-                                  let className = "text-neutral-400";
-                                  if (line.startsWith("+") && !line.startsWith("+++")) className = "text-emerald-400";
-                                  else if (line.startsWith("-") && !line.startsWith("---")) className = "text-rose-400";
-                                  else if (line.startsWith("@@")) className = "text-sky-400";
-                                  else if (line.startsWith("diff") || line.startsWith("index") || line.startsWith("---") || line.startsWith("+++")) className = "text-neutral-500";
-                                  return <div key={i} className={className}>{line || "\u00A0"}</div>;
-                                });
-                              }
-                              if (commitDiff) {
-                                return commitDiff.split("\n").map((line, i) => {
-                                  let className = "text-neutral-400";
-                                  if (line.startsWith("+") && !line.startsWith("+++")) className = "text-emerald-400";
-                                  else if (line.startsWith("-") && !line.startsWith("---")) className = "text-rose-400";
-                                  else if (line.startsWith("@@")) className = "text-sky-400";
-                                  else if (line.startsWith("diff") || line.startsWith("index") || line.startsWith("---") || line.startsWith("+++")) className = "text-neutral-500";
-                                  return <div key={i} className={className}>{line || "\u00A0"}</div>;
-                                });
-                              }
-                              return <div className="text-neutral-500 text-center py-8 text-xs">Select a file to view diff</div>;
-                            })()}
-                          </pre>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/80">
                 <button
@@ -1740,11 +1866,56 @@ export default function FocusModeGitPanel({
                         key={`${stash.selector}-${stash.subject}`}
                         className="px-3 py-1.5 text-xs text-neutral-300"
                       >
-                        <div className="font-mono text-[10px] text-neutral-500">
-                          {stash.selector}
-                        </div>
-                        <div className="mt-1 text-neutral-100">
-                          {stash.subject}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-mono text-[10px] text-neutral-500">
+                              {stash.selector}
+                            </div>
+                            <div className="mt-1 truncate text-neutral-100">
+                              {stash.subject}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              onClick={() =>
+                                requestAction({
+                                  action: "stash_apply",
+                                  branch: stash.selector,
+                                })
+                              }
+                              disabled={actionBusy}
+                              className="rounded px-1.5 py-0.5 text-[10px] text-sky-200 hover:bg-sky-500/10 disabled:opacity-40"
+                              title="Apply (keep in list)"
+                            >
+                              apply
+                            </button>
+                            <button
+                              onClick={() =>
+                                requestAction({
+                                  action: "stash_pop",
+                                  branch: stash.selector,
+                                })
+                              }
+                              disabled={actionBusy}
+                              className="rounded px-1.5 py-0.5 text-[10px] text-emerald-200 hover:bg-emerald-500/10 disabled:opacity-40"
+                              title="Pop (apply and remove)"
+                            >
+                              pop
+                            </button>
+                            <button
+                              onClick={() =>
+                                requestAction({
+                                  action: "stash_drop",
+                                  branch: stash.selector,
+                                })
+                              }
+                              disabled={actionBusy}
+                              className="rounded px-1.5 py-0.5 text-[10px] text-red-200 hover:bg-red-500/10 disabled:opacity-40"
+                              title="Drop stash"
+                            >
+                              drop
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1845,6 +2016,209 @@ export default function FocusModeGitPanel({
           )}
         </div>
 
+        {commitModalOpen && selectedCommitHash && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Commit details"
+            data-commit-details-modal="true"
+            onClick={() => setCommitModalOpen(false)}
+            className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm md:p-6"
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              className="flex h-full max-h-[90dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 shadow-2xl"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <GitCommitHorizontal
+                    size={16}
+                    className="shrink-0 text-neutral-300"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-neutral-100">
+                      Commit details
+                    </p>
+                    <p className="truncate font-mono text-[11px] text-neutral-500">
+                      {selectedCommitHash.slice(0, 8)}
+                      {commitDetails ? ` · ${commitDetails.subject}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    onClick={() => {
+                      setCommitModalOpen(false);
+                      requestAction({
+                        action: "cherry_pick",
+                        hash: selectedCommitHash,
+                      });
+                    }}
+                    disabled={actionBusy}
+                    className="rounded-lg border border-neutral-700 px-2 py-1 text-[10px] text-neutral-300 hover:bg-neutral-800 hover:text-white disabled:opacity-40"
+                    title="Cherry-pick this commit onto the current branch"
+                  >
+                    Cherry-pick
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCommitModalOpen(false);
+                      requestAction({ action: "revert", hash: selectedCommitHash });
+                    }}
+                    disabled={actionBusy}
+                    className="rounded-lg border border-neutral-700 px-2 py-1 text-[10px] text-neutral-300 hover:bg-neutral-800 hover:text-white disabled:opacity-40"
+                    title="Create a commit that undoes this commit"
+                  >
+                    Revert
+                  </button>
+                  <button
+                    onClick={() => setCommitModalOpen(false)}
+                    className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-white"
+                    title="Close commit details"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex min-h-0 flex-1 flex-col">
+                {commitDetailsLoading && !commitDetails ? (
+                  <div className="flex flex-1 items-center justify-center text-neutral-500">
+                    <LoaderCircle size={16} className="mr-2 animate-spin" />
+                    <span className="text-xs">Loading commit...</span>
+                  </div>
+                ) : !commitDetails ? (
+                  <div className="flex flex-1 items-center justify-center px-6 text-center text-xs text-rose-300">
+                    {commitDiff ?? "Failed to load commit details"}
+                  </div>
+                ) : (
+                  <>
+                    <div className="border-b border-neutral-800 px-4 py-3">
+                      <p className="truncate text-sm font-medium text-neutral-100">
+                        {commitDetails.subject}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-neutral-500">
+                        <span className="font-mono text-neutral-400">
+                          {commitDetails.hash.slice(0, 8)}
+                        </span>
+                        <span>
+                          {commitDetails.authorName} ·{" "}
+                          {commitDetails.relativeDate}
+                        </span>
+                      </div>
+                      {commitDetails.body.trim() && (
+                        <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-[11px] text-neutral-400">
+                          {commitDetails.body}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-1 overflow-x-auto border-b border-neutral-800 bg-neutral-900/40 px-2 py-2">
+                      {commitDetails.files.map((file, idx) => {
+                        const isSelected = commitFilePath === file.path;
+                        return (
+                          <button
+                            key={`${idx}-${file.path}`}
+                            onClick={() => {
+                              if (isSelected) {
+                                setCommitFilePath(null);
+                                setCommitFileDiff(null);
+                                return;
+                              }
+
+                              setCommitFilePath(file.path);
+                              setCommitFileDiff(null);
+                              setCommitFileDiffLoading(true);
+                              fetch(
+                                `/api/projects/${projectId}/git/diff?${new URLSearchParams(
+                                  {
+                                    file: file.path,
+                                    hash: commitDetails.hash,
+                                    staged: "false",
+                                    ...(directory ? { directory } : {}),
+                                    ...(connectionId
+                                      ? {
+                                          connectionId: String(connectionId),
+                                        }
+                                      : {}),
+                                  },
+                                )}`,
+                              )
+                                .then((response) => response.json())
+                                .then((body) =>
+                                  setCommitFileDiff(body.diff || "No changes"),
+                                )
+                                .catch(() =>
+                                  setCommitFileDiff("Failed to load diff"),
+                                )
+                                .finally(() =>
+                                  setCommitFileDiffLoading(false),
+                                );
+                            }}
+                            className={`inline-flex max-w-[18rem] shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] transition-colors ${
+                              isSelected
+                                ? "border-neutral-600 bg-neutral-800 text-white"
+                                : "border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700 hover:text-white"
+                            }`}
+                            title={
+                              file.originalPath
+                                ? `${file.originalPath} → ${file.path}`
+                                : file.path
+                            }
+                          >
+                            <span
+                              className={`shrink-0 font-medium ${
+                                file.status === "added"
+                                  ? "text-emerald-300"
+                                  : file.status === "deleted"
+                                    ? "text-rose-300"
+                                    : file.status === "renamed"
+                                      ? "text-sky-300"
+                                      : "text-amber-300"
+                              }`}
+                            >
+                              {file.status === "added"
+                                ? "A"
+                                : file.status === "deleted"
+                                  ? "D"
+                                  : file.status === "renamed"
+                                    ? "R"
+                                    : "M"}
+                            </span>
+                            <span className="truncate font-mono">
+                              {file.path}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-auto p-3">
+                      {commitFileDiffLoading ? (
+                        <div className="flex items-center justify-center py-8 text-neutral-500">
+                          <LoaderCircle
+                            size={14}
+                            className="mr-2 animate-spin"
+                          />
+                          <span className="text-xs">Loading diff...</span>
+                        </div>
+                      ) : (
+                        <DiffPre
+                          diff={
+                            commitFilePath
+                              ? (commitFileDiff ?? "")
+                              : commitDetails.diff
+                          }
+                        />
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {confirmation && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
             <div className="w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-2xl">
@@ -1870,6 +2244,7 @@ export default function FocusModeGitPanel({
                       branch: next.branch,
                       paths: next.paths,
                       message: next.messageText,
+                      hash: next.hash,
                     });
                   }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-500"

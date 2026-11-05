@@ -4,6 +4,7 @@ export interface OcToolState {
   output?: string;
   error?: string;
   title?: string;
+  metadata?: { diff?: string };
 }
 
 export interface OcPart {
@@ -22,8 +23,18 @@ export interface OcMessageEntry {
     id: string;
     role?: string;
     time?: { created?: number; completed?: number };
+    error?: { name?: string; data?: { message?: string } };
   };
   parts: OcPart[];
+}
+
+// opencode puts model/turn failures on the assistant message as
+// { name, data: { message } } (e.g. ApiError on timeout, MessageAbortedError).
+// Without extracting it the thread renders an empty bubble and looks hung.
+export function ocErrorMessage(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as { name?: string; message?: string; data?: { message?: string } };
+  return e.data?.message || e.message || e.name || null;
 }
 
 export function upsertPartIn(prev: OcMessageEntry[], messageID: string, part: OcPart): OcMessageEntry[] {
@@ -138,4 +149,78 @@ export function buildMentionParts(input: string, tracked: string[], root: string
     out.push({ type: "file", mime: mimeFor(p), filename: p, url: `file://${full}` });
   }
   return out;
+}
+
+export interface SessionEdit {
+  messageID: string;
+  tool: string;
+  patch: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface SessionFileDiff {
+  file: string;
+  edits: SessionEdit[];
+  additions: number;
+  deletions: number;
+}
+
+const EDIT_TOOLS = new Set(["edit", "write", "multiedit", "multi_edit", "patch", "apply_patch"]);
+
+function countPatchLines(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) additions++;
+    else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+  }
+  return { additions, deletions };
+}
+
+// ponytail: no hunk algorithm — the fallback lists old lines then new lines.
+// opencode's edit/write tools ship metadata.diff, so this only covers old or
+// odd parts. Upgrade path: an LCS diff if a tool ever lands without metadata.
+function synthesizePatch(file: string, oldText: string, newText: string): string {
+  const lines = [`--- a/${file}`, `+++ b/${file}`];
+  for (const l of oldText.split("\n")) lines.push(`-${l}`);
+  for (const l of newText.split("\n")) lines.push(`+${l}`);
+  return lines.join("\n");
+}
+
+export function collectSessionDiffs(messages: OcMessageEntry[]): SessionFileDiff[] {
+  const byFile = new Map<string, SessionFileDiff>();
+  for (const m of messages) {
+    for (const p of m.parts) {
+      if (p.type !== "tool" || !p.tool || !EDIT_TOOLS.has(p.tool)) continue;
+      const st = p.state;
+      if (!st || st.status !== "completed") continue;
+      const input = (st.input ?? {}) as Record<string, unknown>;
+      const file = String(input.filePath ?? input.path ?? input.filename ?? "");
+      if (!file) continue;
+      let patch = typeof st.metadata?.diff === "string" ? st.metadata.diff : "";
+      if (!patch) {
+        if (p.tool === "write") {
+          patch = synthesizePatch(file, "", String(input.content ?? ""));
+        } else if (p.tool === "edit") {
+          patch = synthesizePatch(file, String(input.oldString ?? ""), String(input.newString ?? ""));
+        } else if (Array.isArray(input.edits)) {
+          patch = (input.edits as { oldString?: string; newString?: string }[])
+            .map((e) => synthesizePatch(file, String(e?.oldString ?? ""), String(e?.newString ?? "")))
+            .join("\n");
+        }
+      }
+      if (!patch.trim()) continue;
+      const counts = countPatchLines(patch);
+      let entry = byFile.get(file);
+      if (!entry) {
+        entry = { file, edits: [], additions: 0, deletions: 0 };
+        byFile.set(file, entry);
+      }
+      entry.edits.push({ messageID: m.info.id, tool: p.tool, patch, ...counts });
+      entry.additions += counts.additions;
+      entry.deletions += counts.deletions;
+    }
+  }
+  return [...byFile.values()];
 }

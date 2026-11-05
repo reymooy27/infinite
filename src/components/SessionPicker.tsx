@@ -10,6 +10,7 @@ export interface PickableSession {
 
 interface SessionPickerProps {
   sessions: PickableSession[];
+  loading?: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
@@ -29,6 +30,7 @@ function relTime(ts?: number): string {
 
 export default function SessionPicker({
   sessions,
+  loading = false,
   selectedId,
   onSelect,
   onNew,
@@ -94,7 +96,11 @@ export default function SessionPicker({
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {filtered.length === 0 ? (
             <div className="px-4 py-6 text-center text-xs text-neutral-500">
-              {sessions.length === 0 ? (
+              {loading ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 size={13} className="animate-spin" /> Loading sessions…
+                </span>
+              ) : sessions.length === 0 ? (
                 <span className="inline-flex items-center gap-1.5">
                   <MessagesSquare size={13} /> No sessions yet.
                 </span>

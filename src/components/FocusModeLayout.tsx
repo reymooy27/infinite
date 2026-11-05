@@ -288,18 +288,26 @@ export default function FocusModeLayout({
       toggleGitPanel();
       setFileExplorerOpen(false);
       setTabPanelOpen(false);
+      setOpenCodeOpen(false);
     },
     KeyE: () => {
       if (!activeProjectId) return;
       setFileExplorerOpen((prev) => !prev);
       useGitStore.getState().closePanel();
       setTabPanelOpen(false);
+      setOpenCodeOpen(false);
     },
     KeyB: toggleDockerPanel, // docker
     KeyM: toggleSysMonPanel, // system monitor
     KeyO: () => {
       if (!activeProjectId) return;
-      setOpenCodeOpen((prev) => !prev);
+      setOpenCodeOpen((prev) => {
+        if (prev) return false;
+        useGitStore.getState().closePanel();
+        setFileExplorerOpen(false);
+        setTabPanelOpen(false);
+        return true;
+      });
     }, // opencode
     KeyK: () => {
       if (!activeWindow) return;
@@ -540,7 +548,12 @@ export default function FocusModeLayout({
           <div className="relative min-w-0">
             <button
               ref={tabToggleBtnRef}
-              onClick={() => setTabPanelOpen((p) => !p)}
+              onClick={() =>
+                setTabPanelOpen((p) => {
+                  if (!p) setOpenCodeOpen(false);
+                  return !p;
+                })
+              }
               className={`min-w-0 flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors cursor-pointer border sm:px-2.5 ${
                 tabPanelOpen
                   ? "bg-neutral-800 text-white border-neutral-700"
@@ -607,6 +620,8 @@ export default function FocusModeLayout({
                     <div
                       onClick={() => {
                         setOpenCodeOpen(true);
+                        useGitStore.getState().closePanel();
+                        setFileExplorerOpen(false);
                         setTabPanelOpen(false);
                       }}
                       className={`flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer transition-colors ${
@@ -691,6 +706,7 @@ export default function FocusModeLayout({
               toggleGitPanel();
               setFileExplorerOpen(false);
               setTabPanelOpen(false);
+              setOpenCodeOpen(false);
             }}
             disabled={!activeProjectId}
             title={gitPanelOpen ? "Hide git changes (Ctrl+Shift+G)" : "Show git changes (Ctrl+Shift+G)"}
@@ -708,6 +724,7 @@ export default function FocusModeLayout({
               setFileExplorerOpen((prev) => !prev);
               useGitStore.getState().closePanel();
               setTabPanelOpen(false);
+              setOpenCodeOpen(false);
             }}
             disabled={!activeProjectId}
             title={
@@ -722,7 +739,15 @@ export default function FocusModeLayout({
             <FileCode2 size={14} />
           </button>
           <button
-            onClick={() => setOpenCodeOpen((prev) => !prev)}
+            onClick={() => {
+              setOpenCodeOpen((prev) => {
+                if (prev) return false;
+                useGitStore.getState().closePanel();
+                setFileExplorerOpen(false);
+                setTabPanelOpen(false);
+                return true;
+              });
+            }}
             disabled={!activeProjectId}
             title="OpenCode (Ctrl+Shift+O)"
             className={`px-2 py-1 rounded text-xs transition-colors cursor-pointer border inline-flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed sm:px-2.5 ${

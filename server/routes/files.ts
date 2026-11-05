@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { readdir, readFile, writeFile, stat } from "node:fs/promises";
+import { readdir, readFile, writeFile, stat, mkdir, rm, rename as fsRename } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { join, relative, resolve, sep } from "node:path";
 import { Client } from "ssh2";
 import { prisma } from "../lib/prisma.js";
@@ -450,6 +452,193 @@ router.get("/:id/files/search", async (req, res) => {
     }
     logger.error("[Files] Search failed", { error: message });
     res.status(500).json({ error: message });
+  }
+});
+
+const execFileAsync = promisify(execFile);
+
+// --- Mutations + gitignore -------------------------------------------------
+
+// Remote/`..` paths bypass resolvePath's containment check, so reject them up
+// front for every mutating route regardless of local/remote mode.
+function assertSafeRelPath(relativePath: string): void {
+  if (!relativePath || relativePath.split("/").includes("..")) {
+    throw new Error("Path traversal not allowed");
+  }
+}
+
+function remoteShell(
+  connection: SSHConnectionConfig,
+  command: string,
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  return runSSHCommand(connection, command, { timeoutMs: 20000 });
+}
+
+async function remoteOrThrow(connection: SSHConnectionConfig, command: string): Promise<string> {
+  const { stdout, stderr, code } = await remoteShell(connection, command);
+  if (code !== 0) throw new Error((stderr || stdout || `Command failed (${code})`).trim());
+  return stdout;
+}
+
+async function resolveConnection(req: { query: Record<string, unknown> }) {
+  const param = req.query.connectionId as string;
+  return param ? await loadConnection(parseInt(param, 10)) : null;
+}
+
+// GET /api/projects/:id/files/ignored?connectionId=...
+// Paths excluded by .gitignore, relative to the project dir. Directories keep
+// their trailing slash so the client can prefix-match whole subtrees.
+router.get("/:id/files/ignored", async (req, res) => {
+  const GIT_ARGS = ["ls-files", "-o", "-i", "--exclude-standard", "--directory"];
+  try {
+    const project = await loadProject(req.params.id);
+    const baseDir = project.directory;
+    if (!baseDir) {
+      res.status(400).json({ error: "Project directory not configured" });
+      return;
+    }
+
+    const connection = await resolveConnection(req);
+    let stdout = "";
+    if (connection) {
+      const r = await remoteShell(connection, `cd -- ${quoteShellArg(baseDir)} && git ${GIT_ARGS.map(quoteShellArg).join(" ")}`);
+      stdout = r.stdout;
+    } else {
+      stdout = await execFileAsync("git", GIT_ARGS, { cwd: baseDir, maxBuffer: 8 * 1024 * 1024 })
+        .then((r) => r.stdout)
+        .catch(() => ""); // not a git repo, or git missing — nothing to dim
+    }
+
+    res.json({ ignored: stdout.split("\n").map((l) => l.trim()).filter(Boolean) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to read gitignore";
+    logger.error("[Files] Ignored failed", { error: message });
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/projects/:id/files/create  body: { path, isDir }
+router.post("/:id/files/create", async (req, res) => {
+  try {
+    const project = await loadProject(req.params.id);
+    const baseDir = project.directory;
+    const { path: rawPath, isDir } = req.body as { path?: string; isDir?: boolean };
+    if (!baseDir) {
+      res.status(400).json({ error: "Project directory not configured" });
+      return;
+    }
+    if (typeof rawPath !== "string") {
+      res.status(400).json({ error: "File path is required" });
+      return;
+    }
+    const relativePath = rawPath.trim().replace(/\/+$/, "");
+    assertSafeRelPath(relativePath);
+
+    const connection = await resolveConnection(req);
+    if (connection) {
+      const target = `${baseDir}/${relativePath}`;
+      const q = quoteShellArg(target);
+      if (isDir) {
+        await remoteOrThrow(connection, `mkdir -p -- ${q}`);
+      } else {
+        // 17 = already exists; report that instead of silently truncating.
+        const r = await remoteShell(connection, `test -e ${q} && exit 17; mkdir -p -- "$(dirname -- ${q})" && : > ${q}`);
+        if (r.code === 17) throw new Error("Already exists");
+        if (r.code !== 0) throw new Error((r.stderr || "Failed to create file").trim());
+      }
+    } else {
+      const fullPath = resolvePath(baseDir, relativePath);
+      if (isDir) {
+        await mkdir(fullPath, { recursive: true });
+      } else {
+        try {
+          await writeFile(fullPath, "", { flag: "wx" });
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException)?.code === "EEXIST") throw new Error("Already exists");
+          if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+            await mkdir(join(fullPath, ".."), { recursive: true });
+            await writeFile(fullPath, "", { flag: "wx" });
+          } else throw err;
+        }
+      }
+    }
+
+    res.json({ ok: true, path: relativePath });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create";
+    logger.error("[Files] Create failed", { error: message });
+    res.status(message.includes("traversal") ? 400 : 500).json({ error: message });
+  }
+});
+
+// POST /api/projects/:id/files/rename  body: { path, newPath }
+router.post("/:id/files/rename", async (req, res) => {
+  try {
+    const project = await loadProject(req.params.id);
+    const baseDir = project.directory;
+    const { path: relativePath, newPath } = req.body as { path?: string; newPath?: string };
+    if (!baseDir) {
+      res.status(400).json({ error: "Project directory not configured" });
+      return;
+    }
+    if (typeof relativePath !== "string" || typeof newPath !== "string" || !newPath.trim()) {
+      res.status(400).json({ error: "Both paths are required" });
+      return;
+    }
+    assertSafeRelPath(relativePath);
+    assertSafeRelPath(newPath.trim());
+
+    const connection = await resolveConnection(req);
+    if (connection) {
+      const q = quoteShellArg(`${baseDir}/${relativePath}`);
+      const nq = quoteShellArg(`${baseDir}/${newPath.trim()}`);
+      const r = await remoteShell(connection, `test -e ${nq} && exit 17; mv -- ${q} ${nq}`);
+      if (r.code === 17) throw new Error("Already exists");
+      if (r.code !== 0) throw new Error((r.stderr || "Failed to rename").trim());
+    } else {
+      const from = resolvePath(baseDir, relativePath);
+      const to = resolvePath(baseDir, newPath.trim());
+      try {
+        await stat(to);
+        throw new Error("Already exists");
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") throw err;
+      }
+      await fsRename(from, to);
+    }
+
+    res.json({ ok: true, path: newPath.trim(), from: relativePath });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to rename";
+    logger.error("[Files] Rename failed", { error: message });
+    res.status(message.includes("traversal") ? 400 : 500).json({ error: message });
+  }
+});
+
+// DELETE /api/projects/:id/files?path=...&connectionId=...
+router.delete("/:id/files", async (req, res) => {
+  try {
+    const project = await loadProject(req.params.id);
+    const baseDir = project.directory;
+    const relativePath = ((req.query.path as string) || "").trim();
+    if (!baseDir) {
+      res.status(400).json({ error: "Project directory not configured" });
+      return;
+    }
+    assertSafeRelPath(relativePath);
+
+    const connection = await resolveConnection(req);
+    if (connection) {
+      await remoteOrThrow(connection, `rm -rf -- ${quoteShellArg(`${baseDir}/${relativePath}`)}`);
+    } else {
+      await rm(resolvePath(baseDir, relativePath), { recursive: true, force: true });
+    }
+
+    res.json({ ok: true, path: relativePath });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to delete";
+    logger.error("[Files] Delete failed", { error: message });
+    res.status(message.includes("traversal") ? 400 : 500).json({ error: message });
   }
 });
 
