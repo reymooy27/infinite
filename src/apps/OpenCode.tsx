@@ -640,6 +640,7 @@ export default function OpenCode({
   const [commands, setCommands] = useState<OcCommand[]>([]);
   const [models, setModels] = useState<OcModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<OcModel | null>(null);
+  const [configDefault, setConfigDefault] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -887,6 +888,7 @@ export default function OpenCode({
     if (!projectId || !running) {
       setCommands([]);
       setModels([]);
+      setConfigDefault(null);
       setModelsLoading(false);
       return;
     }
@@ -899,19 +901,25 @@ export default function OpenCode({
       .catch(() => setCommands([]))
       .finally(() => controllersRef.current.delete(ctrl));
     const ctrl2 = track(new AbortController());
-    ocReq<{
-      all?: {
-        id: string;
-        name?: string;
-        models?: Record<
-          string,
-          { name?: string; status?: string; limit?: { context?: number }; capabilities?: { toolcall?: boolean } }
-        >;
-      }[];
-      connected?: string[];
-      default?: Record<string, string>;
-    }>(`/api/opencode/${encodeURIComponent(projectId)}/proxy/provider`, { signal: ctrl2.signal })
-      .then((j) => {
+    Promise.all([
+      ocReq<{
+        all?: {
+          id: string;
+          name?: string;
+          models?: Record<
+            string,
+            { name?: string; status?: string; limit?: { context?: number }; capabilities?: { toolcall?: boolean } }
+          >;
+        }[];
+        connected?: string[];
+        default?: Record<string, string>;
+      }>(`/api/opencode/${encodeURIComponent(projectId)}/proxy/provider`, { signal: ctrl2.signal }),
+      // Default model = opencode config's `model`; /provider `default` is per-provider in catalog order (unstable).
+      ocReq<{ model?: string }>(`/api/opencode/${encodeURIComponent(projectId)}/proxy/config`, {
+        signal: ctrl2.signal,
+      }).catch(() => ({}) as { model?: string }),
+    ])
+      .then(([j, cfg]) => {
         // Only providers opencode actually has credentials for — "all" is the
         // full models.dev catalog, not what this opencode install can use.
         const connected = new Set(j.connected ?? []);
@@ -935,8 +943,12 @@ export default function OpenCode({
           }
         }
         setModels(list);
+        setConfigDefault(typeof cfg?.model === "string" ? cfg.model : null);
       })
-      .catch(() => setModels([]))
+      .catch(() => {
+        setModels([]);
+        setConfigDefault(null);
+      })
       .finally(() => {
         controllersRef.current.delete(ctrl2);
         if (live) setModelsLoading(false);
@@ -946,12 +958,15 @@ export default function OpenCode({
     };
   }, [projectId, running, track]);
 
-  // Pre-select the provider default so the model chip is never blank on open.
+  // Pre-select opencode's configured default model so the chip is never blank
+  // on a new session (POST /session returns model: null until first prompt).
   useEffect(() => {
     if (selectedModel || models.length === 0) return;
-    const def = models.find((m) => m.isDefault);
+    const def =
+      (configDefault ? models.find((m) => m.label === configDefault) : undefined) ??
+      models.find((m) => m.isDefault);
     if (def) setSelectedModel(def);
-  }, [models, selectedModel]);
+  }, [models, selectedModel, configDefault]);
 
   // Load history whenever the active session changes.
   useEffect(() => {
