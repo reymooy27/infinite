@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.8.0](https://github.com/reymooy27/infinite/compare/infinite-v1.7.0...infinite-v1.8.0) (2026-11-05)
+
+
+### Features
+
+* clearer + opencode-aware notifications ([22388f8](https://github.com/reymooy27/infinite/commit/22388f850369c89f64f9c41a4d8066309a75cb59))
+* **editor:** add vscode-style file tree actions ([0d5754a](https://github.com/reymooy27/infinite/commit/0d5754a857965f939fc97244c86eb1c3d8f10ed2))
+* **editor:** close-file button + header diff toggle ([416bdda](https://github.com/reymooy27/infinite/commit/416bddaa93822d1644448e775ed45868097012ed))
+* git panel busy feedback + expanded git actions, opencode copy messages ([347609d](https://github.com/reymooy27/infinite/commit/347609d48466e607e37057c3d2870eaa0c22aaa2))
+* **git:** busy spinners for stage/commit/push/pull actions ([218f8ea](https://github.com/reymooy27/infinite/commit/218f8eaa47263bdc090da99ef3f058dcf83f0a4f))
+* **git:** fetch, stash ops, merge, revert/cherry-pick, PR link, conflict resolve ([3a6494f](https://github.com/reymooy27/infinite/commit/3a6494f13f13beb4be2c5744161ad72c469b2014))
+* **opencode:** copy button on chat messages ([7a10e41](https://github.com/reymooy27/infinite/commit/7a10e41f7b99358ff5272fc3dbb9fc5aa48de173))
+* **opencode:** loaders, blank new-session state, default model ([fd37a89](https://github.com/reymooy27/infinite/commit/fd37a89a395e0e9d5d7d8131b3f12848eba5b584))
+* **opencode:** session diff from message parts ([33dac23](https://github.com/reymooy27/infinite/commit/33dac2361b0ee73c39758209da7cbdea43bd9f9f))
+* **opencode:** session file diff viewer ([9b3ec75](https://github.com/reymooy27/infinite/commit/9b3ec752b44abeedd71260915b169f45a038bdec))
+* **sidebar:** full-height switcher with sessions and busy loaders ([3578265](https://github.com/reymooy27/infinite/commit/3578265aad35c8882af745790d8734521f73e466))
+
+
+### Bug Fixes
+
+* **editor:** ctrl+S saves stale content ([45c584c](https://github.com/reymooy27/infinite/commit/45c584c820c3442541f3d08bb55756f6ae10b701))
+* **opencode:** copy silently no-ops on http (no clipboard api) ([3c8fe07](https://github.com/reymooy27/infinite/commit/3c8fe07b0e2da90fc588abd08d772a67365c73a9))
+* **opencode:** per-session busy state on switch ([3070655](https://github.com/reymooy27/infinite/commit/30706559fffa55ba52b72e21f856126b255bfc40))
+* **opencode:** show stopping state on stop button ([588812e](https://github.com/reymooy27/infinite/commit/588812ec37f964f0255e160cd062b37f1a003a6b))
+* **opencode:** stop session on model error ([7cffd85](https://github.com/reymooy27/infinite/commit/7cffd854404a67a3e9b9def54f1e741cd20a880d))
+* persist editor and git panel state on close ([b127fe5](https://github.com/reymooy27/infinite/commit/b127fe5035991da3019098e878475e5f6d94b7a6))
+* **terminal:** bumpTerminal typo blanked all terminals ([4445883](https://github.com/reymooy27/infinite/commit/44458835e4bbaa8e5d9bd03c4ad4055b767b421e))
+
 ## [1.7.0](https://github.com/reymooy27/infinite/compare/infinite-v1.6.0...infinite-v1.7.0) (2026-10-27)
 
 
