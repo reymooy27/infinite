@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSysMonStore } from "@/stores/useSysMonStore";
 import {
   Activity,
   Cpu,
@@ -369,11 +370,15 @@ export default function SysMonitor({
 }) {
   const connections = useSSHStore((s) => s.connections);
   const fetchConnections = useSSHStore((s) => s.fetchConnections);
+  const statsCache = useSysMonStore((s) => s.statsCache);
+  const setCachedStats = useSysMonStore((s) => s.setCachedStats);
 
   const [selected, setSelected] = useState<SSHConnection | null>(() =>
     connectionId ? connections.find((c) => c.id === connectionId) ?? null : null,
   );
-  const [stats, setStats] = useState<SysStats | null>(null);
+  const [stats, setStats] = useState<SysStats | null>(() =>
+    connectionId && statsCache[connectionId] ? (statsCache[connectionId] as SysStats) : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [procSort, setProcSort] = useState<"cpu" | "mem">("mem");
@@ -400,13 +405,16 @@ export default function SysMonitor({
   useEffect(() => {
     if (connectionId == null) return;
     const found = connections.find((c) => c.id === connectionId) ?? null;
-    if (found && found.id !== selected?.id) setSelected(found);
-  }, [connectionId, connections, selected?.id]);
+    if (found && found.id !== selected?.id) {
+      setSelected(found);
+      setStats((prev) => prev ?? ((statsCache[found.id] as SysStats | undefined) ?? null));
+    }
+  }, [connectionId, connections, selected?.id, statsCache]);
 
   const handleSelect = useCallback(
     (conn: SSHConnection | null) => {
       setSelected(conn);
-      setStats(null);
+      setStats(conn ? ((statsCache[conn.id] as SysStats | undefined) ?? null) : null);
       setError(null);
       setVpnProfile("");
       setVpnError(null);
@@ -415,7 +423,7 @@ export default function SysMonitor({
       setDelArmed(false);
       onConnectionChange?.(conn?.id ?? null);
     },
-    [onConnectionChange],
+    [onConnectionChange, statsCache],
   );
 
   const selectedId = selected?.id;
@@ -429,6 +437,7 @@ export default function SysMonitor({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load stats");
       setStats(data);
+      setCachedStats(selectedId, data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load stats");
@@ -436,7 +445,7 @@ export default function SysMonitor({
       setLoading(false);
       inFlight.current = false;
     }
-  }, [selectedId, procSort]);
+  }, [selectedId, procSort, setCachedStats]);
 
   const killProc = useCallback(
     async (pid: number, signal: "TERM" | "KILL") => {
