@@ -32,6 +32,10 @@ interface DockerContainer {
   created: string;
   cpuPerc?: string;
   memUsage?: string;
+  memPerc?: string;
+  netIO?: string;
+  blockIO?: string;
+  pids?: string;
 }
 
 interface DockerImage {
@@ -148,8 +152,23 @@ function ContainerRow({
             {container.ports ? ` · ${container.ports}` : ""}
           </div>
           {(container.cpuPerc || container.memUsage) && (
-            <div className="mt-1 font-mono text-[11px] text-neutral-400">
-              CPU {container.cpuPerc || "—"} · {container.memUsage || "—"}
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[11px] text-neutral-400">
+              <span title="CPU usage">CPU {container.cpuPerc || "—"}</span>
+              <span title="Memory usage">
+                MEM {container.memUsage || "—"}
+                {container.memPerc ? ` (${container.memPerc})` : ""}
+              </span>
+              {container.netIO && (
+                <span title="Network I/O (rx / tx)">NET {container.netIO}</span>
+              )}
+              {container.blockIO && (
+                <span title="Block I/O (read / write)">
+                  DISK {container.blockIO}
+                </span>
+              )}
+              {container.pids && (
+                <span title="Processes">PIDS {container.pids}</span>
+              )}
             </div>
           )}
         </div>

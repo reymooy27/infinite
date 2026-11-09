@@ -291,10 +291,14 @@ app.get("/api/docker/:connectionId/containers", async (req, res) => {
       const all = req.query.all === "1" || req.query.all === "true";
       const containers = await listContainers(connection, { all });
       const stats = await dockerStats(connection);
-      const merged = containers.map((c: { id: string; cpuPerc?: string; memUsage?: string }) => ({
+      const merged = containers.map((c: { id: string }) => ({
         ...c,
         cpuPerc: stats[c.id]?.cpuPerc ?? "",
         memUsage: stats[c.id]?.memUsage ?? "",
+        memPerc: stats[c.id]?.memPerc ?? "",
+        netIO: stats[c.id]?.netIO ?? "",
+        blockIO: stats[c.id]?.blockIO ?? "",
+        pids: stats[c.id]?.pids ?? "",
       }));
       res.json({ containers: merged });
     });

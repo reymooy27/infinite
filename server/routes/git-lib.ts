@@ -30,6 +30,11 @@ export type GitLastCommit = {
   authorName: string;
 };
 
+export type GitBranchEntry = {
+  name: string;
+  committedAt: number | null;
+};
+
 export type GitStashEntry = {
   selector: string;
   subject: string;
@@ -54,7 +59,7 @@ export type GitStatusPayload = {
   untrackedCount: number;
   conflictedCount: number;
   stashCount: number;
-  branches: string[];
+  branches: GitBranchEntry[];
   lastCommit: GitLastCommit | null;
   recentCommits: GitLastCommit[];
   stashes: GitStashEntry[];
@@ -471,12 +476,21 @@ function parseChanges(output: string, payload: GitStatusPayload) {
   payload.clean = payload.changes.length === 0;
 }
 
-function parseBranchList(output: string) {
+function parseBranchList(output: string): GitBranchEntry[] {
   return output
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b));
+    .map((line) => {
+      const [name, ts] = line.split("\t");
+      const secs = Number.parseInt((ts ?? "").trim(), 10);
+      return {
+        name: (name ?? "").trim(),
+        committedAt: Number.isFinite(secs) ? secs * 1000 : null,
+      };
+    })
+    .filter((branch) => branch.name)
+    .sort((a, b) => (b.committedAt ?? 0) - (a.committedAt ?? 0));
 }
 
 function parseLastCommit(output: string) {
@@ -620,7 +634,7 @@ export async function getGitStatus(options: {
 
     const [statusOutput, branchesOutput, lastCommitOutput, recentCommitsOutput, stashOutput, remoteUrlOutput] = await Promise.all([
       execGitOrThrow(ctx, ["status", "--short", "--branch", "--untracked-files=all"]),
-      execGitOrThrow(ctx, ["branch", "--format=%(refname:short)"]).catch(() => ""),
+      execGitOrThrow(ctx, ["branch", "--format=%(refname:short)%09%(committerdate:unix)"]).catch(() => ""),
       execGitOrThrow(ctx, ["log", "-1", "--pretty=format:%h%x09%s%x09%cr%x09%an"]).catch(() => ""),
       execGitOrThrow(ctx, ["log", "-12", "--pretty=format:%h%x09%s%x09%cr%x09%an"]).catch(() => ""),
       execGitOrThrow(ctx, ["stash", "list", "--format=%gd%x09%gs"]).catch(() => ""),

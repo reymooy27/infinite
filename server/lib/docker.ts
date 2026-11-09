@@ -88,20 +88,37 @@ export async function listContainers(
   })).filter((c) => c.id);
 }
 
+export interface DockerStats {
+  cpuPerc: string;
+  memUsage: string;
+  memPerc: string;
+  netIO: string;
+  blockIO: string;
+  pids: string;
+}
+
 export async function dockerStats(
   connection: SSHConnection,
-): Promise<Record<string, { cpuPerc: string; memUsage: string }>> {
-  const cmd = `docker stats --no-stream --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}'`;
+): Promise<Record<string, DockerStats>> {
+  const cmd = `docker stats --no-stream --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}'`;
   const { stdout, code } = await runSSHCommand(connection, cmd);
   if (code !== 0) return {};
-  const map: Record<string, { cpuPerc: string; memUsage: string }> = {};
+  const map: Record<string, DockerStats> = {};
   stdout
     .split("\n")
     .map(cleanLine)
     .filter((l) => l.includes("\t"))
     .forEach((line) => {
-      const [id, cpuPerc, memUsage] = line.split("\t");
-      if (id) map[id.trim()] = { cpuPerc: (cpuPerc ?? "").trim(), memUsage: (memUsage ?? "").trim() };
+      const [id, cpuPerc, memUsage, memPerc, netIO, blockIO, pids] = line.split("\t");
+      if (id)
+        map[id.trim()] = {
+          cpuPerc: (cpuPerc ?? "").trim(),
+          memUsage: (memUsage ?? "").trim(),
+          memPerc: (memPerc ?? "").trim(),
+          netIO: (netIO ?? "").trim(),
+          blockIO: (blockIO ?? "").trim(),
+          pids: (pids ?? "").trim(),
+        };
     });
   return map;
 }

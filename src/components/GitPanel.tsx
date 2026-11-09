@@ -46,7 +46,7 @@ export default function GitPanel({
         className="absolute inset-0 bg-black/55 backdrop-blur-sm"
         onClick={closePanel}
       />
-      <aside className="relative z-[10051] h-full w-full max-w-[24rem]">
+      <aside className="relative z-[10051] h-full w-full max-w-[56rem]">
         <FocusModeGitPanel
           key={`${projectId}:${connectionId ?? "none"}:${directory ?? ""}`}
           open={open}

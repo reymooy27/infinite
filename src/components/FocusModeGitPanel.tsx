@@ -48,6 +48,25 @@ type GitLastCommit = {
   authorName: string;
 };
 
+type GitBranchEntry = {
+  name: string;
+  committedAt: number | null;
+};
+
+function formatBranchDate(ms: number) {
+  const mins = Math.floor((Date.now() - ms) / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d`;
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 type GitStashEntry = {
   selector: string;
   subject: string;
@@ -89,7 +108,7 @@ type GitStatusPayload = {
   untrackedCount: number;
   conflictedCount: number;
   stashCount: number;
-  branches: string[];
+  branches: GitBranchEntry[];
   lastCommit: GitLastCommit | null;
   recentCommits: GitLastCommit[];
   stashes: GitStashEntry[];
@@ -768,8 +787,8 @@ export default function FocusModeGitPanel({
     if (!data) return [];
     const query = branchSearch.trim().toLowerCase();
     if (!query) return data.branches;
-    return data.branches.filter((branch) =>
-      branch.toLowerCase().includes(query),
+    return data.branches.filter((entry) =>
+      entry.name.toLowerCase().includes(query),
     );
   }, [branchSearch, data]);
 
@@ -1376,7 +1395,7 @@ export default function FocusModeGitPanel({
       className={
         embedded
           ? "h-full w-full border-l border-neutral-800 bg-neutral-950 shadow-2xl"
-          : "absolute inset-y-0 right-0 z-40 w-full max-w-[24rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
+          : "absolute inset-y-0 right-0 z-40 w-full max-w-[56rem] border-l border-neutral-800 bg-neutral-950/95 backdrop-blur-md shadow-2xl"
       }
     >
       <div className="flex h-full flex-col">
@@ -1484,11 +1503,11 @@ export default function FocusModeGitPanel({
                           </div>
                         </div>
                         <div className="max-h-48 overflow-y-auto p-1">
-                          {filteredBranches.map((branch) => (
+                          {filteredBranches.map((entry) => (
                             <div
-                              key={branch}
+                              key={entry.name}
                               className={`group/branch flex w-full items-center rounded-lg pr-1 ${
-                                branch === data.branch
+                                entry.name === data.branch
                                   ? "bg-neutral-800"
                                   : "hover:bg-neutral-800/60"
                               }`}
@@ -1497,31 +1516,41 @@ export default function FocusModeGitPanel({
                                 onClick={() =>
                                   requestAction({
                                     action: "checkout_branch",
-                                    branch,
+                                    branch: entry.name,
                                   })
                                 }
-                                className={`flex min-w-0 flex-1 items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs ${
-                                  branch === data.branch
+                                className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs ${
+                                  entry.name === data.branch
                                     ? "text-white"
                                     : "text-neutral-300 hover:text-white"
                                 }`}
                               >
-                                <span className="truncate">{branch}</span>
-                                {branch === data.branch && (
-                                  <span className="text-[10px] uppercase text-sky-300">
-                                    current
-                                  </span>
-                                )}
+                                <span className="truncate">{entry.name}</span>
+                                <span className="flex shrink-0 items-center gap-2">
+                                  {entry.committedAt != null && (
+                                    <span className="text-[10px] text-neutral-500">
+                                      {formatBranchDate(entry.committedAt)}
+                                    </span>
+                                  )}
+                                  {entry.name === data.branch && (
+                                    <span className="text-[10px] uppercase text-sky-300">
+                                      current
+                                    </span>
+                                  )}
+                                </span>
                               </button>
-                              {branch !== data.branch && (
+                              {entry.name !== data.branch && (
                                 <button
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    requestAction({ action: "merge", branch });
+                                    requestAction({
+                                      action: "merge",
+                                      branch: entry.name,
+                                    });
                                   }}
                                   disabled={actionBusy}
                                   className="shrink-0 rounded p-1 text-neutral-500 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-sky-200 group-hover/branch:opacity-100 disabled:opacity-0"
-                                  title={`Merge ${branch} into ${data.branch ?? "current"}`}
+                                  title={`Merge ${entry.name} into ${data.branch ?? "current"}`}
                                 >
                                   <GitMerge size={12} />
                                 </button>
