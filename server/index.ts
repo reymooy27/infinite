@@ -291,15 +291,19 @@ app.get("/api/docker/:connectionId/containers", async (req, res) => {
       const all = req.query.all === "1" || req.query.all === "true";
       const containers = await listContainers(connection, { all });
       const stats = await dockerStats(connection);
-      const merged = containers.map((c: { id: string }) => ({
-        ...c,
-        cpuPerc: stats[c.id]?.cpuPerc ?? "",
-        memUsage: stats[c.id]?.memUsage ?? "",
-        memPerc: stats[c.id]?.memPerc ?? "",
-        netIO: stats[c.id]?.netIO ?? "",
-        blockIO: stats[c.id]?.blockIO ?? "",
-        pids: stats[c.id]?.pids ?? "",
-      }));
+      // docker ps --no-trunc gives 64-char IDs, docker stats gives 12-char short IDs
+      const merged = containers.map((c: { id: string }) => {
+        const stat = stats[c.id] ?? stats[c.id.slice(0, 12)];
+        return {
+          ...c,
+          cpuPerc: stat?.cpuPerc ?? "",
+          memUsage: stat?.memUsage ?? "",
+          memPerc: stat?.memPerc ?? "",
+          netIO: stat?.netIO ?? "",
+          blockIO: stat?.blockIO ?? "",
+          pids: stat?.pids ?? "",
+        };
+      });
       res.json({ containers: merged });
     });
   } catch (err) {
