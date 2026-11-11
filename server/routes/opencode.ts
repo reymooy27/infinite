@@ -11,9 +11,10 @@ const PORT_RANGE_END = 4891;
 const READY_TIMEOUT_MS = 60_000;
 const KILL_GRACE_MS = 5_000;
 
-// Two execution modes: local spawn (runs natively on the host) or remote
+// Two execution modes: local spawn (runs natively in the container) or remote
 // control of the host daemon. OPENCODE_HOSTD_URL set -> start/stop/status are
-// delegated; the proxy stays local because host networking shares 127.0.0.1.
+// delegated. With bridge networking, point it at
+// http://host.docker.internal:7890 and make the daemon bind 0.0.0.0.
 const HOSTD_URL = (process.env.OPENCODE_HOSTD_URL || "").replace(/\/+$/, "");
 const HOSTD_TOKEN = String(process.env["OPENCODE_HOSTD" + "_TOKEN"] ?? "");
 const DAEMON_TIMEOUT_MS = 90_000;

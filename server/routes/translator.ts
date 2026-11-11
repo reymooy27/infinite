@@ -61,7 +61,7 @@ export async function readFirstDataEvent(
 // Proxy console logs from translator service
 router.get("/console-logs", async (req: Request, res: Response) => {
   const target = process.env.TRANSLATOR_CONSOLE_LOGS_URL ||
-    "http://localhost:20128/api/translator/console-logs/stream";
+    "http://host.docker.internal:20128/api/translator/console-logs/stream";
 
   try {
     const response = await fetch(target, {

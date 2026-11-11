@@ -3,27 +3,41 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # Host networking so nginx can proxy to the server on 127.0.0.1:7891
-    # without being blocked by the host firewall.
-    network_mode: "host"
+    # Published port: Windows reaches the UI at http://localhost:9871.
+    # `network_mode: host` does NOT expose ports to Windows on Docker Desktop
+    # (WSL2 backend) — the container binds inside the Docker VM only.
+    ports:
+      - "9871:9871"
     depends_on:
       - server
     restart: unless-stopped
+    networks:
+      - infinite
 
   server:
     build:
       context: .
       dockerfile: Dockerfile.server
-    # Host networking lets the server reach host-bound services (9router on
-    # :20128) directly via 127.0.0.1. The docker bridge cannot reach the host
-    # because the host firewall drops bridge->host traffic.
-    network_mode: "host"
     env_file: .env
     environment:
       DATABASE_URL: file:/data/infinite.db
     volumes:
       - infinite-data:/data
+    # Published port: reachable from Windows and from the frontend container
+    # (via the `server` DNS alias on the `infinite` network).
+    ports:
+      - "7891:7891"
+    # Host-bound services (9router on :20128, opencode hostd on :7890) are
+    # reached through host.docker.internal; they must bind 0.0.0.0.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    networks:
+      - infinite
+
+networks:
+  infinite:
+    driver: bridge
 
 volumes:
   infinite-data:
